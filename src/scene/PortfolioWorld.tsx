@@ -1,7 +1,9 @@
 import { Boat } from './Boat'
 import { Cabin } from './Cabin'
+import { CabinHatch } from './CabinHatch'
 import { CameraRig } from './CameraRig'
 import { Ocean } from './Ocean'
+import { Exhibits } from './exhibits/Exhibits'
 
 /** Root of the 3D world. Rendered inside a <Canvas>. */
 export function PortfolioWorld() {
@@ -13,6 +15,8 @@ export function PortfolioWorld() {
       <Ocean />
       <Boat />
       <Cabin />
+      <CabinHatch />
+      <Exhibits />
     </>
   )
 }

@@ -1,0 +1,51 @@
+.exhibit-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.exhibit-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 520px;
+  max-height: 80svh;
+  overflow-y: auto;
+  padding: 24px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.exhibit-panel h2 {
+  margin-top: 0;
+}
+
+.exhibit-panel p + p {
+  margin-top: 12px;
+}
+
+.exhibit-close {
+  margin-top: 24px;
+  padding: 6px 14px;
+  font-size: 16px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  transition: border-color 0.3s;
+}
+
+.exhibit-close:hover {
+  border-color: var(--accent-border);
+}
+
+.exhibit-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

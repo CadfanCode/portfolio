@@ -21,7 +21,7 @@ type SceneStore = {
   /** True while the camera is moving. Input is ignored meanwhile. */
   isTransitioning: boolean
   /** Id of the open exhibit, or null. Ids stay opaque to the store. */
-  activeExhibit: string | null
+  activeExhibitId: string | null
 
   /** Begin a move. No-ops if mid-flight or if the route doesn't allow it. */
   goTo: (next: SceneState) => void
@@ -35,7 +35,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   scene: 'ocean',
   from: null,
   isTransitioning: false,
-  activeExhibit: null,
+  activeExhibitId: null,
 
   goTo: (next) => {
     const { scene, isTransitioning } = get()
@@ -52,7 +52,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
       from: scene,
       scene: next,
       isTransitioning: true,
-      activeExhibit: null,
+      activeExhibitId: null,
     })
   },
 
@@ -60,8 +60,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
 
   openExhibit: (id) => {
     if (get().isTransitioning) return
-    set({ activeExhibit: id })
+    set({ activeExhibitId: id })
   },
 
-  closeExhibit: () => set({ activeExhibit: null }),
+  closeExhibit: () => set({ activeExhibitId: null }),
 }))
