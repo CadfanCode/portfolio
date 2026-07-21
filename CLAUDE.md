@@ -5,7 +5,7 @@ An interactive WebGL portfolio for a software developer, set aboard a Maxi 77 sa
 Visitors move through a fixed camera path (ocean → cockpit → cabin) with free-look at
 each stop — not free-roam. Hotspots open "exhibits": self-contained project demos
 presented as physical objects in the boat. Full narrative vision lives in
-`.claude/GUIDE.md`; this file is the operational reference for coding decisions.
+`GUIDE.md`; this file is the operational reference for coding decisions.
 
 ## Stack
 - Vite + React + TypeScript
@@ -35,8 +35,9 @@ presented as physical objects in the boat. Full narrative vision lives in
 - `npm run build` — production build
 
 ## Current focus
-(update as you move through phases — e.g. "Phase 1: ocean → cockpit camera transition
-and free-look controls")
+Phase 3: core loop prototype. `useSceneStore` is done. Next up is `CameraRig`
+interpolating camera position/target between stops, then drei's `CameraControls`
+for constrained free-look on arrival.
 
 ## Conventions
 - Fake cheap effects over real simulation — no real physics, bake lighting where possible.
