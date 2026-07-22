@@ -34,7 +34,8 @@ import bpy
 import deck
 import params
 import rig
-from lib.mesh import grid_to_mesh, join, shade_smooth
+from lib.mesh import cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
+from lib.sweep import circle, sweep_rings
 
 
 CHORD_POINTS = 13
@@ -50,13 +51,17 @@ def build(collection):
 
     geometry = rig.layout(deck.height_function())
 
-    main = _build_mainsail(collection, geometry)
+    main, main_surface = _build_mainsail(collection, geometry)
     genoa, genoa_surface = _build_genoa(collection, geometry)
 
     return {
         "mainsail": main,
         "genoa": genoa,
-        "sail_number": _build_sail_number(collection, genoa_surface),
+        "sail_number": _build_sail_number(collection, main_surface),
+        "mainsail_headboard": _build_headboard(collection, main_surface),
+        "mainsail_battens": _build_battens(collection, main_surface),
+        "sail_cringles": _build_cringles(collection, main_surface, genoa_surface),
+        "boltropes": _build_boltropes(collection, main_surface, genoa_surface),
     }
 
 
@@ -191,12 +196,38 @@ def _build_mainsail(collection, g):
         lift = params.MAINSAIL_FOOT_ROUND * sin(pi * u) * max(0.0, 1.0 - v * 4.0)
         return (x, py, z + lift)
 
-    return _build_sail("mainsail", collection, with_foot_round)
+    return _build_sail("mainsail", collection, with_foot_round), with_foot_round
 
 
 # --------------------------------------------------------------------------
 # The genoa
 # --------------------------------------------------------------------------
+
+
+def genoa_tack(g):
+    """Where the genoa's tack sits: at the stemhead end of the forestay, lifted
+    clear of the pulpit block it lands next to.
+
+    Public alongside `genoa_clew` for the same reason: a rope reeved from
+    somewhere other than where the sail actually is comes adrift from it the
+    first time either is re-authored.
+    """
+    return (0.0, params.station_to_y(g["forestay_station"]), g["forestay_z"] + 0.120)
+
+
+def genoa_clew(g):
+    """Where the genoa's clew sits, in world space: aft, up, and out to port.
+
+    Public because `fittings.py` reeves the genoa sheet from exactly this
+    point. A sheet given the clew's coordinates a second time is a sheet that
+    comes adrift from the sail the next time `GENOA_CLEW_*` moves.
+    """
+    tack = genoa_tack(g)
+    return (
+        params.GENOA_CLEW_OFFSET,
+        params.station_to_y(params.GENOA_CLEW_STATION),
+        tack[2] + params.GENOA_CLEW_ABOVE_TACK,
+    )
 
 
 def _build_genoa(collection, g):
@@ -213,14 +244,9 @@ def _build_genoa(collection, g):
     """
     y = params.station_to_y
 
-    tack = (0.0, y(g["forestay_station"]), g["forestay_z"] + 0.120)
+    tack = genoa_tack(g)
     head = (0.0, y(g["mast_axis"]), g["masthead_z"] - 0.180)
-
-    clew = (
-        params.GENOA_CLEW_OFFSET,
-        y(params.GENOA_CLEW_STATION),
-        tack[2] + params.GENOA_CLEW_ABOVE_TACK,
-    )
+    clew = genoa_clew(g)
 
     def luff(v):
         return tuple(_lerp(tack[i], head[i], v) for i in range(3))
@@ -250,28 +276,30 @@ def _build_genoa(collection, g):
 # --------------------------------------------------------------------------
 
 
-NUMBER_ANCHOR = (0.30, 0.28)
-"""Where on the headsail the number is centred, in the sail's own `(u, v)`.
+NUMBER_ANCHOR = (0.42, 0.62)
+"""Where on the mainsail the number is centred, in the sail's own `(u, v)`.
 
-Low and forward of mid-chord. That is where a genoa carries one -- high enough
-to clear the sag in the foot, far enough from the leech not to be lost in the
-curl of it, and well below the spreaders -- and on this boat there is a second
-reason to keep it forward: a 160% genoa runs a long way past the mast, and
-anything laid abaft about 60% of the chord is behind the mainsail from every
-angle the camera can reach. Centred at 0.45 the first two characters were gone.
+High and just forward of mid-chord: `v` above 0.5 puts it in the upper half of
+the sail, above the boom and the worst of the crew working the cockpit under
+it, and `u` at 0.42 keeps the whole string forward of the leech and clear of
+the roach -- which curls away from a straight leech line by up to 155 mm here
+(`MAINSAIL_ROACH`) and would eat the last character of anything laid closer to
+1.0. It is not centred on the chord, because the chord itself narrows going up
+the sail and centring on it at every height would walk the number aft as it
+climbed; anchored at a single `(u, v)` it stays put on one point of the cloth
+the way a sail number sewn to a real sail does.
 
-At 0.30 the whole number is forward of the mast on the sail, and reads in full
-from abeam and from ahead. From the quarter the mast still crosses the first
-character, and that is parallax rather than placement: the sail is cambered half
-a metre to leeward there and the mast is on the centreline several metres
-nearer the camera, so it projects across cloth it is nowhere near. Clearing it
-from that angle too would mean hanging the number off the luff. Photographs of
-real boats look like this.
+This replaced a genoa placement low and forward on the headsail, which existed
+because a 160% genoa runs a long way past the mast and there was nowhere else
+on it the number would read from every angle. The mainsail has no mast running
+through the middle of it, so the constraint that shaped that placement --
+staying clear of the rig's own silhouette -- does not apply here, and the
+number can go where a mainsail's actually does.
 """
 
 
 def _build_sail_number(collection, surface):
-    """The registration, laid on both faces of the headsail.
+    """The registration, laid on both faces of the mainsail.
 
     Blender's own font, tessellated to a mesh and then bent onto the sail: the
     glyphs are generated flat and every vertex is put back through the same
@@ -380,3 +408,195 @@ def _glyph_mesh(text):
         "faces": faces,
         "bounds": ((min(xs), max(xs)), (min(ys), max(ys))),
     }
+
+
+# --------------------------------------------------------------------------
+# Sail furniture: battens, headboard, cringles, boltrope
+#
+# A sail built from three shape numbers reads as cloth from across the water
+# and as a diagram from anywhere closer, because nothing in it says how the
+# thing is actually made -- a real sail is stitched, corners are reinforced
+# to take a load, and the leech is held straight by battens rather than by
+# hope. All four are built the same way: sampled off the sail's own surface
+# function rather than laid out in world space, so a piece of hardware cannot
+# end up floating off the cloth it belongs to the next time the camber or the
+# twist changes.
+# --------------------------------------------------------------------------
+
+_HARDWARE_LIFT = 0.004
+"""How far every piece of sail furniture stands off the cloth -- the same
+offset the sail number uses, and for the same reason: two coincident faces
+z-fight, and this is the smallest gap that does not."""
+
+
+def _unit(v):
+    length = hypot(hypot(v[0], v[1]), v[2])
+    return tuple(c / length for c in v) if length > 1e-9 else (0.0, 0.0, 1.0)
+
+
+def _cross(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _surface_frame(surface, u, v, step=0.01):
+    """A local frame at a point on a sail: the point itself, and two unit
+    tangents along increasing `u` and `v`, taken by finite difference -- the
+    same trick the sail number's local scale uses.
+
+    Not a true differential frame -- `eu` and `ev` are not generally
+    orthogonal, since `u` and `v` are not an orthogonal parametrisation of the
+    surface. Good enough to glue small flat hardware to the cloth; nothing
+    here needs more than that.
+    """
+    origin = surface(u, v)
+    u2, su = (u + step, 1.0) if u + step <= 1.0 else (u - step, -1.0)
+    v2, sv = (v + step, 1.0) if v + step <= 1.0 else (v - step, -1.0)
+    eu = _unit(tuple((surface(u2, v)[k] - origin[k]) * su for k in range(3)))
+    ev = _unit(tuple((surface(u, v2)[k] - origin[k]) * sv for k in range(3)))
+    return origin, eu, ev
+
+
+def _ring(collection, name, surface, u, v, radius, tube_radius, segments=14):
+    """A small ring laid flat against the cloth: a cringle, standing proud of
+    it -- built in the surface's own local plane rather than perpendicular to
+    it, because an edge-on grommet is a highlight nobody on this camera path
+    ever sees, and a reinforcing ring lying against the sail is what one
+    actually reads as from more than a boat's length away.
+    """
+    origin, eu, ev = _surface_frame(surface, u, v)
+    normal = _unit(_cross(eu, ev))
+    centre = tuple(origin[k] + normal[k] * _HARDWARE_LIFT for k in range(3))
+
+    path = []
+    for i in range(segments + 1):
+        angle = 2 * pi * i / segments
+        c, s = cos(angle), sin(angle)
+        path.append(
+            tuple(centre[k] + eu[k] * radius * c + ev[k] * radius * s for k in range(3))
+        )
+
+    rings = sweep_rings(circle(tube_radius, 6), path)
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    recalc_normals(obj)
+    return obj
+
+
+CRINGLES = (
+    ("tack", (0.0, 0.0), 0.016),
+    ("clew", (1.0, 0.0), 0.020),
+    # The head cringle sits just below the head itself: at v = 1 the surface
+    # function's luff and leech converge to the same point (`_build_sail`'s
+    # own note on why the top row of the grid collapses to a pole), and a ring
+    # built exactly there has no local plane to lie in.
+    ("head", (0.5, 0.965), 0.014),
+)
+
+
+def _build_cringles(collection, main_surface, genoa_surface):
+    """The three working corners of both sails, reinforced -- the load path
+    everything else in this section either hangs from or pulls against."""
+    rings = [
+        _ring(collection, f"{tag}_{name}_cringle", surface, u, v, radius, 0.0035)
+        for (tag, surface) in (("main", main_surface), ("genoa", genoa_surface))
+        for (name, (u, v), radius) in CRINGLES
+    ]
+    return join(rings, "sail_cringles")
+
+
+def _boltrope(collection, name, surface, count=14, tube_radius=0.004):
+    """The rope sewn into the luff, tack to head.
+
+    Run up the cloth a little off the luff line itself (`u = 0.015`) rather
+    than on it: the luff line *is* the mast track or the forestay, and a rope
+    modelled exactly on top of the spar it runs beside is a rope indistinguishable
+    from the spar. A boltrope is proud of the sail on the sail's own side of it.
+    """
+    path = [surface(0.015, i / (count - 1)) for i in range(count)]
+    rings = sweep_rings(circle(tube_radius, 6), path)
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    recalc_normals(obj)
+    return obj
+
+
+def _build_boltropes(collection, main_surface, genoa_surface):
+    return join(
+        [
+            _boltrope(collection, "main_boltrope", main_surface),
+            _boltrope(collection, "genoa_boltrope", genoa_surface),
+        ],
+        "boltropes",
+    )
+
+
+BATTENS = (
+    # (v, reach) -- height up the leech, and how far the pocket runs in as a
+    # fraction of the chord there. Longest a third of the way up, where the
+    # roach is fullest and needs the most support; shortest at the head, where
+    # both the roach and the chord itself are running out.
+    (0.30, 0.34),
+    (0.50, 0.38),
+    (0.68, 0.34),
+    (0.85, 0.24),
+)
+
+
+def _batten(collection, name, surface, v, reach, segments=6, radius=0.006):
+    """One batten, run in from just short of the leech and following the
+    sail's own camber rather than a straight chord -- a real batten bends with
+    the cloth it is stiffening, it does not fight it flat."""
+    us = [_lerp(0.99, 1.0 - reach, i / segments) for i in range(segments + 1)]
+    path = [surface(u, v) for u in us]
+    rings = sweep_rings(circle(radius, 6), path)
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    recalc_normals(obj)
+    return obj
+
+
+def _build_battens(collection, main_surface):
+    """Battens in their pockets, mainsail only -- a genoa this size is not
+    full-length enough to carry any, and would not have a leech straight
+    enough to need one if it did."""
+    battens = [
+        _batten(collection, f"batten_{i}", main_surface, v, reach)
+        for i, (v, reach) in enumerate(BATTENS)
+    ]
+    return join(battens, "mainsail_battens")
+
+
+def _build_headboard(collection, surface, half_u=0.11, v0=0.945, v1=0.975, thickness=0.006):
+    """The rigid plate at the head of the mainsail.
+
+    Built a little below the head itself for the reason the head cringle is:
+    the surface function's luff and leech meet at a single point at `v = 1`,
+    and a plate spanning `u` needs a real chord to span. A trapezoid rather
+    than a rectangle, because the head above it narrows to that point and a
+    square-cornered board would stand outside the sail it is sewn to.
+    """
+    outline = [
+        (0.5 - half_u, v0),
+        (0.5 + half_u, v0),
+        (0.5 + half_u * 0.55, v1),
+        (0.5 - half_u * 0.55, v1),
+    ]
+    origin, eu, ev = _surface_frame(surface, 0.5, (v0 + v1) / 2)
+    normal = _unit(_cross(eu, ev))
+    lift = tuple(normal[k] * thickness for k in range(3))
+
+    top = [surface(u, v) for (u, v) in outline]
+    rings = [
+        [tuple(p[k] + lift[k] for k in range(3)) for p in top],
+        [tuple(p[k] - lift[k] for k in range(3)) for p in top],
+    ]
+
+    obj = grid_to_mesh("mainsail_headboard", rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[1])))
+    recalc_normals(obj)
+    shade_smooth(obj, sharp_above_degrees=30.0)
+    return obj
