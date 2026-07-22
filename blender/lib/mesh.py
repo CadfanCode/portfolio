@@ -262,6 +262,72 @@ def shade_smooth(obj: bpy.types.Object, sharp_above_degrees: float = 40.0) -> No
     bm.free()
 
 
+def bevel(
+    obj: bpy.types.Object,
+    width: float = 0.003,
+    segments: int = 2,
+    sharper_than_degrees: float = 25.0,
+    smooth_above_degrees: float = 40.0,
+) -> None:
+    """Take the arris off every hard edge, then shade the result smooth.
+
+    Nothing on a boat has a mathematically sharp edge. Joinery is radiused
+    because a square corner splinters and hurts to fall against; mouldings are
+    radiused because a female mould cannot be pulled off a knife edge; and metal
+    is radiused because it is drawn or cast. A model without that reads as
+    computer geometry no matter how correct its dimensions are, and it reads that
+    way for a specific reason: a real edge catches a highlight along its length,
+    and a zero-width edge has no length to catch one with.
+
+    So this is a lighting device before it is a shape one. `width` is deliberately
+    small -- a 3 mm radius is invisible as a shape at any distance and is the
+    difference between an edge that glints and an edge that does not.
+
+    Only edges between two faces are touched, and only those already sharper than
+    `sharper_than_degrees`. Boundary edges are left alone: an open sheet -- a
+    sail, the deckhead -- has nothing on the other side to bevel into, and
+    rounding its border would pull the border off the shape it was cut to.
+
+    `clamp_overlap` is on because the alternative is silent self-intersection
+    wherever a panel is thinner than twice the width, and thin panels are most of
+    the fit-out.
+    """
+    from math import degrees
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+
+    edges = [
+        edge
+        for edge in bm.edges
+        if len(edge.link_faces) == 2
+        and degrees(edge.calc_face_angle(0.0)) > sharper_than_degrees
+    ]
+
+    if edges:
+        bmesh.ops.bevel(
+            bm,
+            geom=edges,
+            offset=width,
+            offset_type="OFFSET",
+            segments=max(1, segments),
+            profile=0.5,
+            affect="EDGES",
+            clamp_overlap=True,
+            miter_outer="ARC" if segments > 1 else "SHARP",
+        )
+
+    for face in bm.faces:
+        face.smooth = True
+    for edge in bm.edges:
+        if len(edge.link_faces) == 2:
+            edge.smooth = degrees(edge.calc_face_angle(0.0)) < smooth_above_degrees
+
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
 def recalc_normals(obj: bpy.types.Object, inward: bool = False) -> None:
     """Make normals point consistently outwards, or inwards.
 
