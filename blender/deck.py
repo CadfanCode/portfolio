@@ -23,6 +23,7 @@ surrounding deck the way a GRP moulding does instead of stopping at a hard edge.
 import params
 from lib.curves import Curve
 from lib.mesh import (
+    bevel,
     cap_loop,
     face_towards,
     grid_to_mesh,
@@ -79,7 +80,7 @@ def build(collection):
     deck_fwd, fwd_ring = _build_forward(collection, sheer, half_beam)
     deck_aft, aft_ring = _build_aft(collection, sheer, half_beam)
 
-    return {
+    parts = {
         "deck_fwd": deck_fwd,
         "deck_aft": deck_aft,
         "companionway": _build_companionway(collection, fwd_ring, aft_ring),
@@ -90,6 +91,19 @@ def build(collection):
         "forehatch_pane": pane,
         "windows": _build_windows(collection, sheer, half_beam),
     }
+
+    # Nothing on a real deck moulding has a mathematically sharp edge -- a
+    # female mould cannot be pulled off a knife edge -- so every hard-surfaced
+    # part here gets the arris taken off it. The two big lofted skins are
+    # deliberately left out: their few genuinely sharp lines (the coachroof
+    # shoulder, the deck step's chevron) are creases the mesh was built to
+    # hold, kept crisp by `shade_smooth`'s angle threshold rather than by
+    # geometry, and beveling every qualifying edge across the model's
+    # second-largest mesh buys nothing here that the shading does not already.
+    for name in ("companionway_frame", "cockpit_lids", "anchorbox", "forehatch"):
+        bevel(parts[name], width=0.003, segments=1)
+
+    return parts
 
 
 def _lerp(a, b, t):
@@ -272,6 +286,22 @@ def deck_edge_half_width(station):
     half_beam = Curve(params.HALF_BEAM)
     edge_x, _ = deck_edge(*_sheer_edge(sheer, half_beam, station), station)
     return edge_x
+
+
+def coachroof_half_width(station):
+    """Half-width of the coachroof top at a station.
+
+    For anything standing on the strip of side deck between the coachroof and
+    the deck edge -- the genoa track, in particular -- which has no business
+    landing on either. Not needed until something did: everything else here
+    that reads the roof asks `surface_function` for a height, not a width.
+    """
+    sheer = Curve(params.SHEER)
+    half_beam = Curve(params.HALF_BEAM)
+    roof_half = Curve(params.COACHROOF_HALF_WIDTH)
+    raw_x, raw_z = _sheer_edge(sheer, half_beam, station)
+    edge_x, _ = deck_edge(raw_x, raw_z, station)
+    return _coachroof_half_width(roof_half, station, edge_x)
 
 
 def deck_lift(station, t_out):

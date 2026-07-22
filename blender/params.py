@@ -1028,15 +1028,22 @@ about 160%, and it has to go somewhere. Out to port because that is the leeward
 side; the sheet leads to the port side deck and the clew is over the water
 outboard of the shrouds, which is what a genoa this size does."""
 
-SAIL_NUMBER = "SWE 1234"
-SAIL_NUMBER_HEIGHT = 0.250
-"""The registration, on the headsail.
+SAIL_NUMBER = "SWE 2875"
+SAIL_NUMBER_HEIGHT = 0.300
+"""The registration, on the mainsail.
 
-250 mm characters. The class rules are silent and the ISAF minimum for a boat
-this length is 230, so this is a shade over the smallest legal size -- chosen
-because the number has to fit on the part of a 160% genoa that is forward of the
-mast, and at 300 it did not. On the headsail rather than the mainsail, which is
-where this boat's owner wants it.
+This used to be argued onto the headsail, on the grounds that a 160% genoa is
+the biggest sail flying and the number needs the room. That argument is about
+where there happens to be space, not about where a sail number belongs: a
+genoa is whichever headsail is bent on for the day's wind and the first thing
+that comes off when it breezes up, and a masthead rig's identity is carried by
+the sail that never comes off the boat, which is the mainsail. Every one-design
+fleet of this kind carries its numbers there for exactly that reason.
+
+300 mm rather than the ISAF minimum of 230 for a boat this length: the mainsail
+does not have to share its forward third with a mast the way the genoa did, so
+there is no reason left to cut the number to the smallest legal size, and 300
+is what a boat of 7.6 m actually carries.
 
 Both sides carry it, each reading the right way round from its own side, because
 the camera path passes the boat on one side and stops on the other."""

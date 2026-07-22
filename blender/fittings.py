@@ -29,7 +29,9 @@ from math import cos, hypot, pi, sin
 import deck
 import keel_rudder
 import params
-from lib.mesh import cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
+import rig
+import sails
+from lib.mesh import bevel, cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
 from lib.sweep import circle, sweep_rings
 
 
@@ -38,19 +40,49 @@ def build(collection):
     cockpit = deck.cockpit_surface_function()
     afterdeck = deck.aft_deck_function()
     foredeck = deck.surface_function()
+    g = rig.layout(deck.height_function())
 
-    return {
+    parts = {
         "cockpit_grating": _build_grating(collection, cockpit),
         "traveller": _build_traveller(collection, cockpit),
         "stern_rail": _build_stern_rail(collection, afterdeck),
         "winches": _build_winches(collection, afterdeck),
+        "winch_handle": _build_winch_handle(collection, afterdeck),
         "tiller": _build_tiller(collection),
         "pulpit": _build_pulpit(collection, foredeck),
         "pulpit_block": _build_pulpit_block(collection, foredeck),
         "stanchions": _build_stanchions(collection, foredeck),
         "lifelines": _build_lifelines(collection, foredeck),
         "outboard": _build_outboard(collection),
+        "outboard_fuel": _build_outboard_fuel(collection, cockpit),
+        "mast_clutches": _build_mast_clutches(collection, g),
+        "mooring_cleats": _build_mooring_cleats(collection, foredeck, afterdeck),
+        "anchor": _build_anchor(collection, foredeck),
+        "boarding_ladder": _build_boarding_ladder(collection, afterdeck),
+        "nav_lights": _build_nav_lights(collection, foredeck, afterdeck),
+        "genoa_track": _build_genoa_track(collection),
+        "sheets": _build_sheets(collection, cockpit, afterdeck, g),
     }
+
+    # Every box, pad and moulded plate here gets its arris taken off -- see
+    # `lib.mesh.bevel`. Swept tubes (rails, wires, rope) are left alone: they
+    # are already round, and a bevel operator finds nothing sharper than its
+    # own threshold on a cylinder to work on anyway.
+    for name in (
+        "traveller",
+        "outboard",
+        "pulpit_block",
+        "winch_handle",
+        "mast_clutches",
+        "mooring_cleats",
+        "anchor",
+        "boarding_ladder",
+        "nav_lights",
+        "genoa_track",
+    ):
+        bevel(parts[name], width=0.003, segments=1)
+
+    return parts
 
 
 # --------------------------------------------------------------------------
@@ -822,13 +854,13 @@ def _transom_station(z):
     return params.LOA - (params.FREEBOARD_STERN - z) * rake
 
 
-def _build_outboard(collection):
-    """Bracket, powerhead, leg, gearcase and propeller, hung to starboard.
+def _outboard_layout():
+    """Every point the outboard and its fuel line hang from, computed once.
 
-    Six primitives, and the only one of them anybody will look at twice is the
-    cowling -- which is why it is the only one with a section rather than
-    corners. The rest is a leg going into the water, seen from the quarter, at
-    two metres.
+    Public within this module for the reason `rig.layout` is public across
+    modules: the fuel line has to end exactly where the powerhead is, and a
+    second copy of this arithmetic is a copy that drifts from the first the
+    next time an `OUTBOARD_*` number moves.
     """
     offset = params.OUTBOARD_OFFSET
     top = params.OUTBOARD_BRACKET_TOP
@@ -840,69 +872,341 @@ def _build_outboard(collection):
 
     cowl_base = top + 0.045
     case_z = params.OUTBOARD_SHAFT_FOOT + 0.040
-    case_nose = shaft_y + 0.095
-    case_tail = shaft_y - 0.195
+
+    return {
+        "offset": offset,
+        "top": top,
+        "length": length,
+        "width": width,
+        "cowl_height": cowl_height,
+        "transom_y": transom_y,
+        "mount_y": mount_y,
+        "shaft_y": shaft_y,
+        "cowl_base": cowl_base,
+        "case_z": case_z,
+        "case_nose": shaft_y + 0.095,
+        "case_tail": shaft_y - 0.195,
+    }
+
+
+def _build_outboard(collection):
+    """Bracket, clamp, cowling, tiller arm, leg, gearcase and propeller, hung
+    to starboard on a transom bracket.
+
+    A real long-shaft two-stroke, at the level of detail the quarter view
+    actually resolves: a moulded cowling with a parting line and vents, a
+    carry handle and a pull-start on top of it, the steering/throttle arm
+    folded back with its twist grip, the leg with its anti-cavitation plate
+    and skeg, the three-bladed prop, and the transom clamp with the two screw
+    handles and the pin it tilts on.
+
+    Nothing here moves the propeller, the gearcase or the clamp box from
+    where the previous, cruder version put them -- `verify.py`'s propeller and
+    rudder-clearance checks read the same points either way, and both of them
+    are the reason this geometry is not free (see `OUTBOARD_OFFSET`'s note).
+    """
+    o = _outboard_layout()
 
     parts = [
         _transom_pad(
             "outboard_bracket",
             collection,
-            offset - 0.085,
-            offset + 0.085,
-            top - 0.150,
-            top,
+            o["offset"] - 0.085,
+            o["offset"] + 0.085,
+            o["top"] - 0.150,
+            o["top"],
             0.070,
         ),
         _box(
             "outboard_clamp",
             collection,
-            offset - 0.052,
-            offset + 0.052,
-            shaft_y - 0.045,
-            mount_y,
-            top - 0.030,
-            cowl_base + 0.010,
+            o["offset"] - 0.052,
+            o["offset"] + 0.052,
+            o["shaft_y"] - 0.045,
+            o["mount_y"],
+            o["top"] - 0.030,
+            o["cowl_base"] + 0.010,
         ),
-        _loft_stack(
-            "outboard_cowling",
-            collection,
-            [
-                (cowl_base, _rounded_section(width * 0.92, length * 0.92)),
-                (cowl_base + 0.030, _rounded_section(width, length)),
-                (cowl_base + cowl_height - 0.055, _rounded_section(width, length)),
-                (
-                    cowl_base + cowl_height,
-                    _rounded_section(width * 0.80, length * 0.78),
-                ),
-            ],
-            offset,
-            shaft_y - 0.030,
-        ),
+        _build_clamp_screws(collection, o),
+        _build_tilt_pivot(collection, o),
+        _build_cowling(collection, o),
+        _build_tiller_arm(collection, o),
         _loft_stack(
             "outboard_leg",
             collection,
             [
                 (z, _rounded_section(0.050, 0.130, count=10, power=2.4))
-                for z in (cowl_base, cowl_base - 0.120, case_z + 0.070, case_z)
+                for z in (
+                    o["cowl_base"],
+                    o["cowl_base"] - 0.120,
+                    o["case_z"] + 0.070,
+                    o["case_z"],
+                )
             ],
-            offset,
-            shaft_y,
+            o["offset"],
+            o["shaft_y"],
         ),
-        _build_gearcase(collection, offset, case_z, case_nose, case_tail),
+        _build_gearcase(collection, o["offset"], o["case_z"], o["case_nose"], o["case_tail"]),
+        # The anti-cavitation plate: the flat wing just above the prop that
+        # keeps aerated surface water off the blades. It was already here,
+        # under a name that did not say so.
         _box(
-            "outboard_plate",
+            "outboard_anticavitation_plate",
             collection,
-            offset - 0.070,
-            offset + 0.070,
-            case_tail - 0.055,
-            case_tail + 0.100,
-            case_z + 0.042,
-            case_z + 0.050,
+            o["offset"] - 0.070,
+            o["offset"] + 0.070,
+            o["case_tail"] - 0.055,
+            o["case_tail"] + 0.100,
+            o["case_z"] + 0.042,
+            o["case_z"] + 0.050,
         ),
+        _build_skeg(collection, o),
     ]
-    parts.extend(_build_propeller(collection, offset, case_tail, case_z))
+    parts.extend(_build_propeller(collection, o["offset"], o["case_tail"], o["case_z"]))
 
     return join(parts, "outboard")
+
+
+def _build_clamp_screws(collection, o):
+    """The two screw handles that clamp the bracket to the transom -- the only
+    part of the mount that turns, and the part that says "transom bracket"
+    rather than "welded on"."""
+    z = o["top"] - 0.010
+    parts = []
+    for side in (-1, 1):
+        x = o["offset"] + side * 0.058
+        parts.append(
+            _tube(
+                f"outboard_clamp_screw_{side}",
+                collection,
+                [(x, o["mount_y"] - 0.006, z), (x, o["mount_y"] + 0.045, z)],
+                0.007,
+            )
+        )
+        parts.append(
+            _tube(
+                f"outboard_clamp_handle_{side}",
+                collection,
+                [(x - 0.032, o["mount_y"] + 0.045, z), (x + 0.032, o["mount_y"] + 0.045, z)],
+                0.008,
+            )
+        )
+    return join(parts, "outboard_clamp_screws")
+
+
+def _build_tilt_pivot(collection, o):
+    """The pin the leg assembly tilts up on, clear of the water when the
+    motor is not running."""
+    x0 = o["offset"] - 0.062
+    x1 = o["offset"] + 0.062
+    y = o["mount_y"] - 0.010
+    z = o["top"] - 0.095
+    return _tube("outboard_tilt_pivot", collection, [(x0, y, z), (x1, y, z)], 0.008)
+
+
+def _build_cowling(collection, o):
+    """The engine cover: a moulded shell with a horizontal parting line, low
+    side vents, a carry handle across the top and the pull-start's boss under
+    it.
+
+    The parting line is a real step in the loft rather than a decal -- two
+    rings a few millimetres apart with the outer one very slightly larger,
+    which is what the seam between a moulded top and bottom half actually
+    looks like from a few metres off.
+    """
+    x, y = o["offset"], o["shaft_y"] - 0.030
+    base, height = o["cowl_base"], o["cowl_height"]
+    length, width = o["length"], o["width"]
+    seam = base + height * 0.40
+
+    shell = _loft_stack(
+        "outboard_cowling",
+        collection,
+        [
+            (base, _rounded_section(width * 0.92, length * 0.92)),
+            (base + 0.030, _rounded_section(width, length)),
+            (seam - 0.006, _rounded_section(width * 1.010, length * 1.010)),
+            (seam, _rounded_section(width * 0.985, length * 0.985)),
+            (base + height - 0.055, _rounded_section(width, length)),
+            (base + height, _rounded_section(width * 0.80, length * 0.78)),
+        ],
+        x,
+        y,
+    )
+
+    parts = [shell]
+
+    # Vents: three low ribs a side, aft of the parting line and clear of the
+    # handle -- roughly where a two-stroke's cowling actually breathes.
+    for side in (-1, 1):
+        vx = x + side * width * 0.485
+        for i in range(3):
+            vz = base + 0.050 + i * 0.026
+            parts.append(
+                _box(
+                    f"outboard_vent_{side}_{i}",
+                    collection,
+                    vx - 0.004,
+                    vx + 0.004,
+                    y - length * 0.20,
+                    y + length * 0.20,
+                    vz,
+                    vz + 0.009,
+                )
+            )
+
+    # Carry handle: a bail across the top, ahead of the pull-start.
+    handle_z = base + height
+    parts.append(
+        _tube(
+            "outboard_handle",
+            collection,
+            _densify(
+                [
+                    (x - 0.006, y + length * 0.14, handle_z),
+                    (x - 0.058, y + length * 0.14, handle_z + 0.036),
+                    (x - 0.058, y - length * 0.08, handle_z + 0.036),
+                    (x - 0.006, y - length * 0.08, handle_z),
+                ],
+                per_segment=3,
+            ),
+            0.007,
+            segments=8,
+        )
+    )
+
+    # Pull-start: the recoil housing's boss, aft of the handle.
+    parts.append(
+        _loft_stack(
+            "outboard_pullstart",
+            collection,
+            [
+                (handle_z - 0.006, circle(0.038, 14)),
+                (handle_z + 0.008, circle(0.034, 14)),
+            ],
+            x + 0.028,
+            y - length * 0.20,
+        )
+    )
+
+    return join(parts, "outboard_cowling")
+
+
+def _build_tiller_arm(collection, o):
+    """The steering/throttle arm, folded aft and outboard against the cowling
+    with its twist grip -- how a small outboard is left when nobody is
+    steering it.
+
+    Folded outboard, away from the centreline, rather than inboard towards
+    it: the rudder is on the centreline and `verify.py` checks this motor
+    clear of it (`outboard clear of the rudder`) -- an arm that swung the
+    other way to reach a helmsman would cross the blade it is checked
+    against.
+    """
+    x, y = o["offset"], o["shaft_y"]
+    mount = (x - 0.055, y + 0.030, o["cowl_base"] + o["cowl_height"] * 0.55)
+    elbow = (x + 0.075, y - 0.145, mount[2] - 0.010)
+    grip_start = (x + 0.155, y - 0.260, mount[2] - 0.020)
+    grip_end = (grip_start[0] + 0.010, grip_start[1] - 0.075, grip_start[2] - 0.006)
+
+    arm = _tube(
+        "outboard_tiller_arm",
+        collection,
+        _densify([mount, elbow, grip_start], per_segment=4),
+        0.009,
+        segments=8,
+    )
+    grip = _tube(
+        "outboard_tiller_grip", collection, [grip_start, grip_end], 0.017, segments=10
+    )
+    return join([arm, grip], "outboard_tiller")
+
+
+def _build_skeg(collection, o):
+    """A small fin below the gearcase, aft of the prop -- what takes a
+    grounding first on a boat this size, rather than the blades.
+
+    Kept shallower than the propeller's own lowest point on purpose:
+    `verify.py`'s "whole propeller below the waterline" check takes the
+    built outboard's minimum z and adds the prop's diameter back to find the
+    top of the disc, which only means what it says if the propeller really is
+    the deepest thing on the model. A skeg that reached past it would read
+    fine and quietly break what the check is measuring.
+    """
+    tail = o["case_tail"] - 0.010
+    nose = o["case_tail"] + 0.075
+    return _loft_stack(
+        "outboard_skeg",
+        collection,
+        [
+            (o["case_z"] - 0.005, _rounded_section(0.026, nose - tail, count=8, power=3.0)),
+            (
+                o["case_z"] - 0.070,
+                _rounded_section(0.014, (nose - tail) * 0.55, count=8, power=3.0),
+            ),
+        ],
+        o["offset"],
+        (nose + tail) / 2,
+    )
+
+
+def _build_outboard_fuel(collection, cockpit):
+    """A portable fuel tank on the cockpit sole and the line running from it
+    up over the coaming to the outboard.
+
+    The brochure stows both motor and tank in the side lockers
+    (`COCKPIT_LOCKER_START`/`END`'s note), which is where they belong on a
+    passage. This boat is shown with its sails already drawing and about to
+    get under way, which is exactly when the tank is out on the sole and
+    connected rather than shut away.
+    """
+    o = _outboard_layout()
+
+    tank_station = params.COCKPIT_END - 0.220
+    footwell, seat, _ = deck.cockpit_widths(tank_station)
+    tank_x = min(o["offset"] * 0.55, (footwell + seat) / 2)
+
+    length, width, height = 0.220, 0.150, 0.130
+    base = cockpit(tank_station, tank_x)
+    tank = _loft_stack(
+        "outboard_tank",
+        collection,
+        [
+            (base, _rounded_section(width, length, count=10, power=3.0)),
+            (base + height * 0.94, _rounded_section(width, length, count=10, power=3.0)),
+            (
+                base + height,
+                _rounded_section(width * 0.55, length * 0.5, count=10, power=3.0),
+            ),
+        ],
+        tank_x,
+        _y(tank_station),
+    )
+
+    coaming_station = params.COCKPIT_END - 0.020
+    coaming_top = cockpit(coaming_station, tank_x) + 0.220
+    outboard_point = (
+        o["offset"] - 0.055,
+        o["mount_y"] + 0.055,
+        o["top"] + o["cowl_height"] * 0.25,
+    )
+
+    hose = _tube(
+        "outboard_fuel_line",
+        collection,
+        _densify(
+            [
+                (tank_x + width * 0.20, _y(tank_station), base + height * 0.80),
+                (tank_x + 0.140, _y(coaming_station), coaming_top),
+                outboard_point,
+            ],
+            per_segment=4,
+        ),
+        0.0055,
+        segments=6,
+    )
+
+    return join([tank, hose], "outboard_fuel")
 
 
 def _transom_pad(name, collection, x0, x1, z0, z1, depth):
@@ -1032,3 +1336,468 @@ def _build_propeller(collection, x, tail, z):
         parts.append(_finish(obj, sharp=30.0))
 
     return parts
+
+
+# --------------------------------------------------------------------------
+# The mast foot: halyard clutches
+# --------------------------------------------------------------------------
+
+
+def _build_mast_clutches(collection, g):
+    """A bank of two halyard clutches just abaft the mast -- where the main
+    and genoa halyards in `rig.py`'s running rigging actually end.
+
+    Simple wedge-topped boxes rather than the real hardware's cam-and-lever:
+    what reads from the cockpit is the bank of them on the coachroof, not the
+    mechanism, and `rig._build_running_rigging` already reads the same
+    `g["clutch_station"]`/`g["clutch_half_beam"]` this does, so the ropes end
+    exactly here whatever those two numbers are.
+    """
+    station = g["clutch_station"]
+    half = g["clutch_half_beam"]
+    z = g["clutch_z"]
+
+    boxes = []
+    for side in (-1, 1):
+        x = side * half
+        boxes.append(
+            _box(
+                f"mast_clutch_{side}",
+                collection,
+                x - 0.028,
+                x + 0.028,
+                _y(station) - 0.042,
+                _y(station) + 0.042,
+                z,
+                z + 0.032,
+            )
+        )
+    return join(boxes, "mast_clutches")
+
+
+# --------------------------------------------------------------------------
+# Winch handle and its pocket
+# --------------------------------------------------------------------------
+
+
+def _build_winch_handle(collection, afterdeck):
+    """A winch handle, stowed in a pocket beside the after winch rather than
+    left in the winch it turns.
+
+    One only, and on the port after winch -- a handle left in a self-tailing
+    winch is the first thing to go over the side when the boom comes across,
+    and a pocket on the coaming is where it actually lives between tacks.
+    """
+    station = params.COCKPIT_WINCH_STATIONS[-1]
+    side = -1
+    centre = winch_centre(station)
+    x = side * (centre + params.COCKPIT_WINCH_BASE + 0.026)
+    z = afterdeck(station, abs(x))
+
+    pocket = _box(
+        "winch_handle_pocket",
+        collection,
+        x - 0.016,
+        x + 0.016,
+        _y(station) - 0.080,
+        _y(station) + 0.010,
+        z,
+        z + 0.048,
+    )
+    shaft = _tube(
+        "winch_handle_shaft",
+        collection,
+        [
+            (x, _y(station) - 0.065, z + 0.026),
+            (x, _y(station) + 0.175, z + 0.026),
+        ],
+        0.008,
+        segments=8,
+    )
+    grip = _tube(
+        "winch_handle_grip",
+        collection,
+        [
+            (x, _y(station) + 0.175, z + 0.026),
+            (x, _y(station) + 0.175, z + 0.058),
+        ],
+        0.011,
+        segments=8,
+    )
+    return join([pocket, shaft, grip], "winch_handle")
+
+
+# --------------------------------------------------------------------------
+# Mooring cleats
+# --------------------------------------------------------------------------
+
+CLEAT_LENGTH = 0.110
+CLEAT_BASE = 0.026
+CLEAT_HEIGHT = 0.038
+"""A simple two-horn cleat: a low base with a horn rising at each end.
+FITTED -- the proportions of a small cast cleat for a boat this size, not any
+specific catalogue part."""
+
+
+def _cleat(collection, name, x, station, z):
+    """One mooring cleat, horns fore-and-aft along the boat rather than
+    athwartships, which is the way a cleat actually takes a mooring line's
+    load along the deck edge."""
+    y = _y(station)
+    half_len = CLEAT_LENGTH / 2
+    base = _box(
+        f"{name}_base",
+        collection,
+        x - CLEAT_BASE / 2,
+        x + CLEAT_BASE / 2,
+        y - half_len,
+        y + half_len,
+        z,
+        z + 0.008,
+    )
+    horns = []
+    for sign in (-1, 1):
+        hy = y + sign * half_len * 0.7
+        horns.append(
+            _tube(
+                f"{name}_horn_{sign}",
+                collection,
+                _densify(
+                    [
+                        (x, hy, z + 0.008),
+                        (x, hy, z + CLEAT_HEIGHT),
+                        (x, hy - sign * 0.026, z + CLEAT_HEIGHT - 0.006),
+                    ],
+                    per_segment=3,
+                ),
+                0.009,
+                segments=8,
+            )
+        )
+    return join([base] + horns, name)
+
+
+def _build_mooring_cleats(collection, foredeck, afterdeck):
+    """Two pairs: one on the foredeck abaft the pulpit legs, one on the after
+    deck either side of the stern rail's return -- where a boat this size is
+    actually made fast from, bow and stern."""
+    fwd_station = params.PULPIT_FOOT_STATION + 0.300
+    aft_station = params.COCKPIT_END + 0.170
+
+    cleats = []
+    for side in (-1, 1):
+        x = side * (deck.deck_edge_half_width(fwd_station) - 0.075)
+        z = foredeck(fwd_station, abs(x))
+        cleats.append(_cleat(collection, f"cleat_fwd_{side}", x, fwd_station, z))
+
+    for side in (-1, 1):
+        x = side * (deck.deck_edge_half_width(aft_station) - 0.075)
+        z = afterdeck(aft_station, abs(x))
+        cleats.append(_cleat(collection, f"cleat_aft_{side}", x, aft_station, z))
+
+    return join(cleats, "mooring_cleats")
+
+
+# --------------------------------------------------------------------------
+# The anchor
+# --------------------------------------------------------------------------
+
+
+def _build_anchor(collection, foredeck):
+    """A plow anchor stowed at the bow, shackled to a short length of chain
+    that leads back into the anchor box -- what `PULPIT_BLOCK`'s teak pad is
+    there to take the noise of (see its note in `params.py`).
+
+    A plow rather than a fisherman or a Danforth: it is the shape that stows
+    against a bow roller without being lashed down, which is the only kind of
+    anchor a flush foredeck with nothing to trip over (`ANCHORBOX_LID_PROUD`'s
+    own boast) would actually carry loose.
+    """
+    nose = params.PULPIT_NOSE_STATION
+    station = nose - 0.060
+    z = foredeck(station, 0.0) + params.STANCHION_HEIGHT * 0.35
+
+    shank = _tube(
+        "anchor_shank",
+        collection,
+        [(0.0, _y(station), z + 0.060), (0.0, _y(station - 0.050), z - 0.010)],
+        0.010,
+    )
+    blade = _loft_stack(
+        "anchor_blade",
+        collection,
+        [
+            (z - 0.045, _rounded_section(0.075, 0.140, count=10, power=2.2)),
+            (z - 0.010, _rounded_section(0.100, 0.195, count=10, power=2.2)),
+        ],
+        0.0,
+        _y(station - 0.050),
+    )
+    chain = _tube(
+        "anchor_chain",
+        collection,
+        _densify(
+            [
+                (0.0, _y(station), z + 0.060),
+                (0.0, _y(station + 0.090), z + 0.030),
+                (0.0, _y(station + 0.150), foredeck(station + 0.150, 0.0) + 0.010),
+            ],
+            per_segment=3,
+        ),
+        0.006,
+        segments=6,
+    )
+
+    return join([shank, blade, chain], "anchor")
+
+
+# --------------------------------------------------------------------------
+# Boarding ladder and nav lights
+# --------------------------------------------------------------------------
+
+
+def _build_boarding_ladder(collection, afterdeck):
+    """A folding boarding ladder hooked over the pushpit, port quarter --
+    clear of the outboard, which has the starboard quarter to itself."""
+    station = params.COCKPIT_END + 0.060
+    x = -params.STERN_RAIL_LEG_HALF_BEAM * 0.85
+    hook_z = afterdeck(station, abs(x)) + params.STERN_RAIL_STAND
+
+    rails = []
+    for side in (-1, 1):
+        rx = x + side * 0.014
+        rails.append(
+            _tube(
+                f"ladder_rail_{side}",
+                collection,
+                _densify(
+                    [
+                        (rx, _y(station), hook_z),
+                        (rx, _y(station) + 0.060, hook_z + 0.018),
+                        (rx, _y(station) + 0.060, hook_z - 0.420),
+                    ],
+                    per_segment=3,
+                ),
+                0.008,
+                segments=6,
+            )
+        )
+
+    rungs = [
+        _tube(
+            f"ladder_rung_{i}",
+            collection,
+            [
+                (x - 0.014, _y(station) + 0.060, hook_z - 0.130 - i * 0.120),
+                (x + 0.014, _y(station) + 0.060, hook_z - 0.130 - i * 0.120),
+            ],
+            0.007,
+            segments=6,
+        )
+        for i in range(3)
+    ]
+
+    return join(rails + rungs, "boarding_ladder")
+
+
+def _build_nav_lights(collection, foredeck, afterdeck):
+    """Port and starboard sidelights at the pulpit, a white light at the
+    stern -- simple lensed boxes, cheap enough that leaving them off would be
+    the more noticeable choice."""
+    station = params.PULPIT_FOOT_STATION - 0.100
+    lights = []
+    for side, name in ((-1, "port"), (1, "starboard")):
+        x = side * (deck.deck_edge_half_width(station) - 0.030)
+        z = foredeck(station, abs(x)) + 0.060
+        lights.append(
+            _box(
+                f"navlight_{name}",
+                collection,
+                x - 0.018,
+                x + 0.018,
+                _y(station) - 0.022,
+                _y(station) + 0.022,
+                z,
+                z + 0.030,
+            )
+        )
+
+    stern_station = params.COCKPIT_END + 0.010
+    z = afterdeck(stern_station, 0.0) + params.STERN_RAIL_STAND + 0.015
+    lights.append(
+        _box(
+            "navlight_stern",
+            collection,
+            -0.018,
+            0.018,
+            _y(stern_station) - 0.010,
+            _y(stern_station) + 0.022,
+            z,
+            z + 0.028,
+        )
+    )
+
+    return join(lights, "nav_lights")
+
+
+# --------------------------------------------------------------------------
+# The genoa track
+# --------------------------------------------------------------------------
+
+GENOA_TRACK_STATION = 4.900
+GENOA_TRACK_LENGTH = 0.500
+GENOA_CAR_POSITION = 0.55
+"""The genoa cars run on the port side deck, centred between the coachroof
+and the deck edge -- the strip that has no business belonging to either. One
+car, at the position this sail is trimmed to in this scene, rather than a
+fully adjustable range: the brief is a working sheet lead, not a catalogue of
+every hole in the track."""
+
+
+def genoa_car_x(station):
+    """Where a genoa track sits on the side deck: centred between the
+    coachroof and the deck edge, the same way `winch_centre` finds the middle
+    of whatever side deck the cockpit has."""
+    return (deck.coachroof_half_width(station) + deck.deck_edge_half_width(station)) / 2
+
+
+def genoa_car_point():
+    """Where the sheet leaves the car, in world space -- port side, since the
+    genoa is set to starboard wind and sheeted to port (see
+    `params.GENOA_CLEW_OFFSET`'s note)."""
+    car_station = (
+        GENOA_TRACK_STATION - GENOA_TRACK_LENGTH / 2 + GENOA_TRACK_LENGTH * GENOA_CAR_POSITION
+    )
+    x = -genoa_car_x(car_station)
+    z = deck.surface_function()(car_station, abs(x)) + 0.028
+    return (x, _y(car_station), z)
+
+
+def _build_genoa_track(collection):
+    """A short track and car on the port side deck, where the working genoa
+    sheet leads aft to the winch."""
+    start = GENOA_TRACK_STATION - GENOA_TRACK_LENGTH / 2
+    end = GENOA_TRACK_STATION + GENOA_TRACK_LENGTH / 2
+    x = -genoa_car_x(GENOA_TRACK_STATION)
+    surface = deck.surface_function()
+    z = surface(GENOA_TRACK_STATION, abs(x))
+
+    rail = _box(
+        "genoa_track_rail", collection, x - 0.012, x + 0.012, _y(end), _y(start), z, z + 0.010
+    )
+    car_point = genoa_car_point()
+    car = _box(
+        "genoa_car",
+        collection,
+        x - 0.022,
+        x + 0.022,
+        car_point[1] - 0.026,
+        car_point[1] + 0.026,
+        z + 0.008,
+        z + 0.030,
+    )
+    return join([rail, car], "genoa_track")
+
+
+# --------------------------------------------------------------------------
+# Sheets: rope handled from the cockpit
+#
+# The standing rigging and the halyards are `rig.py`'s, because both ends of
+# them answer to the mast. Sheets are built here instead, because both ends
+# of *these* are cockpit hardware -- the traveller and the winches -- and a
+# rope is easiest to get right from the same module as the fittings it is
+# reeved through.
+# --------------------------------------------------------------------------
+
+
+def _rope(name, collection, path, radius=0.007, segments=6):
+    """A length of sheet: a tube, fatter than a halyard because it is handled
+    under load rather than just hoisted and cleated."""
+    rings = sweep_rings(circle(radius, segments), _densify(path, per_segment=4))
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    return _finish(obj, sharp=60.0)
+
+
+def _flat_coil(collection, name, centre, z, radius, turns, tube_radius=0.0055):
+    """A coil of rope flemished flat on deck: a tightening spiral in the
+    horizontal plane, all of it at the one height above whatever the deck is
+    doing there -- the same cheap trick as `rig.py`'s hanging coils, laid down
+    instead of hung up."""
+    steps_per_turn = 14
+    total = int(round(turns * steps_per_turn))
+    path = []
+    for i in range(total + 1):
+        t = i / steps_per_turn
+        angle = 2 * pi * t
+        r = radius * (1.0 - 0.82 * t / turns)
+        path.append((centre[0] + r * cos(angle), centre[1] + r * sin(angle), z))
+    rings = sweep_rings(circle(tube_radius, 6), path)
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    return _finish(obj, sharp=60.0)
+
+
+def _build_mainsheet(collection, cockpit, g):
+    """Boom to the traveller car, car to a cleat on the bridgedeck step, and
+    the tail flemished down beside it -- taut throughout, since the boat is
+    shown close-hauled and drawing rather than at rest."""
+    boom_bail = rig.boom_point(g, 0.90)
+    boom_bail = (boom_bail[0], boom_bail[1], boom_bail[2] - 0.030)
+
+    station = params.TRAVELLER_STATION
+    bar_z = cockpit(station, 0.0) + params.TRAVELLER_STAND
+    car = (0.0, _y(station), bar_z + 0.020)
+
+    cleat_station = station + 0.060
+    cleat = (0.055, _y(cleat_station), cockpit(cleat_station, 0.055) + 0.030)
+
+    sheet = _rope("mainsheet", collection, [boom_bail, car, cleat])
+    coil = _flat_coil(
+        collection,
+        "mainsheet_coil",
+        (cleat[0] + 0.032, cleat[1] - 0.010),
+        cleat[2],
+        0.075,
+        2.6,
+    )
+    return join([sheet, coil], "mainsheet")
+
+
+def _build_genoa_sheet(collection, afterdeck, g):
+    """Clew to the port genoa car, car aft to the port after winch, and the
+    tail flemished on the cockpit sole beside it."""
+    clew = sails.genoa_clew(g)
+    car = genoa_car_point()
+
+    winch_station = params.COCKPIT_WINCH_STATIONS[0]
+    winch_x = -winch_centre(winch_station)
+    winch_top = (
+        winch_x,
+        _y(winch_station),
+        afterdeck(winch_station, abs(winch_x)) + params.COCKPIT_WINCH_HEIGHT,
+    )
+
+    sheet = _rope("genoa_sheet", collection, [clew, car, winch_top])
+    coil = _flat_coil(
+        collection,
+        "genoa_sheet_coil",
+        (winch_x - 0.105, winch_top[1] - 0.120),
+        winch_top[2] - 0.095,
+        0.085,
+        2.8,
+    )
+    return join([sheet, coil], "genoa_sheet")
+
+
+def _build_sheets(collection, cockpit, afterdeck, g):
+    """The mainsheet and the genoa sheet, joined under one name for the
+    handoff -- both are the same material, and both are rope for the same
+    reason."""
+    return join(
+        [
+            _build_mainsheet(collection, cockpit, g),
+            _build_genoa_sheet(collection, afterdeck, g),
+        ],
+        "sheets",
+    )
