@@ -28,7 +28,6 @@ import deck
 import fittings
 import params
 import textures
-from lib.curves import Curve
 
 
 def _pbr(name, colour, roughness=0.4, metallic=0.0):
@@ -431,27 +430,27 @@ def create():
         "vinyl", colour=vinyl_colour, roughness=vinyl_roughness, normal=vinyl_normal, tile=0.30
     )
 
-    # The cabin sole: red-brown, walked on, moulded rather than varnished --
-    # duller and grainier than the interior teak it sits beside, with a finer
-    # speckle riding on top for grip.
-    sole_grain = textures.directional_grain((_STANDARD, _STANDARD), seed=100, streak_weight=0.5)
-    sole_seam, sole_tint = textures.plank_seams(
-        (_STANDARD, _STANDARD), planks=7, seam_width=0.06, seed=101
-    )
-    sole_grip = textures.speckle((_STANDARD, _STANDARD), cells=(40, 40), seed=102)
-    sole_variance = (sole_grain - 0.5) * 0.5 + sole_tint * 0.4
+    # The cabin sole. This boat's is plain moulded fibreglass -- not the teak-
+    # and-holly or the varnished ply the material first assumed. That earlier
+    # version carried plank seams and a wood grain, and it read as exactly what
+    # it was built to be, a wooden floor, which is the one thing this sole is
+    # not. So: no seams and no grain. What is left is a light grey gelcoat,
+    # a shade cooler and darker than the vinyl liner so the floor still reads
+    # as a different surface from the settees, with a fine even speckle for the
+    # moulded-in non-slip that a real glass sole has underfoot -- the only
+    # texture on it, and a shallow one, because a fibreglass sole is meant to
+    # look wiped-down and hard, not soft.
+    sole_grip = textures.speckle((_STANDARD, _STANDARD), cells=(46, 46), seed=102)
     sole_colour = textures.colour_image(
-        "sole_colour", (0.30, 0.095, 0.078), sole_variance, amount=0.12
+        "sole_colour", (0.63, 0.63, 0.62), sole_grip - 0.5, amount=0.03
     )
-    sole_roughness = textures.grey_image(
-        "sole_roughness", 0.62 + 0.10 * sole_grip - 0.08 * sole_seam
-    )
-    sole_height = (sole_grain - 0.5) * 0.0004 - sole_seam * 0.0016 + (sole_grip - 0.5) * 0.0003
+    sole_roughness = textures.grey_image("sole_roughness", 0.44 + 0.10 * sole_grip)
+    sole_height = (sole_grip - 0.5) * 0.0006
     sole_normal = textures.make_image(
-        "sole_normal", textures.normal_from_height(sole_height, strength=28.0), non_color=True
+        "sole_normal", textures.normal_from_height(sole_height, strength=22.0), non_color=True
     )
     palette["sole"] = _textured(
-        "sole", colour=sole_colour, roughness=sole_roughness, normal=sole_normal, tile=0.5
+        "sole", colour=sole_colour, roughness=sole_roughness, normal=sole_normal, tile=0.35
     )
 
     # --- What the detailing tracks needed and the palette did not have. ------
@@ -604,26 +603,33 @@ could be wrong against."""
 
 NONSLIP_MIN_SLOPE = 0.55
 """How close to horizontal a face has to be, as its world-space normal's own
-z-component, to carry the pattern at all. Below it: a coachroof shoulder, a
-cockpit well side, a hatch surround -- nothing a foot lands square on, and
-nothing a real non-slip panel is ever moulded onto."""
-
-_COACHROOF_HALF_WIDTH = Curve(params.COACHROOF_HALF_WIDTH)
+z-component, to carry the pattern at all. Below it: a cockpit well side, a
+hatch surround -- nothing a foot lands square on, and nothing a real non-slip
+panel is ever moulded onto."""
 
 
-def _companionway_garage_half_width(station):
-    """Half-width of the raised panel over the companionway -- the sliding
-    hatch's own garage -- gated to the coachroof's actual span.
+def _coachroof_structure_half_width(station):
+    """Half-width of the whole raised centre structure -- the coachroof top,
+    its shoulders and the flared side down to the deck -- outside which lies the
+    flat side deck a foot actually walks on.
 
-    `COACHROOF_HALF_WIDTH` holds its own end value outside that span (see its
-    docstring in `params.py`, and `deck._coachroof_half_width`, which reads
-    it the same way) -- necessary there so a lofted surface has no seam where
-    the roof fades out, but exactly the leak that would put a smooth strip on
-    the bare foredeck if this function did not gate it explicitly.
+    The non-slip pattern belongs on that side deck and on the flat foredeck, and
+    nowhere on the coachroof: not the top, which nobody stands on on a boat this
+    size, and not the sloped sides, which a moulded panel is never laid on. The
+    earlier version excluded only the sliding-hatch garage on the very crown and
+    left the pattern over the rest of the roof and down its gables -- which is
+    what the owner saw, and asked to have taken off.
+
+    `coachroof_half_width + COACHROOF_SIDE_FLARE` is exactly where
+    `deck._forward_section` lands the foot of the coachroof side on the side deck
+    (`base_x` there), so this is the structure's own outline rather than a guess
+    at it. Gated to the coachroof's length because `coachroof_half_width` holds
+    its end value fore and aft of the roof -- necessary for a seamless loft, but
+    it would otherwise put a smooth strip down the middle of the bare foredeck.
     """
     if not (params.COACHROOF_START <= station <= params.COACHROOF_END):
         return 0.0
-    return _COACHROOF_HALF_WIDTH(station) * deck.companionway_raise_width(station)
+    return deck.coachroof_half_width(station) + params.COACHROOF_SIDE_FLARE
 
 
 def _is_nonslip(edge_half_width, station, x_abs, normal_z):
@@ -631,17 +637,17 @@ def _is_nonslip(edge_half_width, station, x_abs, normal_z):
 
     Three exclusions, all geometric: too steep to be a tread surface, too
     close to the deck edge (the smooth margin a toe rail or stanchion base
-    needs), or over the companionway hatch and its sliding garage. Everything
-    else on the deck's own top surface gets the pattern -- which is the
-    brief's split, done from the deck's own surface functions rather than
-    picked face by face, so it survives the hull being re-authored the same
-    way `assign_deck`'s band test already does.
+    needs), or anywhere on the raised centre structure. Everything else on the
+    deck's own top surface -- the side decks and the flat foredeck -- gets the
+    pattern, done from the deck's own surface functions rather than picked face
+    by face, so it survives the hull being re-authored the same way
+    `assign_deck`'s band test already does.
     """
     if abs(normal_z) < NONSLIP_MIN_SLOPE:
         return False
     if x_abs > edge_half_width(station) - NONSLIP_EDGE_MARGIN:
         return False
-    if x_abs < _companionway_garage_half_width(station):
+    if x_abs < _coachroof_structure_half_width(station):
         return False
     return True
 
@@ -679,14 +685,26 @@ def assign_deck(
     for polygon in obj.data.polygons:
         centre = polygon.center
         station = params.y_to_station(centre.y)
+        world_normal = normal_matrix @ polygon.normal
         expected = band_surface(station, centre.z)
 
-        if expected is not None and abs(abs(centre.x) - expected) < tolerance:
+        # The band is a topside stripe: a near-vertical surface below the deck
+        # edge, so its faces point outward, not up. Requiring that -- rather than
+        # position alone -- is what fixes the checkerboard that used to appear at
+        # the stem. There the topsides come to a point and the flat foredeck runs
+        # out to almost nothing, so the band surface and a deck face's own x land
+        # within `tolerance` of each other while the face is still facing the sky;
+        # on position alone every other triangle up at the bow flipped to band
+        # blue. A deck face never faces sideways, so the normal tells the two
+        # apart where their positions cannot.
+        on_band = (
+            expected is not None
+            and abs(abs(centre.x) - expected) < tolerance
+            and abs(world_normal.z) < 0.6
+        )
+        if on_band:
             polygon.material_index = 1
-            continue
-
-        world_normal = normal_matrix @ polygon.normal
-        if _is_nonslip(deck.deck_edge_half_width, station, abs(centre.x), world_normal.z):
+        elif _is_nonslip(deck.deck_edge_half_width, station, abs(centre.x), world_normal.z):
             polygon.material_index = 2
         else:
             polygon.material_index = 0
@@ -824,7 +842,6 @@ def apply(built, band_surface):
         "table",
         "companionway_frame",
         "shelf",
-        "locker_doors",
     ):
         assign(built.get(name), palette["teak"])
 
@@ -836,18 +853,20 @@ def apply(built, band_surface):
 
     # --- The cabin's small stuff.
     #
-    # `grabrails`, `washboard` and `bilge_hatch` are teak because that is what
-    # they are made of on the real boat. The bilge hatch had a case for taking
-    # the sole's colour instead and blending into the floor; teak wins because
-    # a hatch you cannot find is a hatch that reads as a seam in the moulding,
-    # and this one has a fiddle and a pull on it that only make sense as wood.
-    for name in ("grabrails", "washboard", "bilge_hatch"):
+    # `grabrails` and `bilge_hatch` are teak because that is what they are made
+    # of on the real boat. The bilge hatch had a case for taking the sole's
+    # colour instead and blending into the floor; teak wins because a hatch you
+    # cannot find is a hatch that reads as a seam in the moulding, and this one
+    # has a fiddle and a pull on it that only make sense as wood.
+    #
+    # The washboard, curtains, fire extinguisher and step grab rail that used
+    # to be dressed here were removed from the build at the owner's request;
+    # `.get()` would make their assignments harmless no-ops, but a line that
+    # can never fire is worse than no line.
+    for name in ("grabrails", "bilge_hatch"):
         assign(built.get(name), palette["teak"])
 
-    assign(built.get("step_grabrail"), palette["chrome"])
     assign(built.get("cabin_lamp"), palette["chrome"])
-    assign(built.get("curtains"), palette["curtain"])
     assign(built.get("books"), palette["book_cloth"])
-    assign(built.get("fire_extinguisher"), palette["paint_red"])
 
     return palette

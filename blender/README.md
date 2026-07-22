@@ -251,9 +251,10 @@ smooth gelcoat, moulded non-slip -- and the outboard two, cowling and leg. Both
 splits are geometric, computed from the surface functions in `deck.py` and from
 `fittings.outboard_cowl_base()`, never by picking faces. A real non-slip panel
 is not a different colour, it is the same gelcoat moulded with a texture in it,
-and it stops short of the deck edge and of the centre strip over the
-companionway, because that is where the hatch slides and where a moulded
-pattern would foul it.
+and it stops short of the deck edge and of the whole raised coachroof -- its top
+and its sloped sides both -- because a foot walks on the flat side decks and the
+foredeck, not up on the centre structure, and a moulded pattern is never laid on
+a slope.
 
 ## The exported GLB *is* committed
 

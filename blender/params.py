@@ -1233,20 +1233,27 @@ docstring in joinery.py -- so the doors are the only part of them that has to be
 built. Plain teak-faced ply, which is what they are."""
 
 SINK = (0.280, 0.240, 0.026)
-SINK_STATION = 4.940
+SINK_STATION = 4.850
 COOKER = (0.320, 0.250)
-COOKER_STATION = 5.270
+COOKER_STATION = 5.160
 """The pentry's two fittings, immediately to port as you come below: sink
 forward, two-burner cooker aft. That order is the brochure's -- "Till hoger pa
 banken har du det tva-lagiga koket", and *right*, from someone standing at the
 worktop facing outboard, is aft.
 
-Both stand proud of the worktop rather than being let into it, and the sink is a
-26 mm dish rather than a bowl. The worktop is a lofted solid with no hole in it,
-so a recess cut into it renders nothing at all -- the same problem the anchor box
-had, with the same answer. What sells it is the tap, which is 160 mm of chrome
-standing over a shallow dish, and reads as a sink from across the saloon because
-nothing else on a boat looks like that."""
+Both moved forward with the worktop when its after end came in (see GALLEY_END):
+the cooker now lands at 5.160 with its after edge clear of where the cockpit seat
+falls to worktop level, and the sink ahead of it, the two nearly touching
+because the shortened run has no spare length between them.
+
+The sink is a proper bowl now, and the cooker a gimballed two-burner with pan
+rails and control knobs, rather than the shallow dish and bare pan they were --
+the galley is the closest the camera comes to any joinery, and a tap standing
+over a dished box was as much as the first pass claimed. Both are still built
+proud of the worktop rather than let into it: the worktop is a lofted solid with
+no hole in it, so a recess cut into it renders nothing at all. A bowl standing a
+few millimetres proud with a hollow top reads as inset from any angle a person
+in the cabin actually has on it."""
 
 QUARTER_BERTH_START = 5.000
 QUARTER_BERTH_END = 6.950
@@ -1260,8 +1267,8 @@ for the space it needs."""
 
 # Galley, port, at the after end of the saloon.
 
-GALLEY_START = 4.760
-GALLEY_END = 5.480
+GALLEY_START = 4.700
+GALLEY_END = 5.340
 GALLEY_TOP = TABLE_TOP
 GALLEY_DEPTH = 0.480
 """The pentry. Port side, at the companionway, where the raised panel over the
@@ -1269,16 +1276,25 @@ way below gives the headroom the brochure sells: "Pentryt ar stort och
 ordentligt tilltaget ... gjort for att du utan problem ska klara matlagningen
 for 5-6 personer".
 
-It runs aft past the coachroof and under the side deck, which is what makes 720
-mm of worktop fit in a boat whose saloon is only 1900 mm long. Sink forward,
+It runs aft past the coachroof and under the side deck, which is what makes a
+worktop this long fit in a boat whose saloon is only 1900 mm long. Sink forward,
 two-burner hob aft -- "Till hoger pa banken har du det tva-lagiga koket", and
 right, from someone standing at it facing outboard, is aft.
+
+The after end was 5.480 and had to come forward to 5.340. Raising GALLEY_TOP to
+the table's height (below) lifted the worktop to 490 mm above the sole, and the
+cockpit seat above it drops going aft -- the two crossed at about station 5.36,
+so the last 140 mm of worktop, and the hob standing on it, pushed up through the
+cockpit seat moulding and showed in the footwell. The worktop now stops where it
+still has the seat comfortably above it. The forward end went with it, 60 mm
+forward to 4.700, to keep room for both fittings once the run was shortened.
 
 GALLEY_TOP used to be 300 mm above the sole, a plain fitted guess and 190 mm
 short of the table -- so a visitor stepping from one to the other met a worktop
 at knee height next to a table at hip height, on the same boat. Owner's brief:
 raise it to match. Tied to TABLE_TOP rather than given its own number, so the
-two cannot drift apart again."""
+two cannot drift apart again -- and raising it is what forced the shortening
+above, which is the price of the matched height, paid once and recorded here."""
 
 # The way below.
 

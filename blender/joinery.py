@@ -33,7 +33,8 @@ def build(collection):
         "galley": _build_galley(collection, inner),
         "quarter_berth": _build_quarter_berth(collection, inner),
         "steps": _build_steps(collection),
-        "step_grabrail": _build_step_grabrail(collection),
+        # The step grab rail was removed at the owner's request. Its builder is
+        # kept below; add it back to this dict to restore it.
         "table": _build_table(collection),
     }
 

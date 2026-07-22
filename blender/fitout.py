@@ -33,16 +33,16 @@ def build(collection):
         "shelf": _build_shelf(collection, inner),
         "backrests": _build_backrests(collection, inner),
         "cushions": _build_cushions(collection, inner),
-        "locker_doors": _build_locker_doors(collection, inner),
         "galley_fittings": _build_galley_fittings(collection, inner),
         "books": _build_books(collection, inner),
         "grabrails": _build_grabrails(collection),
-        "curtains": _build_curtains(collection, inner),
         "cabin_lamp": _build_cabin_lamp(collection, inner),
         "bilge_hatch": _build_bilge_hatch(collection),
-        "washboard": _build_washboard(collection),
-        "fire_extinguisher": _build_fire_extinguisher(collection, inner),
     }
+    # Removed at the owner's request: the cupboard (locker) doors, the window
+    # curtains, the companionway washboard, and the fire extinguisher. The
+    # builders below are kept -- they are correct and cost nothing unbuilt --
+    # so restoring any of them is a one-line entry in the dict above.
 
 
 # --------------------------------------------------------------------------
@@ -582,81 +582,236 @@ def _build_locker_doors(collection, inner):
 # --------------------------------------------------------------------------
 
 
+def _oval_ring(station, x, rx, ry, z, count=18):
+    """A closed oval ring in the horizontal plane, `count` points round."""
+    return [
+        (
+            x + rx * cos(2 * pi * i / count),
+            _y(station) + ry * sin(2 * pi * i / count),
+            z,
+        )
+        for i in range(count)
+    ]
+
+
+def _pipe(name, collection, path, radius, count=8):
+    """A round tube swept along a polyline: the one shape a tap needs.
+
+    A circular section carried square to each segment, welded end to end and
+    capped. Rough and ready compared with `lib.sweep` -- it mitres nothing at the
+    corners -- but a tap's gooseneck turns through gentle angles over a 12 mm
+    pipe, where a mitre would never show, and keeping it here avoids the galley
+    reaching across two modules for a curve this small.
+    """
+    from math import atan2
+
+    rings = []
+    for i, (px, py, pz) in enumerate(path):
+        nxt = path[min(i + 1, len(path) - 1)]
+        prv = path[max(i - 1, 0)]
+        dx, dy, dz = (nxt[0] - prv[0], nxt[1] - prv[1], nxt[2] - prv[2])
+        length = hypot(hypot(dx, dy), dz) or 1.0
+        dx, dy, dz = dx / length, dy / length, dz / length
+        # Two unit vectors across the pipe, both perpendicular to its direction.
+        yaw = atan2(dy, dx)
+        side = (-sin(yaw), cos(yaw), 0.0)
+        up = (
+            dy * side[2] - dz * side[1],
+            dz * side[0] - dx * side[2],
+            dx * side[1] - dy * side[0],
+        )
+        ring = []
+        for k in range(count):
+            a = 2 * pi * k / count
+            c, s = cos(a) * radius, sin(a) * radius
+            ring.append(
+                (px + side[0] * c + up[0] * s,
+                 py + side[1] * c + up[1] * s,
+                 pz + side[2] * c + up[2] * s)
+            )
+        rings.append(ring)
+
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    return _finish(obj, sharp=50.0, bevel_width=None)
+
+
 def _build_galley_fittings(collection, inner):
-    """Sink and cooker, immediately to port as you come below.
+    """Sink and cooker, immediately to port as you come below -- the closest the
+    camera comes to any joinery on the boat, which is why neither is a box.
 
-    Both stand proud of the worktop instead of being let into it. The galley is a
-    lofted solid with no hole in it, so a recess cut into its top renders nothing
-    at all -- the same problem the anchor box had, and the same answer: stand the
-    thing a few millimetres proud and let it cast its own line.
-
-    The sink gets away with it because of the tap. A 26 mm dish is not a sink and
-    nobody would read it as one, but 160 mm of chrome standing over a shallow
-    dish is unmistakable, because nothing else on a boat looks like that.
+    Both stand proud of the worktop rather than being let into it. The worktop is
+    a lofted solid with no hole in it, so a recess cut into its top renders
+    nothing at all -- the same problem the anchor box had, and the same answer:
+    stand the thing a few millimetres proud with a hollow of its own, and let it
+    cast its own line. A bowl built this way reads as inset from any angle a
+    person in the cabin actually has on it.
     """
     top = params.GALLEY_TOP
     out = inner(params.GALLEY_START, top)
     centre = -(out - params.GALLEY_DEPTH / 2)
 
-    sink_length, sink_width, sink_depth = params.SINK
+    sink_length, sink_width, _ = params.SINK
     cooker_length, cooker_width = params.COOKER
 
-    pieces = [
-        # The dish: a shallow tray standing 6 mm proud, hollow on top.
-        _box(
-            "sink_rim",
-            collection,
-            params.SINK_STATION - sink_length / 2,
-            params.SINK_STATION + sink_length / 2,
-            centre - sink_width / 2,
-            centre + sink_width / 2,
-            top + 0.006,
-            top + 0.006 + sink_depth,
-            sharp=25.0,
-        ),
-        # The tap, which is what actually says sink.
-        _box(
-            "tap",
-            collection,
-            params.SINK_STATION - sink_length / 2 + 0.030,
-            params.SINK_STATION - sink_length / 2 + 0.056,
-            centre - 0.013,
-            centre + 0.013,
-            top,
-            top + 0.160,
-            sharp=25.0,
-        ),
-        _box(
-            "tap_spout",
-            collection,
-            params.SINK_STATION - sink_length / 2 + 0.030,
-            params.SINK_STATION + 0.020,
-            centre - 0.011,
-            centre + 0.011,
-            top + 0.140,
-            top + 0.160,
-            sharp=25.0,
-        ),
-        # The cooker: a recessed-looking pan with two burners on it.
-        _box(
-            "cooker_pan",
-            collection,
-            params.COOKER_STATION - cooker_length / 2,
-            params.COOKER_STATION + cooker_length / 2,
-            centre - cooker_width / 2,
-            centre + cooker_width / 2,
-            top + 0.004,
-            top + 0.020,
-            sharp=25.0,
-        ),
-    ]
+    pieces = []
+    pieces += _sink(collection, params.SINK_STATION, centre, top, sink_length, sink_width)
+    pieces += _cooker(
+        collection, params.COOKER_STATION, centre, top, cooker_length, cooker_width
+    )
+    return join(pieces, "galley_fittings")
 
-    for offset in (-cooker_length / 5, cooker_length / 5):
+
+def _sink(collection, station, x, top, length, width):
+    """A round-cornered bowl with a rolled rim, and a gooseneck mixer beside it.
+
+    The bowl is a single loft: a rim standing 8 mm proud of the worktop, a flat
+    lip turned in from it, then the basin dropping away inside to a small flat
+    bottom below worktop level. Nothing under the rim shows -- the worktop solid
+    is behind it -- so the loft need only be honest from the lip inwards, which
+    is all anyone looking down into a sink can see.
+    """
+    rx, ry = length / 2, width / 2
+    lip = 0.014
+    rim_z = top + 0.008
+
+    rings = [
+        _oval_ring(station, x, rx, ry, top),            # skirt foot, at worktop
+        _oval_ring(station, x, rx, ry, rim_z),          # rim, proud
+        _oval_ring(station, x, rx - lip, ry - lip, rim_z),      # flat lip, turned in
+        _oval_ring(station, x, rx - lip - 0.006, ry - lip - 0.006, top - 0.004),
+        _oval_ring(station, x, (rx - lip) * 0.62, (ry - lip) * 0.62, top - 0.046),
+        _oval_ring(station, x, (rx - lip) * 0.34, (ry - lip) * 0.34, top - 0.062),
+    ]
+    bowl = grid_to_mesh("sink_bowl", rings, collection, close_rings=True)
+    cap_loop(bowl, list(reversed(rings[-1])))
+    _finish(bowl, sharp=45.0, bevel_width=None)
+
+    # A single-lever mixer at the outboard back corner of the bowl, where a tap
+    # is plumbed through the worktop against the hull rather than out over the
+    # basin. The gooseneck rises, turns inboard and arches back over the bowl.
+    base = station - length / 2 + 0.045
+    back = x - ry + 0.020
+    spout_z = top + 0.150
+    tap_path = [
+        (back, _y(base), top),
+        (back, _y(base), top + 0.055),
+        (back, _y(base), spout_z),
+        (x - ry * 0.35, _y(base), spout_z + 0.010),
+        (x, _y(base + 0.010), spout_z - 0.020),
+        (x, _y(base + 0.020), spout_z - 0.055),
+    ]
+    tap = _pipe("tap", collection, tap_path, 0.011, count=8)
+
+    lever = _box(
+        "tap_lever",
+        collection,
+        base - 0.006,
+        base + 0.070,
+        x - ry + 0.014,
+        x - ry + 0.026,
+        top + 0.052,
+        top + 0.064,
+        sharp=25.0,
+        bevel_width=0.002,
+    )
+    return [bowl, tap, lever]
+
+
+def _cooker(collection, station, x, top, length, width):
+    """A gimballed two-burner: a recessed well with pan rails round it, two
+    burners with pot-support grates, and control knobs on the face the cook sees.
+
+    The well stands a few millimetres proud for the same reason the sink does. On
+    top of it sit the two things that say cooker rather than tray: a raised rail
+    round the edge, which on a boat is what stops a pan walking off in a seaway,
+    and the crossed grates a pan actually rests on. The knobs go on the inboard
+    long side -- the face turned towards someone standing at the worktop -- since
+    that is the side a cook reaches, and the only one in shot from the saloon.
+    """
+    pieces = []
+    hl, hw = length / 2, width / 2
+    well_z = top + 0.006
+
+    pieces.append(
+        _box(
+            "cooker_well",
+            collection,
+            station - hl,
+            station + hl,
+            x - hw,
+            x + hw,
+            top + 0.002,
+            well_z,
+            sharp=25.0,
+            bevel_width=0.002,
+        )
+    )
+
+    # Pan rail: four low fiddles standing round the rim of the well, a finger's
+    # width in from its edge.
+    inset, rail_h, rail_t = 0.018, 0.026, 0.006
+    rail_specs = [
+        (station - hl + inset, station - hl + inset + rail_t, x - hw + inset, x + hw - inset),
+        (station + hl - inset - rail_t, station + hl - inset, x - hw + inset, x + hw - inset),
+        (station - hl + inset, station + hl - inset, x - hw + inset, x - hw + inset + rail_t),
+        (station - hl + inset, station + hl - inset, x + hw - inset - rail_t, x + hw - inset),
+    ]
+    for i, (s0, s1, x0, x1) in enumerate(rail_specs):
         pieces.append(
-            _burner(collection, params.COOKER_STATION + offset, centre, top + 0.020)
+            _box(
+                f"cooker_rail_{i}",
+                collection,
+                s0, s1, x0, x1,
+                well_z,
+                well_z + rail_h,
+                sharp=25.0,
+                bevel_width=0.0018,
+            )
         )
 
-    return join(pieces, "galley_fittings")
+    # Two burners along the boat, each with a pair of crossed pot-support bars.
+    for offset in (-length / 5, length / 5):
+        bs = station + offset
+        pieces.append(_burner(collection, bs, x, well_z))
+        for grate in (
+            (bs - 0.052, bs + 0.052, x - 0.006, x + 0.006),
+            (bs - 0.006, bs + 0.006, x - 0.052, x + 0.052),
+        ):
+            pieces.append(
+                _box(
+                    f"cooker_grate_{bs:.2f}_{grate[2]:.2f}",
+                    collection,
+                    *grate,
+                    well_z + 0.018,
+                    well_z + 0.024,
+                    sharp=25.0,
+                    bevel_width=None,
+                )
+            )
+
+    # Control knobs on the inboard face, one per burner, standing off the front
+    # of the well towards the cook (inboard is towards the centreline: +x, since
+    # the galley is to port).
+    for offset in (-length / 5, length / 5):
+        pieces.append(_knob(collection, station + offset, x + hw + 0.010, top + 0.030))
+
+    return pieces
+
+
+def _knob(collection, station, x, z):
+    """One control knob: a short round boss on the cooker's face."""
+    rings = [
+        [
+            (x + r, _y(station) + 0.016 * cos(2 * pi * i / 10), z + 0.016 * sin(2 * pi * i / 10))
+            for i in range(10)
+        ]
+        for r in (0.0, 0.022)
+    ]
+    obj = grid_to_mesh(f"knob_{station:.2f}", rings, collection, close_rings=True)
+    cap_loop(obj, list(reversed(rings[-1])))
+    return _finish(obj, sharp=40.0, bevel_width=None)
 
 
 def _burner(collection, station, x, z):

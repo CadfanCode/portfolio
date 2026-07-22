@@ -743,25 +743,30 @@ def _build_pulpit(collection, foredeck):
 
 
 def _build_pulpit_block(collection, foredeck):
-    """The teak pad at the apex of the pulpit.
+    """The teak chafe pad at the stemhead, inside the pulpit.
 
     Where the anchor chain comes aboard, and the reason it exists: chain over
     stainless is a noise carried straight into the forepeak, which is where two
-    people are asleep. Sat astride the top rail at the nose, wider than the tube
-    so it reads as a block bolted round it rather than a lump in it.
+    people are asleep.
+
+    It sat astride the pulpit's top rail to begin with, half a metre up in the
+    air at the nose, which is where the rail is but not where the chain runs and
+    not where the eye expects a wooden block -- it read as floating. A chafe pad
+    lives on the deck, under the roller, taking the chain where it actually lands
+    when it comes in over the stemhead. So it is bedded on the foredeck now, just
+    proud of it, at the same nose station as before.
     """
     length, width, thickness = params.PULPIT_BLOCK
     nose = params.PULPIT_NOSE_STATION
-    radius = params.PULPIT_RADIUS
 
     station = nose - _rail_x(nose) + length / 2 - 0.010
-    top = foredeck(station, 0.0) + params.STANCHION_HEIGHT + radius + thickness / 2
+    top = foredeck(station, 0.0) + 0.006 + thickness
 
     return _loft_stack(
         "pulpit_block",
         collection,
         [
-            (top - thickness / 2, _rounded_section(width, length, count=12, power=4.0)),
+            (top - thickness, _rounded_section(width, length, count=12, power=4.0)),
             (top, _rounded_section(width, length, count=12, power=4.0)),
         ],
         0.0,
@@ -879,7 +884,15 @@ def _outboard_layout():
     length, width, cowl_height = params.OUTBOARD_COWLING
 
     transom_y = _y(_transom_station(top))
-    mount_y = transom_y - 0.070
+    # 120 mm off the transom, not 70. At 70 the clamp and the forward face of
+    # the cowling sat right on the transom moulding -- the powerhead's forward
+    # corner was level with its inner face, so from the cockpit the motor read
+    # as growing out of the aft coaming. A real outboard hangs on a bracket that
+    # stands it well clear of the transom; standing it off here moves the whole
+    # assembly aft of the boat, where it belongs, and the bracket pad below is
+    # lengthened to bridge the gap.
+    bracket_standoff = 0.120
+    mount_y = transom_y - bracket_standoff
     shaft_y = mount_y - 0.055
 
     cowl_base = top + 0.045
@@ -894,6 +907,7 @@ def _outboard_layout():
         "transom_y": transom_y,
         "mount_y": mount_y,
         "shaft_y": shaft_y,
+        "bracket_standoff": bracket_standoff,
         "cowl_base": cowl_base,
         "case_z": case_z,
         "case_nose": shaft_y + 0.095,
@@ -927,7 +941,7 @@ def _build_outboard(collection):
             o["offset"] + 0.085,
             o["top"] - 0.150,
             o["top"],
-            0.070,
+            o["bracket_standoff"],
         ),
         _box(
             "outboard_clamp",
@@ -1451,37 +1465,49 @@ FITTED -- the proportions of a small cast cleat for a boat this size, not any
 specific catalogue part."""
 
 
-def _cleat(collection, name, x, station, z):
-    """One mooring cleat, horns fore-and-aft along the boat rather than
-    athwartships, which is the way a cleat actually takes a mooring line's
-    load along the deck edge."""
+def _cleat(collection, name, x, station, z, athwart=False):
+    """One mooring cleat.
+
+    Its horns lie fore-and-aft along the deck by default, which is how a cleat
+    on the side deck takes a mooring line's load along the deck edge. With
+    `athwart` set they run across the boat instead: that is how the stern pair
+    is bedded, so a stern line leads cleanly aft over the transom corner rather
+    than having to turn across its own horns to get there.
+    """
     y = _y(station)
     half_len = CLEAT_LENGTH / 2
-    base = _box(
-        f"{name}_base",
-        collection,
-        x - CLEAT_BASE / 2,
-        x + CLEAT_BASE / 2,
-        y - half_len,
-        y + half_len,
-        z,
-        z + 0.008,
-    )
+    half_base = CLEAT_BASE / 2
+
+    if athwart:
+        x0, x1, y0, y1 = x - half_len, x + half_len, y - half_base, y + half_base
+    else:
+        x0, x1, y0, y1 = x - half_base, x + half_base, y - half_len, y + half_len
+    base = _box(f"{name}_base", collection, x0, x1, y0, y1, z, z + 0.008)
+
     horns = []
     for sign in (-1, 1):
-        hy = y + sign * half_len * 0.7
+        # The horn steps up off the base and hooks back down over the end of the
+        # cleat's long axis -- along y for a fore-and-aft cleat, along x for an
+        # athwartships one.
+        if athwart:
+            hx = x + sign * half_len * 0.7
+            path = [
+                (hx, y, z + 0.008),
+                (hx, y, z + CLEAT_HEIGHT),
+                (hx - sign * 0.026, y, z + CLEAT_HEIGHT - 0.006),
+            ]
+        else:
+            hy = y + sign * half_len * 0.7
+            path = [
+                (x, hy, z + 0.008),
+                (x, hy, z + CLEAT_HEIGHT),
+                (x, hy - sign * 0.026, z + CLEAT_HEIGHT - 0.006),
+            ]
         horns.append(
             _tube(
                 f"{name}_horn_{sign}",
                 collection,
-                _densify(
-                    [
-                        (x, hy, z + 0.008),
-                        (x, hy, z + CLEAT_HEIGHT),
-                        (x, hy - sign * 0.026, z + CLEAT_HEIGHT - 0.006),
-                    ],
-                    per_segment=3,
-                ),
+                _densify(path, per_segment=3),
                 0.009,
                 segments=8,
             )
@@ -1505,7 +1531,9 @@ def _build_mooring_cleats(collection, foredeck, afterdeck):
     for side in (-1, 1):
         x = side * (deck.deck_edge_half_width(aft_station) - 0.075)
         z = afterdeck(aft_station, abs(x))
-        cleats.append(_cleat(collection, f"cleat_aft_{side}", x, aft_station, z))
+        cleats.append(
+            _cleat(collection, f"cleat_aft_{side}", x, aft_station, z, athwart=True)
+        )
 
     return join(cleats, "mooring_cleats")
 
@@ -1656,14 +1684,25 @@ def _build_nav_lights(collection, foredeck, afterdeck):
 # The genoa track
 # --------------------------------------------------------------------------
 
-GENOA_TRACK_STATION = 4.900
+GENOA_TRACK_STATION = 3.900
 GENOA_TRACK_LENGTH = 0.500
 GENOA_CAR_POSITION = 0.55
-"""The genoa cars run on the port side deck, centred between the coachroof
-and the deck edge -- the strip that has no business belonging to either. One
-car, at the position this sail is trimmed to in this scene, rather than a
-fully adjustable range: the brief is a working sheet lead, not a catalogue of
-every hole in the track."""
+"""A track on each side deck, centred between the coachroof and the deck edge
+-- the strip that has no business belonging to either.
+
+The station was 4.900, which put the track's after end level with the forward
+end of the cockpit, where the side deck has given out and the rail was left
+cantilevered over the footwell. Moved a metre forward to 3.900, where it sits
+on side deck for its whole length, which is also where a genoa track belongs:
+the lead has to be forward of the clew, and the clew of a working genoa is well
+forward of the cockpit.
+
+Both tracks are built, port and starboard, because a boat has one each side and
+the far one is in shot whenever the near one is. Each carries a single car, at
+the position this sail is trimmed to in this scene rather than a fully
+adjustable range -- the brief is a working sheet lead, not a catalogue of every
+hole in the track. Only the port car does any work: the genoa is set to a
+starboard wind and sheeted to port (see `params.GENOA_CLEW_OFFSET`)."""
 
 
 def genoa_car_x(station):
@@ -1686,29 +1725,47 @@ def genoa_car_point():
 
 
 def _build_genoa_track(collection):
-    """A short track and car on the port side deck, where the working genoa
-    sheet leads aft to the winch."""
+    """A short track and car on each side deck, where the genoa sheet leads aft
+    to the winch. Port and starboard are identical bar the sign of `x`; only the
+    port car is loaded, but both are built -- see `GENOA_CAR_POSITION`'s note."""
     start = GENOA_TRACK_STATION - GENOA_TRACK_LENGTH / 2
     end = GENOA_TRACK_STATION + GENOA_TRACK_LENGTH / 2
-    x = -genoa_car_x(GENOA_TRACK_STATION)
     surface = deck.surface_function()
-    z = surface(GENOA_TRACK_STATION, abs(x))
 
-    rail = _box(
-        "genoa_track_rail", collection, x - 0.012, x + 0.012, _y(end), _y(start), z, z + 0.010
+    car_station = (
+        GENOA_TRACK_STATION - GENOA_TRACK_LENGTH / 2 + GENOA_TRACK_LENGTH * GENOA_CAR_POSITION
     )
-    car_point = genoa_car_point()
-    car = _box(
-        "genoa_car",
-        collection,
-        x - 0.022,
-        x + 0.022,
-        car_point[1] - 0.026,
-        car_point[1] + 0.026,
-        z + 0.008,
-        z + 0.030,
-    )
-    return join([rail, car], "genoa_track")
+    pieces = []
+    for side in (-1, 1):
+        x = side * genoa_car_x(GENOA_TRACK_STATION)
+        z = surface(GENOA_TRACK_STATION, abs(x))
+        pieces.append(
+            _box(
+                f"genoa_track_rail_{side}",
+                collection,
+                x - 0.012,
+                x + 0.012,
+                _y(end),
+                _y(start),
+                z,
+                z + 0.010,
+            )
+        )
+        car_x = side * genoa_car_x(car_station)
+        car_z = surface(car_station, abs(car_x))
+        pieces.append(
+            _box(
+                f"genoa_car_{side}",
+                collection,
+                car_x - 0.022,
+                car_x + 0.022,
+                _y(car_station) - 0.026,
+                _y(car_station) + 0.026,
+                car_z + 0.008,
+                car_z + 0.030,
+            )
+        )
+    return join(pieces, "genoa_track")
 
 
 # --------------------------------------------------------------------------
