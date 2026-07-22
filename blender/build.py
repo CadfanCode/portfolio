@@ -1,5 +1,6 @@
 """
-Build the Maxi 77 exterior and export it for the web app.
+Build the Maxi 77 -- hull, deck, rig and accommodation -- and export it for the
+web app.
 
 Run headless:
 
@@ -9,7 +10,19 @@ or directly (paths must be absolute -- the Flatpak's working directory is not
 the project):
 
     flatpak run org.blender.Blender -b --factory-startup \\
-        --python "$PWD/blender/build_exterior.py" -- --project "$PWD"
+        --python "$PWD/blender/build.py" -- --project "$PWD"
+
+One model, one GLB. The interior was briefly built and shipped separately, on
+the theory that the ocean stop should not wait for cabin geometry -- and the
+cabin turned out to be 32 KB over the wire against the exterior's 226, so the
+saving was 12% of the first load in exchange for two assets that could be
+committed at different times and drift apart.
+
+It also could not have survived the camera path. `SCENE_LINKS` routes cockpit ->
+cabin and `CameraRig` interpolates between stops, so the camera passes bodily
+through the companionway; both halves have to be present at once for that to be
+anything but a hole. If load time ever does bite, the lever is mesh compression
+on this one file, not splitting it into two.
 
 The .blend it writes is a build artifact. It is regenerated from nothing every
 run, so anything hand-edited in it is lost on the next build; changes worth
@@ -24,11 +37,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402  (must follow the path setup)
 
 import deck  # noqa: E402
+import fitout  # noqa: E402
+import fittings  # noqa: E402
 import hull  # noqa: E402
+import interior  # noqa: E402
+import joinery  # noqa: E402
 import keel_rudder  # noqa: E402
 import materials  # noqa: E402
 import params  # noqa: E402
 import rig  # noqa: E402
+import sails  # noqa: E402
 from lib.mesh import reset_scene  # noqa: E402
 
 
@@ -48,27 +66,28 @@ def main() -> int:
     opts = parse_args(sys.argv)
     project = opts["project"]
 
-    blend_path = os.path.join(project, "blender", "maxi77_exterior.blend")
-    glb_path = os.path.join(project, "src", "assets", "models", "maxi77-exterior.glb")
+    blend_path = os.path.join(project, "blender", "maxi77.blend")
+    glb_path = os.path.join(project, "src", "assets", "models", "maxi77.glb")
 
     print(f"[build] project   {project}")
-    print(f"[build] modelling Maxi 77, {params.MODEL_YEAR} deck")
+    print(f"[build] modelling Maxi 77, {params.MODEL_YEAR}")
 
     collection = reset_scene()
 
     built = {}
     built["hull"], built["rubrail"] = hull.build(collection)
     built["keel"], built["skeg"], built["rudder"] = keel_rudder.build(collection)
-    (
-        built["deck_fwd"],
-        built["deck_aft"],
-        built["companion"],
-        built["sailbox"],
-        built["windows"],
-    ) = deck.build(collection)
+    built.update(deck.build(collection))
 
-    # The rig has to follow the deck, not a second guess at where it is.
+    # The rig and the deck fittings both have to follow the deck, not a second
+    # guess at where it is.
     built.update(rig.build(collection, deck.height_function()))
+    built.update(sails.build(collection))
+    built.update(fittings.build(collection))
+
+    built.update(interior.build(collection))
+    built.update(joinery.build(collection))
+    built.update(fitout.build(collection))
 
     materials.apply(built, deck.band_surface_function())
 
@@ -78,8 +97,8 @@ def main() -> int:
             continue
         faces = len(obj.data.polygons)
         total += faces
-        print(f"[build] {name:<9} {faces} faces")
-    print(f"[build] total     {total} faces")
+        print(f"[build] {name:<17} {faces} faces")
+    print(f"[build] {'total':<17} {total} faces")
 
     os.makedirs(os.path.dirname(glb_path), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)

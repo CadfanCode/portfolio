@@ -22,20 +22,21 @@ Two useful consistency checks fall out rather than being arranged:
 
 import params
 from lib.curves import Curve
-from lib.mesh import cap_loop, grid_to_mesh, recalc_normals, shade_smooth
+from lib.mesh import cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
 from lib.sweep import circle, ellipse, sweep_rings
 
 
 def build(collection, deck_height):
     """Build the rig.
 
-    `deck_height(station)` returns the height of the deck or coachroof on the
-    centreline, so the mast heel and stay feet land on the structure rather than
-    floating above it or sinking through it.
+    `deck_height(station, x)` returns the height of whatever the deck moulding
+    has at that point -- foredeck, coachroof, side deck or after deck -- so the
+    mast heel and every stay foot land on the structure rather than floating
+    above it or sinking through it. The half-offset is not optional detail: the
+    chainplates are 950 mm off the centreline and the deck out there is a good
+    deal lower than the coachroof on it.
     """
-    sheer = Curve(params.SHEER)
-
-    geometry = _layout(sheer, deck_height)
+    geometry = layout(deck_height)
     parts = {}
 
     parts["mast"] = _build_mast(collection, geometry)
@@ -49,8 +50,15 @@ def build(collection, deck_height):
     return parts
 
 
-def _layout(sheer, deck_height):
-    """Work out every point the rig hangs from, once."""
+def layout(deck_height):
+    """Work out every point the rig hangs from, once.
+
+    Public because the sails hang from the same points. A mainsail bent on a
+    boom whose height was worked out twice is a mainsail that will slide off it
+    the first time either copy is edited.
+    """
+    sheer = Curve(params.SHEER)
+
     mast_front = params.MAST_STATION
     mast_aft = mast_front + params.MAST_SECTION[1]
     mast_axis = (mast_front + mast_aft) / 2
@@ -82,7 +90,13 @@ def _layout(sheer, deck_height):
         "forestay_z": deck_height(forestay_station),
         "backstay_station": params.LOA - 0.060,
         "backstay_z": deck_height(params.LOA - 0.060),
-        "chainplate_z": deck_height(params.CHAINPLATE_STATION),
+        "bridle_station": params.LOA - 0.030,
+        "bridle_z": deck_height(
+            params.LOA - 0.030, params.BACKSTAY_BRIDLE_HALF_BEAM
+        ),
+        "chainplate_z": deck_height(
+            params.CHAINPLATE_STATION, params.CHAINPLATE_HALF_BEAM
+        ),
         "babystay_foot_z": deck_height(params.BABYSTAY_STATION),
         "spreader_tip": params.MAST_SECTION[0] / 2 + params.SPREADER_LENGTH,
     }
@@ -177,7 +191,7 @@ def _build_spreaders(collection, g):
         shade_smooth(obj, sharp_above_degrees=50.0)
         objs.append(obj)
 
-    return _join(objs, "spreaders")
+    return join(objs, "spreaders")
 
 
 # --------------------------------------------------------------------------
@@ -194,12 +208,33 @@ def _build_rigging(collection, g):
     section = circle(params.STAY_DIAMETER / 2, 6)
     masthead = (0.0, _y(g["mast_axis"]), g["masthead_z"] - 0.040)
 
+    # The backstay comes down the centreline to a plate above the after deck and
+    # splits there, so the tiller has somewhere to be. See
+    # `params.BACKSTAY_BRIDLE_HEIGHT`.
+    split = (
+        0.0,
+        _y(g["backstay_station"]),
+        g["backstay_z"] + params.BACKSTAY_BRIDLE_HEIGHT,
+    )
+
     runs = [
         # Forestay, down to the stemhead.
         [masthead, (0.0, _y(g["forestay_station"]), g["forestay_z"])],
-        # Backstay, down to the transom.
-        [masthead, (0.0, _y(g["backstay_station"]), g["backstay_z"])],
+        # Backstay, down to the bridle plate.
+        [masthead, split],
     ]
+
+    for side in (-1, 1):
+        runs.append(
+            [
+                split,
+                (
+                    side * params.BACKSTAY_BRIDLE_HALF_BEAM,
+                    _y(g["bridle_station"]),
+                    g["bridle_z"],
+                ),
+            ]
+        )
 
     for side in (-1, 1):
         chainplate = (
@@ -245,7 +280,7 @@ def _build_rigging(collection, g):
         recalc_normals(obj)
         objs.append(obj)
 
-    return _join(objs, "rigging")
+    return join(objs, "rigging")
 
 
 def _densify(path, per_segment=4):
@@ -293,27 +328,3 @@ def _build_sail_cover(collection, g):
     recalc_normals(obj)
     shade_smooth(obj, sharp_above_degrees=40.0)
     return obj
-
-
-def _join(objs, name):
-    """Merge objects into one, so the export does not carry a dozen tiny meshes."""
-    import bmesh
-    import bpy
-
-    if not objs:
-        return None
-
-    target = objs[0]
-    target.name = name
-    target.data.name = name
-
-    bm = bmesh.new()
-    for obj in objs:
-        bm.from_mesh(obj.data)
-    bm.to_mesh(target.data)
-    bm.free()
-
-    for obj in objs[1:]:
-        bpy.data.objects.remove(obj, do_unlink=True)
-
-    return target

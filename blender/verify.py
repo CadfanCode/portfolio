@@ -336,6 +336,401 @@ def rig_checks(by_name):
     return checks
 
 
+def fittings_checks(by_name):
+    """Measure the deck fittings.
+
+    Nothing here comes from the class rules or the brochure. These are the
+    dimensions the fittings were *asked* for -- a foot of stern rail, two feet
+    between the winches, a foot and a half of stanchion -- read back off the
+    built meshes, plus three checks that are not dimensions at all and are the
+    reason this section exists.
+
+    Those three are agreements between parts that are built by different code
+    from different numbers, and every one of them can be wrong while every part
+    involved is individually correct:
+
+        The after locker lid is supposed to be the width of the footwell. Two
+        modules, two station ranges, one number that has to match.
+
+        The winches have to stand on side deck. The strip they are on is 89 mm
+        wide at the after pair, and a winch is 80 mm.
+
+        The tiller has to miss the stern rail. They are the only two things on
+        this boat that occupy the same place at different heights, and which of
+        them is on top has already changed once -- the rail used to lie on the
+        coaming with the tiller passing 20 mm over it, and now stands 300 mm up
+        with the tiller passing under.
+    """
+    import fittings
+
+    checks = []
+    if "stern_rail" not in by_name:
+        print("[verify] no deck fittings found in the build")
+        return checks
+
+    rail = world_verts([by_name["stern_rail"]])
+    stations = [params.y_to_station(p.y) for p in rail]
+    checks.append(
+        Check(
+            "stern rail return",
+            max(stations) - min(stations) - params.STERN_RAIL_RADIUS * 2,
+            params.STERN_RAIL_RETURN,
+            0.030,
+            "fitted",
+            note="one foot forward of the after corner, each side",
+        )
+    )
+
+    # --- The after lid against the footwell it is supposed to line up with.
+    lids = by_name.get("cockpit_lids")
+    if lids is not None:
+        aft = [
+            p
+            for p in world_verts([lids])
+            if params.y_to_station(p.y) > params.COCKPIT_FOOTWELL_END
+        ]
+        checks.append(
+            Check(
+                "after lid against footwell width",
+                2 * max(abs(p.x) for p in aft) if aft else None,
+                2 * (deck_widths()[0] - params.COCKPIT_LID_SEAM),
+                0.010,
+                "fitted",
+                note="the lid's sides carry on from the sides of the well",
+            )
+        )
+
+    # --- Winch spacing, and whether they are standing on anything.
+    stations = params.COCKPIT_WINCH_STATIONS
+    checks.append(
+        Check(
+            "winch spacing",
+            stations[1] - stations[0],
+            0.610,
+            0.020,
+            "fitted",
+            note="two feet apart",
+        )
+    )
+
+    import deck as deck_module
+
+    worst = min(
+        deck_module.deck_edge_half_width(s)
+        - fittings.winch_centre(s)
+        - params.COCKPIT_WINCH_BASE
+        for s in stations
+    )
+    checks.append(
+        Check(
+            "winch base inboard of the deck edge",
+            worst,
+            0.008,
+            0.008,
+            "clearance",
+            note="the side deck is 89 mm wide at the after pair",
+        )
+    )
+
+    # --- Guardrails: the height a lifeline has to be at to be one.
+    posts = by_name.get("stanchions")
+    if posts is not None:
+        heights = world_verts([posts])
+        surface = deck_module.surface_function()
+        station = fittings.stanchion_stations()[-1]
+        top = max(
+            p.z
+            for p in heights
+            if abs(params.y_to_station(p.y) - station) < 0.05
+        )
+        foot = surface(station, deck_module.deck_edge_half_width(station))
+        checks.append(
+            Check(
+                "stanchion above the deck",
+                top - foot,
+                params.STANCHION_HEIGHT,
+                0.015,
+                "fitted",
+                note="1.5 ft, which is a person and not a boat",
+            )
+        )
+
+    # --- The flooring, against the two dimensions it is described by.
+    planks = fittings.cockpit_grating_planks()
+    checks.append(
+        Check(
+            "cockpit grating plank",
+            planks[0][1] - planks[0][0],
+            params.COCKPIT_GRATING_PLANK,
+            0.001,
+            "fitted",
+            note=f"{len(planks)} planks laid from a seam on the centreline",
+        )
+    )
+    checks.append(
+        Check(
+            "cockpit grating gap",
+            planks[1][0] - planks[0][1],
+            params.COCKPIT_GRATING_GAP,
+            0.001,
+            "fitted",
+        )
+    )
+
+    # --- The tiller passing under the rail it used to pass over.
+    tiller = by_name.get("tiller")
+    if tiller is not None:
+        gap = _tiller_clearance(world_verts([tiller]), rail)
+        checks.append(
+            Check(
+                "tiller under the stern rail",
+                -gap if gap is not None else None,
+                0.190,
+                0.090,
+                "clearance",
+                note="a tiller through the rail is a tiller that cannot move",
+            )
+        )
+
+    # --- The outboard, which is only useful if it reaches the water.
+    outboard = by_name.get("outboard")
+    if outboard is not None:
+        points = world_verts([outboard])
+        # The top of the disc, not the bottom of it. A propeller with its
+        # upper blade in the air is a propeller that ventilates, and measuring
+        # the deepest point cannot tell the difference: the foot went 70 mm
+        # further down than it needed to and still passed.
+        checks.append(
+            Check(
+                "whole propeller below the waterline",
+                -(min(p.z for p in points) + params.OUTBOARD_PROP_DIAMETER),
+                0.090,
+                0.055,
+                "clearance",
+                note="the disc is 190 mm across and all of it has to be wet",
+            )
+        )
+        checks.append(
+            Check(
+                "outboard clear of the rudder",
+                min(abs(p.x) for p in points) - params.RUDDER_THICKNESS / 2,
+                0.245,
+                0.060,
+                "clearance",
+                note="offset to starboard because the rudder is on the centreline",
+            )
+        )
+
+    return checks
+
+
+def deck_widths():
+    """The cockpit's half-widths where the footwell ends, which is the one place
+    the after locker lid and the well have to agree."""
+    import deck as deck_module
+
+    return deck_module.cockpit_widths(params.COCKPIT_FOOTWELL_END)
+
+
+def _tiller_clearance(tiller, rail):
+    """Smallest signed vertical gap, tiller minus rail, wherever the two are over
+    each other. Negative now that the rail is a pushpit and the tiller goes
+    under it.
+
+    Measured as a point cloud rather than analytically, because it is the built
+    geometry that has to miss and both of these are swept tubes whose surfaces
+    are a good deal fatter than the paths they were built from.
+    """
+    worst = None
+    for point in tiller:
+        for other in rail:
+            if abs(point.x - other.x) > 0.05:
+                continue
+            if abs(point.y - other.y) > 0.05:
+                continue
+            gap = point.z - other.z
+            worst = gap if worst is None else min(worst, gap)
+    return worst
+
+
+def interior_checks(by_name):
+    """Measure the accommodation.
+
+    Nothing here comes from the class rules -- they stop at the deck. These are
+    the brochure's own claims about the boat turned into measurements, plus one
+    check that is not a claim at all and matters more than the rest.
+
+    That one is clearance. Length, headroom and berth sizes all describe the
+    interior on its own terms, and an interior can satisfy every one of them
+    while standing 40 mm outside its own topsides: the liner is generated from
+    a copy of the hull curves and the joinery is cut to fitted numbers, so
+    nothing in the process forces them to agree. It is the same argument the
+    hydrostatics make about the hull -- outline checks constrain an outline,
+    and you need one measurement of the solid to know it is really there.
+    """
+    from lib.curves import Curve
+
+    checks = []
+    interior_objs = [
+        by_name[n]
+        for n in (
+            "liner",
+            "bulkheads",
+            "galley",
+            "quarter_berth",
+            "steps",
+            "table",
+            # The fit-out, which is cut to the hull by the same call the joinery
+            # uses and can go wrong in exactly the same way. The settee cushions
+            # did, first time: cut to the topsides at their top edge and standing
+            # 33 mm outside them at their bottom one, which shows from the water
+            # as a stripe down the hull and from nowhere at all inside the cabin.
+            "cushions",
+            "backrests",
+            "shelf",
+            "locker_doors",
+            "galley_fittings",
+        )
+        if n in by_name
+    ]
+    if not interior_objs:
+        print("[verify] no interior found in the build")
+        return checks
+
+    sheer = Curve(params.SHEER)
+    profile = Curve(params.PROFILE)
+    half_beam = Curve(params.HALF_BEAM)
+    fullness = Curve(params.SECTION_FULLNESS)
+    tuck = Curve(params.SECTION_TUCK)
+
+    from lib.curves import section_half_beam
+
+    # --- Clearance: nothing may be outside the hull skin.
+    worst, worst_at = 0.0, None
+    for point in world_verts(interior_objs):
+        station = params.y_to_station(point.y)
+        if not 0.0 <= station <= params.LOA:
+            continue
+        skin = section_half_beam(
+            max(0.0, half_beam(station) - params.RUBRAIL_PROUD),
+            sheer(station),
+            profile(station),
+            fullness(station),
+            tuck(station),
+            point.z,
+        )
+        over = abs(point.x) - skin
+        if over > worst:
+            worst, worst_at = over, station
+
+    note = f"worst at station {worst_at:.3f} m" if worst_at is not None else ""
+    checks.append(
+        Check(
+            "interior inside the hull skin",
+            worst,
+            0.0,
+            0.002,
+            "clearance",
+            note=note,
+        )
+    )
+
+    # --- Headroom, both ways round. The brochure sells standing headroom at the
+    # galley as the best thing about the boat, which only means anything if
+    # there is not standing headroom everywhere -- so both are checked.
+    deckhead = by_name.get("deckhead")
+    if deckhead is not None:
+        def headroom(station):
+            """Deckhead above the sole on the centreline, at a station."""
+            best = None
+            for point in world_verts([deckhead]):
+                if abs(point.x) > 0.09:
+                    continue
+                if abs(params.y_to_station(point.y) - station) > 0.12:
+                    continue
+                best = point.z if best is None else max(best, point.z)
+            return None if best is None else best - params.SOLE_LEVEL
+
+        # Where someone at the galley actually stands, which is not the middle
+        # of the galley. The worktop runs aft past the bulkhead and under the
+        # side deck -- that is how 720 mm of it fits in a 1900 mm saloon -- so
+        # its own midpoint is not under the cabin at all. Now that the bulkhead
+        # leans forward over the top of it there is no deckhead there to
+        # measure, and asking for one returns nothing rather than something
+        # wrong, which is how this surfaced.
+        galley = headroom(
+            min(
+                (params.GALLEY_START + params.GALLEY_END) / 2,
+                params.COACHROOF_END - 0.250,
+            )
+        )
+        saloon = headroom((params.SETTEE_START + params.SETTEE_END) / 2)
+
+        checks.append(
+            Check(
+                "headroom at the galley",
+                galley,
+                1.600,
+                0.060,
+                "brochure p4",
+                note='"stahojd nar du lagar mat"',
+            )
+        )
+        checks.append(
+            Check(
+                "headroom over the saloon",
+                saloon,
+                1.470,
+                0.070,
+                "brochure p4",
+                note="must be less than the galley, or the boast is empty",
+            )
+        )
+
+    # --- Berths. "Sammanlagt fem personer, tva i forpiken och tre i salongen."
+    checks.append(
+        Check(
+            "forepeak berth length",
+            params.FOREPEAK_BERTH_END - params.FOREPEAK_BERTH_START,
+            2.050,
+            0.150,
+            "brochure p4",
+            note='"Forpik med fullangdskojer", two adults',
+        )
+    )
+    checks.append(
+        Check(
+            "settee berth length",
+            params.SETTEE_END - params.SETTEE_START,
+            1.950,
+            0.100,
+            "brochure p4",
+        )
+    )
+    checks.append(
+        Check(
+            "quarter berth length",
+            params.QUARTER_BERTH_END - params.QUARTER_BERTH_START,
+            1.950,
+            0.150,
+            "brochure p4",
+        )
+    )
+
+    # --- The sole you walk down to reach them.
+    checks.append(
+        Check(
+            "clear width between settees",
+            params.SOLE_HALF_WIDTH * 2,
+            0.520,
+            0.080,
+            "fitted",
+        )
+    )
+
+    return checks
+
+
 def parse_args(argv: list[str]) -> dict:
     args = argv[argv.index("--") + 1 :] if "--" in argv else []
     out = {"project": os.getcwd()}
@@ -347,7 +742,7 @@ def parse_args(argv: list[str]) -> dict:
 
 def main() -> int:
     opts = parse_args(sys.argv)
-    blend_path = os.path.join(opts["project"], "blender", "maxi77_exterior.blend")
+    blend_path = os.path.join(opts["project"], "blender", "maxi77.blend")
 
     if not os.path.exists(blend_path):
         print(f"[verify] no build found at {blend_path} -- run model:build first")
@@ -385,6 +780,12 @@ def main() -> int:
     )
     checks += keel_check(by_name.get("keel"))
     checks += rig_checks(by_name)
+    checks += fittings_checks(by_name)
+
+    # The accommodation, in the same report. One command and one exit code, so
+    # a green hull cannot hide a cabin that has come adrift from it -- which is
+    # the whole reason these were merged into one model.
+    checks += interior_checks(by_name)
 
     return 0 if report(checks) else 1
 

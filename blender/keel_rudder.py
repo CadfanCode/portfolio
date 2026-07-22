@@ -121,6 +121,26 @@ def _build_skeg(collection, profile):
     return _loft_foil("skeg", collection, levels)
 
 
+def rudder_axis():
+    """Where the blade is hung: `(hinge station, rake)`.
+
+    Hang the blade on the transom, not in the water behind it. The transom leans
+    aft, so where its face sits depends on the height the pintles are at --
+    taking the station at the sheer instead leaves the rudder floating a clear
+    100 mm astern of the boat.
+
+    Public because the tiller has to start where the rudder ends. Steering gear
+    given a station of its own drifts off the blade the moment the transom rake
+    or the freeboard moves, and the failure looks like a tiller that is merely
+    slightly too long.
+    """
+    from math import radians, tan
+
+    rake = tan(radians(params.TRANSOM_RAKE))
+    transom_at_hinge = params.LOA - (params.FREEBOARD_STERN - params.RUDDER_TOP) * rake
+    return transom_at_hinge + 0.020, rake
+
+
 def _build_rudder(collection):
     """Transom-hung blade, raked with the transom it hangs on.
 
@@ -128,16 +148,7 @@ def _build_rudder(collection):
     a rudder that can be angled is worth having later -- it is the cheapest
     possible signal that the boat is a real thing and not a prop.
     """
-    from math import radians, tan
-
-    rake = tan(radians(params.TRANSOM_RAKE))
-
-    # Hang the blade on the transom, not in the water behind it. The transom
-    # leans aft, so where its face sits depends on the height the pintles are
-    # at -- taking the station at the sheer instead leaves the rudder floating
-    # a clear 100 mm astern of the boat.
-    transom_at_hinge = params.LOA - (params.FREEBOARD_STERN - params.RUDDER_TOP) * rake
-    hinge_station = transom_at_hinge + 0.020
+    hinge_station, rake = rudder_axis()
     levels = []
     steps = 8
 
