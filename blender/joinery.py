@@ -21,7 +21,7 @@ and the lockers are already there.
 
 import interior
 import params
-from lib.mesh import cap_loop, grid_to_mesh, recalc_normals
+from lib.mesh import bevel, cap_loop, grid_to_mesh, recalc_normals
 
 
 def build(collection):
@@ -33,6 +33,7 @@ def build(collection):
         "galley": _build_galley(collection, inner),
         "quarter_berth": _build_quarter_berth(collection, inner),
         "steps": _build_steps(collection),
+        "step_grabrail": _build_step_grabrail(collection),
         "table": _build_table(collection),
     }
 
@@ -218,7 +219,9 @@ def _build_bulkheads(collection, inner):
                 )
             )
 
-    return _join(panels, "bulkheads")
+    obj = _join(panels, "bulkheads")
+    bevel(obj, width=0.003, segments=2)
+    return obj
 
 
 def _build_galley(collection, inner):
@@ -231,7 +234,7 @@ def _build_galley(collection, inner):
     """
     out = inner(params.GALLEY_START, params.GALLEY_TOP)
 
-    return _hull_block(
+    obj = _hull_block(
         "galley",
         collection,
         inner,
@@ -242,6 +245,8 @@ def _build_galley(collection, inner):
         params.SOLE_LEVEL,
         params.GALLEY_TOP,
     )
+    bevel(obj, width=0.004, segments=2)
+    return obj
 
 
 def _build_quarter_berth(collection, inner):
@@ -251,7 +256,7 @@ def _build_quarter_berth(collection, inner):
     under the bridgedeck with no headroom over it at all, which is the whole
     idea of a quarter berth and the reason it costs the saloon nothing.
     """
-    return _hull_block(
+    obj = _hull_block(
         "quarter_berth",
         collection,
         inner,
@@ -262,17 +267,38 @@ def _build_quarter_berth(collection, inner):
         params.SOLE_LEVEL,
         params.SETTEE_LEVEL,
     )
+    bevel(obj, width=0.004, segments=2)
+    return obj
 
 
 def _build_steps(collection):
-    """The way below: "tva stora dragbara lador", two big pull-out drawers.
+    """The way below: "tva stora dragbara lador", two big pull-out drawers, plus
+    a stowage compartment in the top step -- carried on a ladder-frame carcase
+    with a teak tread nosed out past its own riser.
 
-    Modelled closed, as two stacked boxes. The drawers are the point of them on
-    the real boat and they are invisible here -- what a drawer front looks like
-    shut is a flat panel.
+    Modelled closed, as nested boxes. The drawers are the point of them on the
+    real boat and they are invisible here -- what a drawer front looks like shut
+    is a flat panel, which is what each carcase box's forward face still is.
+
+    What is new is that the carcase and the tread are no longer the same box.
+    The carcase stops TREAD_NOSING short of where the tread does and
+    TREAD_THICKNESS below it, and a separate slab sits on top and reaches the
+    rest of the way to the front -- which is where a nosing comes from, and it
+    is also what puts a real gap under every tread: the overhang has nothing
+    beneath it but the riser one step down, the shadow line a built-up wooden
+    stair casts and a moulded box does not.
+
+    Each tread is three narrow slats rather than one slab, a few millimetres
+    apart -- teak laid this way *is* the non-slip surface on a boat this age,
+    the same reasoning `fittings.cockpit_grating` uses on the footwell sole
+    above.
     """
-    boxes = []
+    carcase = []
+    treads = []
     station = params.COCKPIT_START
+    slat_gap = 0.008
+    width = params.STEP_HALF_WIDTH * 2
+    slat_width = (width - 2 * slat_gap) / 3
 
     for i in range(params.STEP_TREADS):
         # Nested boxes, each running aft to the bulkhead: the lowest tread
@@ -283,23 +309,106 @@ def _build_steps(collection):
         # *tallest* box the longest -- and a tall long box in front of a short
         # one is not a staircase, it is a single block with two steps hidden
         # inside it. It read as a lectern standing in the middle of the saloon.
-        tread = params.SOLE_LEVEL + params.STEP_RISE * (i + 1)
+        tread_top = params.SOLE_LEVEL + params.STEP_RISE * (i + 1)
+        carcase_top = tread_top - params.TREAD_THICKNESS
         reach = params.STEP_DEPTH * (params.STEP_TREADS - i)
+        carcase_reach = reach - params.TREAD_NOSING
 
-        boxes.append(
+        carcase.append(
             _box(
-                f"step_{i}",
+                f"step_carcase_{i}",
                 collection,
-                station - reach,
+                station - carcase_reach,
                 station,
                 -params.STEP_HALF_WIDTH,
                 params.STEP_HALF_WIDTH,
                 params.SOLE_LEVEL,
-                tread,
+                carcase_top,
             )
         )
 
-    return _join(boxes, "steps")
+        for s in range(3):
+            x0 = -params.STEP_HALF_WIDTH + s * (slat_width + slat_gap)
+            treads.append(
+                _box(
+                    f"step_tread_{i}_{s}",
+                    collection,
+                    station - reach,
+                    station,
+                    x0,
+                    x0 + slat_width,
+                    carcase_top,
+                    tread_top,
+                )
+            )
+
+    obj = _join(carcase + treads, "steps")
+    bevel(obj, width=0.0025, segments=2)
+    return obj
+
+
+def _build_step_grabrail(collection):
+    """A handhold at the top of the steps, standing proud of the top riser.
+
+    Coming down backwards is the only sane way onto a companionway this steep,
+    so the rail exists to be found by a hand that is not looking -- a bar
+    athwart the front of the top step, on two feet, the same shape
+    `fittings.py` builds for the mainsheet horse and for the same reason: a
+    straight bar at hand height is a shape you can read from across the cabin.
+    """
+    from math import cos, pi, sin
+
+    top_tread = params.SOLE_LEVEL + params.STEP_RISE * params.STEP_TREADS
+    carcase_top = top_tread - params.TREAD_THICKNESS
+    carcase_reach = params.STEP_DEPTH - params.TREAD_NOSING
+    face_station = params.COCKPIT_START - carcase_reach
+    y = params.station_to_y(face_station) - 0.020  # standing proud of the riser
+
+    z_bar = carcase_top + params.GRABRAIL_HEIGHT
+    half = params.STEP_HALF_WIDTH - 0.030
+    radius = params.GRABRAIL_RADIUS
+    segments = 8
+
+    def ring_yz(x, y_c, z_c):
+        return [
+            (
+                x,
+                y_c + radius * cos(2 * pi * i / segments),
+                z_c + radius * sin(2 * pi * i / segments),
+            )
+            for i in range(segments)
+        ]
+
+    def ring_xy(x_c, y_c, z):
+        return [
+            (
+                x_c + radius * cos(2 * pi * i / segments),
+                y_c + radius * sin(2 * pi * i / segments),
+                z,
+            )
+            for i in range(segments)
+        ]
+
+    def tube(name, rings):
+        obj = grid_to_mesh(name, rings, collection, close_rings=True)
+        cap_loop(obj, rings[0])
+        cap_loop(obj, list(reversed(rings[-1])))
+        recalc_normals(obj)
+        return obj
+
+    pieces = [
+        tube("step_grabrail_bar", [ring_yz(x, y, z_bar) for x in (-half, half)])
+    ]
+    for side in (-1, 1):
+        x = side * half
+        pieces.append(
+            tube(
+                f"step_grabrail_foot_{side}",
+                [ring_xy(x, y, z) for z in (carcase_top, z_bar)],
+            )
+        )
+
+    return _join(pieces, "step_grabrail")
 
 
 def _build_table(collection):
@@ -319,10 +428,11 @@ def _build_table(collection):
     # want its leg: the post is only 350 mm abaft the bulkhead, and a 900 mm
     # table balanced about it has its forward edge against the locker doors.
     mid = params.MAST_POST_STATION - 0.170 + length / 2
-    top = params.SOLE_LEVEL + 0.680  # off the sole, not off the seat: a table
-    # is a table height whatever is drawn beside it
+    top = params.TABLE_TOP  # off the sole, not off the seat: a table is a
+    # table height whatever is drawn beside it -- and, since the owner's brief,
+    # the same number the galley worktop is built to (see params.GALLEY_TOP).
 
-    return _box(
+    obj = _box(
         "table",
         collection,
         mid - length / 2,
@@ -332,10 +442,13 @@ def _build_table(collection):
         top - 0.030,
         top,
     )
+    bevel(obj, width=0.004, segments=2)
+    return obj
 
 
 def _build_mast_post(collection):
-    """The compression post under the mast step: a round alloy tube.
+    """The compression post under the mast step: a round alloy tube, on a heel
+    fitting where it lands on the sole.
 
     The one thing below deck that is not a panel, and the only thing here that
     is not built as a box. It is a drawn section, it is on the centreline of a
@@ -346,6 +459,12 @@ def _build_mast_post(collection):
     It is also the leg of the table. Both jobs are the same post on the real
     boat, which is why the table is where it is.
 
+    The heel fitting is the same argument in miniature: a tube meeting the sole
+    with no foot under it reads as a pole stuck through the floor rather than as
+    something carrying a load. A short flared flange -- taller than it needs to
+    be structurally, so it actually reads as a casting rather than a chamfer --
+    is what every deck-stepped post like this has where it lands.
+
     UNVERIFIED -- see params.HAS_MAST_POST. It is here because a deck-stepped
     mast has to get its load down somehow and this is the usual way, not because
     any reference to hand shows one.
@@ -353,18 +472,25 @@ def _build_mast_post(collection):
     from math import cos, pi, sin
 
     radius = params.MAST_POST_DIAMETER / 2
+    flange_radius = radius * 1.8
+    flange_height = 0.030
     y = params.station_to_y(params.MAST_POST_STATION)
 
-    rings = [
-        [
-            (radius * cos(2 * pi * i / 12), y + radius * sin(2 * pi * i / 12), z)
+    def ring(r, z):
+        return [
+            (r * cos(2 * pi * i / 12), y + r * sin(2 * pi * i / 12), z)
             for i in range(12)
         ]
-        for z in (_deckhead_z(params.MAST_POST_STATION), params.SOLE_LEVEL)
+
+    rings = [
+        ring(radius, _deckhead_z(params.MAST_POST_STATION)),
+        ring(radius, params.SOLE_LEVEL + flange_height),
+        ring(flange_radius, params.SOLE_LEVEL + flange_height),
+        ring(flange_radius, params.SOLE_LEVEL),
     ]
 
     obj = grid_to_mesh("mast_post", rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
-    cap_loop(obj, list(reversed(rings[1])))
+    cap_loop(obj, list(reversed(rings[-1])))
     recalc_normals(obj)
     return obj

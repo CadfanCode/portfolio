@@ -1158,6 +1158,14 @@ wide at this height amidships. Once SOLE_HALF_WIDTH has taken its share, about
 540 mm of seat is left, which is deep enough to sleep two across -- which is
 what the brochure's "tre i salongen" needs it to be."""
 
+TABLE_TOP = SOLE_LEVEL + 0.680
+"""Height of the saloon table, off the sole rather than off the seat: a table is
+a table height whatever is drawn beside it.
+
+The owner's brief asked for the galley worktop to come up to the table -- so
+GALLEY_TOP below is defined from this number rather than carrying a second guess
+at "counter height", which is what put the two 190 mm apart in the first place."""
+
 SHELF_LEVEL = 0.560
 SHELF_DEPTH = 0.130
 SHELF_THICKNESS = 0.014
@@ -1168,6 +1176,19 @@ berths runs a shelf, ideal for small things.
 It runs the length of the saloon and stops at the bulkheads, which is what makes
 it read as part of the boat rather than as a plank: a shelf that ran on past the
 cupboards would be a shelf nobody could have fitted."""
+
+FIDDLE_HEIGHT = 0.038
+FIDDLE_THICKNESS = 0.016
+FIDDLE_SCALLOP = 0.004
+"""The raised lip along the shelf's inner edge -- the one facing the cabin,
+where a book actually can slide off, not the one against the hull where it
+cannot. Teak, the same as the shelf itself, and low enough that it reads as a
+lip rather than a second shelf on top of the first.
+
+FIDDLE_SCALLOP is the wave in its top edge -- most real ones are worked with a
+row of shallow scallops or finger slots rather than left as a straight batten.
+Modelled as a sine in the swept profile's own height rather than as cutouts, so
+it costs nothing beyond the stations the shelf is already lofted at."""
 
 BACKREST_HEIGHT = 0.200
 BACKREST_THICKNESS = 0.055
@@ -1234,7 +1255,7 @@ for the space it needs."""
 
 GALLEY_START = 4.760
 GALLEY_END = 5.480
-GALLEY_TOP = 0.300
+GALLEY_TOP = TABLE_TOP
 GALLEY_DEPTH = 0.480
 """The pentry. Port side, at the companionway, where the raised panel over the
 way below gives the headroom the brochure sells: "Pentryt ar stort och
@@ -1244,7 +1265,13 @@ for 5-6 personer".
 It runs aft past the coachroof and under the side deck, which is what makes 720
 mm of worktop fit in a boat whose saloon is only 1900 mm long. Sink forward,
 two-burner hob aft -- "Till hoger pa banken har du det tva-lagiga koket", and
-right, from someone standing at it facing outboard, is aft."""
+right, from someone standing at it facing outboard, is aft.
+
+GALLEY_TOP used to be 300 mm above the sole, a plain fitted guess and 190 mm
+short of the table -- so a visitor stepping from one to the other met a worktop
+at knee height next to a table at hip height, on the same boat. Owner's brief:
+raise it to match. Tied to TABLE_TOP rather than given its own number, so the
+two cannot drift apart again."""
 
 # The way below.
 
@@ -1268,6 +1295,22 @@ Derived rather than fitted, because it is the single point where the
 accommodation and the cockpit meet. Given a number of its own it would drift
 away from the stairs the moment either moved, and the failure is silent -- a
 sill 40 mm out looks perfectly normal and is a trip hazard on a real boat."""
+
+TREAD_THICKNESS = 0.024
+TREAD_NOSING = 0.022
+GRABRAIL_HEIGHT = 0.340
+GRABRAIL_RADIUS = 0.014
+"""The steps were three plain boxes stacked into a staircase, which is what the
+carcase underneath them still is -- but a real tread is teak, laid *on* that
+carcase rather than being it, so it can nose out past the riser below.
+TREAD_NOSING is that overhang: enough to throw a shadow line under the front
+edge of every tread, which is what stops the stack reading as one solid block
+with two grooves in it.
+
+GRABRAIL_HEIGHT is a handhold's worth of tube standing off the top step, at the
+side a hand actually falls to coming down backwards -- which is the only sane
+way down a companionway this steep, so the rail exists to be found without
+looking."""
 
 MAST_POST_STATION = MAST_STATION
 MAST_POST_DIAMETER = 0.055

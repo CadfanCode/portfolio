@@ -24,7 +24,7 @@ on the real boat they are the parts that are not the liner.
 import deck
 import params
 from lib.curves import Curve, section_half_beam
-from lib.mesh import cap_loop, grid_to_mesh, mirror_x, recalc_normals, shade_smooth
+from lib.mesh import bevel, cap_loop, grid_to_mesh, mirror_x, recalc_normals
 
 
 HULL_POINTS = 5
@@ -171,7 +171,11 @@ def _build_liner(collection, inner):
     obj = grid_to_mesh("liner", rings, collection)
     mirror_x(obj)
     recalc_normals(obj)
-    shade_smooth(obj, sharp_above_degrees=30.0)
+    # The settee-front corners run the whole length of the saloon as a genuine
+    # right angle -- the one place on the liner that is not a fair loft -- and
+    # are exactly the "knife edge" the owner's brief points at. Bevelled rather
+    # than shaded: a real moulding cannot be pulled off one either.
+    bevel(obj, width=0.003, segments=2, smooth_above_degrees=30.0)
     return obj
 
 
@@ -221,7 +225,7 @@ def _build_deckhead(collection):
     obj = grid_to_mesh("deckhead", rings, collection)
     mirror_x(obj)
     recalc_normals(obj, inward=True)
-    shade_smooth(obj, sharp_above_degrees=32.0)
+    bevel(obj, width=0.002, segments=1, smooth_above_degrees=32.0)
     return obj
 
 

@@ -18,11 +18,11 @@ what the clearance check in `verify.py` exists to catch and what it caught the
 first time the galley was built.
 """
 
-from math import hypot
+from math import cos, hypot, pi, sin
 
 import interior
 import params
-from lib.mesh import cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
+from lib.mesh import bevel, cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
 
 
 def build(collection):
@@ -35,6 +35,13 @@ def build(collection):
         "cushions": _build_cushions(collection, inner),
         "locker_doors": _build_locker_doors(collection, inner),
         "galley_fittings": _build_galley_fittings(collection, inner),
+        "books": _build_books(collection, inner),
+        "grabrails": _build_grabrails(collection),
+        "curtains": _build_curtains(collection, inner),
+        "cabin_lamp": _build_cabin_lamp(collection, inner),
+        "bilge_hatch": _build_bilge_hatch(collection),
+        "washboard": _build_washboard(collection),
+        "fire_extinguisher": _build_fire_extinguisher(collection, inner),
     }
 
 
@@ -62,13 +69,32 @@ def _stations(start, end, count):
     return [start + step * i for i in range(count)]
 
 
-def _finish(obj, sharp=35.0):
+def _finish(obj, sharp=35.0, bevel_width=0.0025, bevel_segments=1):
+    """Shared clean-up for anything built here: normals, then either a bevel or
+    a plain smoothing pass.
+
+    Everything below deck gets its arris taken off -- CLAUDE.md and the owner's
+    brief both say so -- but a round object (a burner, a tap) is already round
+    by construction, and bevelling the facets of its own cylinder would chamfer
+    the very edges that are supposed to read as curved. Those pass
+    `bevel_width=None` and fall back to the old shade-smooth-only behaviour.
+
+    One segment by default: a single flat chamfer on every edge of a box is
+    twelve new faces, and this module builds dozens of small boxes. A rounded,
+    two-segment bevel is reserved for the handful of pieces big enough, and
+    looked at closely enough, to be worth the extra faces -- the cushions and
+    the cushion-like curtain bunch, both explicitly asked for it below.
+    """
     recalc_normals(obj)
-    shade_smooth(obj, sharp_above_degrees=sharp)
+    if bevel_width:
+        bevel(obj, width=bevel_width, segments=bevel_segments)
+    else:
+        shade_smooth(obj, sharp_above_degrees=sharp)
     return obj
 
 
-def _box(name, collection, station_a, station_b, x0, x1, z0, z1, sharp=30.0):
+def _box(name, collection, station_a, station_b, x0, x1, z0, z1, sharp=30.0,
+         bevel_width=0.0025, bevel_segments=1):
     """An axis-aligned box, given as two stations, two signed half-offsets and
     two heights."""
     ya, yb = _y(station_a), _y(station_b)
@@ -79,7 +105,7 @@ def _box(name, collection, station_a, station_b, x0, x1, z0, z1, sharp=30.0):
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
     cap_loop(obj, list(reversed(rings[1])))
-    return _finish(obj, sharp)
+    return _finish(obj, sharp, bevel_width=bevel_width, bevel_segments=bevel_segments)
 
 
 def _hull_strip(name, collection, inner, side, start, end, z0, z1, thickness,
@@ -126,33 +152,96 @@ def _hull_strip(name, collection, inner, side, start, end, z0, z1, thickness,
 # --------------------------------------------------------------------------
 
 
+SHELF_END = {-1: params.GALLEY_START, 1: SALOON_END}
+"""Where the shelf and backrest stop, aft, on each side.
+
+Both used to run to `SALOON_END` on both sides, which put the port one over the
+galley -- harmless while the worktop stood 260 mm below it, and a collision the
+moment the owner's brief raised GALLEY_TOP to the table: the tap alone now
+reaches within 90 mm of where that shelf used to sit. Stopping the port run at
+the galley is not a workaround for that, though -- a shelf hanging over a
+worktop with a tap on it was never right, independent of the tap's height."""
+
+
 def _build_shelf(collection, inner):
-    """The shelf under the windows, both sides, stopping at the bulkheads.
+    """The shelf under the windows, both sides, stopping at the bulkheads --
+    and now at a fiddle rail along its inner edge, with end cheeks where the
+    run stops open.
 
     "Eller titta ovanfor ryggstoden till kojerna. Dar loper en hylla som ar
     idealisk for smasaker" -- above the backrests runs a shelf, ideal for small
     things. It is the one piece of joinery the brochure bothers to point at, and
     it does a job no photograph of it explains: it is the horizontal line that
     stops the topsides reading as one blank curve from seat to deckhead.
+
+    A shelf with nothing along its edge is not what that sentence describes,
+    though -- "smasaker" stays on a shelf underway because something stops it
+    sliding off, and the edge that needs stopping is the inner one: the shelf's
+    outer edge is the hull itself, and nothing has ever fallen off a boat
+    through its own topsides.
     """
     return join(
         [
-            _hull_strip(
+            _shelf_with_fiddle(
                 f"shelf_{side}",
                 collection,
                 inner,
                 side,
                 params.BULKHEAD_AFT + 0.020,
-                SALOON_END,
-                params.SHELF_LEVEL,
-                params.SHELF_LEVEL + params.SHELF_THICKNESS,
-                params.SHELF_DEPTH,
-                sharp=25.0,
+                SHELF_END[side],
             )
             for side in (-1, 1)
         ],
         "shelf",
     )
+
+
+def _shelf_with_fiddle(name, collection, inner, side, start, end, count=28):
+    """The shelf and its fiddle rail, lofted as one profile.
+
+    Not a shelf with a rail glued on: the fiddle's own outer face is the shelf
+    top's own inner edge, so the two cannot come loose from each other, and the
+    strip's own `cap_loop` ends -- the same close every strip in this module
+    gets -- become the end cheeks the shelf is supposed to have, full height
+    from the shelf's underside to the top of the fiddle, rather than the 14 mm
+    edge a plain shelf would leave.
+    """
+    depth = params.SHELF_DEPTH
+    z0 = params.SHELF_LEVEL
+    z1 = z0 + params.SHELF_THICKNESS
+    ft = params.FIDDLE_THICKNESS
+
+    stations = _stations(start, end, count)
+    length = end - start
+    waves = max(2, round(length / 0.28))
+
+    rings = []
+    for i, station in enumerate(stations):
+        top = inner(station, z1)
+        foot = inner(station, z0)
+        scallop = params.FIDDLE_SCALLOP * sin(2 * pi * waves * i / (count - 1))
+        fiddle_top = z1 + params.FIDDLE_HEIGHT + scallop
+
+        # Out along the shelf top from the hull, up the fiddle's outer face,
+        # across its scalloped top, down its inner face flush with the shelf
+        # surface, then down the shelf's own thickness and back out along its
+        # foot to the hull -- the shelf and the fiddle in one closed loop.
+        ring = [
+            (top, z1),
+            (top - depth + ft, z1),
+            (top - depth + ft, fiddle_top),
+            (top - depth, fiddle_top),
+            (top - depth, z1),
+            (foot - depth, z0),
+            (foot, z0),
+        ]
+        y = _y(station)
+        rings.append([(side * x, y, z) for (x, z) in ring])
+
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    return _finish(obj, sharp=22.0, bevel_width=0.0015, bevel_segments=1)
 
 
 def _build_backrests(collection, inner):
@@ -161,7 +250,8 @@ def _build_backrests(collection, inner):
     Hung off the underside of the shelf rather than given a height of their own,
     so the two cannot part company -- and so the run of them reads as one
     assembly, which on the boat it is: the shelf's front edge is what holds the
-    top of the cushion in.
+    top of the cushion in. Stops at the same station the shelf above it now
+    does on each side, for the same reason.
     """
     top = params.SHELF_LEVEL
     pieces = [
@@ -171,7 +261,7 @@ def _build_backrests(collection, inner):
             inner,
             side,
             params.BULKHEAD_AFT + 0.020,
-            SALOON_END,
+            SHELF_END[side],
             top - params.BACKREST_HEIGHT,
             top,
             params.BACKREST_THICKNESS,
@@ -292,11 +382,19 @@ def _build_cushions(collection, inner):
 
 
 def _build_flat_cushion(name, collection, inner, side, start, end, inboard):
-    """A cushion lying on the liner's seat, cut to the hull at every station."""
+    """A cushion lying on the liner's seat, cut to the hull at every station.
+
+    Given a slight crown rather than a flat top: a ridge running down the
+    middle of the cushion, low enough to be a fill of foam under fabric rather
+    than a fold in it. Cheap in geometry -- one extra vertex per ring -- and it
+    is most of the difference between a cushion and a slab the same colour as
+    one; a flat top is where "plastic shell with furniture in it" comes from.
+    """
     thickness = params.CUSHION_THICKNESS
+    crown = 0.012
     rings = []
 
-    for station in _stations(start, end, 10):
+    for station in _stations(start, end, 14):
         base = interior.seat_level(station)
         top = base + thickness
         # Cut to the hull at both edges. At one height for the whole cushion it
@@ -308,15 +406,16 @@ def _build_flat_cushion(name, collection, inner, side, start, end, inboard):
         if min(out_top, out_foot) <= x_in:
             continue
 
+        mid = (x_in + out_top) / 2
         y = _y(station)
-        rings.append(
-            [
-                (side * x_in, y, top),
-                (side * out_top, y, top),
-                (side * out_foot, y, base),
-                (side * x_in, y, base),
-            ]
-        )
+        ring = [
+            (x_in, base),
+            (x_in, top),
+            (mid, top + crown),
+            (out_top, top),
+            (out_foot, base),
+        ]
+        rings.append([(side * x, y, z) for (x, z) in ring])
 
     if len(rings) < 2:
         return None
@@ -324,7 +423,7 @@ def _build_flat_cushion(name, collection, inner, side, start, end, inboard):
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
     cap_loop(obj, list(reversed(rings[-1])))
-    return _finish(obj, sharp=50.0)
+    return _finish(obj, sharp=45.0, bevel_width=0.002, bevel_segments=2)
 
 
 def _build_forepeak_cushion(collection, inner):
@@ -337,6 +436,7 @@ def _build_forepeak_cushion(collection, inner):
     up with anyway once the filler is cut.
     """
     thickness = params.CUSHION_THICKNESS
+    crown = 0.012
     rings = []
 
     for station in _stations(
@@ -353,6 +453,7 @@ def _build_forepeak_cushion(collection, inner):
         rings.append(
             [
                 (-half_top, y, top),
+                (0.0, y, top + crown),
                 (half_top, y, top),
                 (half_foot, y, base),
                 (-half_foot, y, base),
@@ -365,7 +466,7 @@ def _build_forepeak_cushion(collection, inner):
     obj = grid_to_mesh("cushion_forepeak", rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
     cap_loop(obj, list(reversed(rings[-1])))
-    return _finish(obj, sharp=50.0)
+    return _finish(obj, sharp=45.0, bevel_width=0.002, bevel_segments=2)
 
 
 # --------------------------------------------------------------------------
@@ -381,11 +482,20 @@ def _build_locker_doors(collection, inner):
     that has to be built, and they are the only part anybody sees. They hang on
     the saloon side of the after bulkhead, either side of the way through to the
     forepeak.
+
+    Each gets two hinge leaves at the edge away from the doorway and a finger
+    pull at the edge beside it -- a boat pulls a locker door open by a finger
+    hole let into it, not a handle standing proud, because a proud handle in a
+    passage this narrow catches a shoulder. The wardrobe's door -- see
+    `params.WARDROBE_SIDE` -- is louvred as well, which is the one thing that
+    tells it apart from the clothes locker beside it: a hanging locker needs to
+    breathe and a shelf locker does not.
     """
     ceiling = interior.deckhead_function()
     station = params.BULKHEAD_AFT + 0.018
+    face = station + params.LOCKER_DOOR_THICKNESS
 
-    doors = []
+    pieces = []
     for side in (-1, 1):
         x_in = params.LOCKER_DOORWAY_HALF_WIDTH + 0.015
         x_out = min(
@@ -398,22 +508,73 @@ def _build_locker_doors(collection, inner):
         # Head follows the deckhead, which falls away outboard: a door cut square
         # to the centreline height stands through the ceiling at its far corner.
         head = min(ceiling(station, x_in), ceiling(station, x_out)) - 0.035
+        foot = params.SETTEE_LEVEL + 0.040
 
-        doors.append(
+        pieces.append(
             _box(
                 f"locker_door_{side}",
                 collection,
                 station,
-                station + params.LOCKER_DOOR_THICKNESS,
+                face,
                 side * x_in,
                 side * x_out,
-                params.SETTEE_LEVEL + 0.040,
+                foot,
                 head,
                 sharp=25.0,
             )
         )
 
-    return join(doors, "locker_doors")
+        hinge_x = side * (x_out - 0.022)
+        for hz in (foot + 0.055, head - 0.055):
+            pieces.append(
+                _box(
+                    f"locker_hinge_{side}_{hz:.2f}",
+                    collection,
+                    face,
+                    face + 0.005,
+                    hinge_x - 0.017,
+                    hinge_x + 0.017,
+                    hz - 0.011,
+                    hz + 0.011,
+                    sharp=20.0,
+                )
+            )
+
+        pull_x = side * (x_in + 0.032)
+        pull_z = (foot + head) / 2
+        pieces.append(
+            _box(
+                f"locker_pull_{side}",
+                collection,
+                face,
+                face + 0.009,
+                pull_x - 0.006,
+                pull_x + 0.006,
+                pull_z - 0.026,
+                pull_z + 0.026,
+                sharp=20.0,
+            )
+        )
+
+        if side == params.WARDROBE_SIDE:
+            slats = 5
+            for i in range(slats):
+                z = foot + (head - foot) * (i + 0.5) / slats
+                pieces.append(
+                    _box(
+                        f"locker_louvre_{i}",
+                        collection,
+                        face,
+                        face + 0.005,
+                        side * x_in + 0.014,
+                        side * x_out - 0.014,
+                        z - 0.007,
+                        z + 0.007,
+                        sharp=15.0,
+                    )
+                )
+
+    return join(pieces, "locker_doors")
 
 
 # --------------------------------------------------------------------------
@@ -500,8 +661,6 @@ def _build_galley_fittings(collection, inner):
 
 def _burner(collection, station, x, z):
     """One burner: a low ring, twelve-sided."""
-    from math import cos, pi, sin
-
     rings = [
         [
             (
@@ -517,4 +676,303 @@ def _burner(collection, station, x, z):
     obj = grid_to_mesh(f"burner_{station:.2f}", rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
     cap_loop(obj, list(reversed(rings[-1])))
-    return _finish(obj, sharp=40.0)
+    # Round already, by construction -- bevelling its own facets would chamfer
+    # the curve it is there to fake.
+    return _finish(obj, sharp=40.0, bevel_width=None)
+
+
+# --------------------------------------------------------------------------
+# Fine detail -- the things a cabin this size actually has
+# --------------------------------------------------------------------------
+#
+# Picked for where the camera stands rather than for completeness: the saloon
+# stop looks forward at the bulkhead and the doorway through it, the galley
+# stop looks across at the window, and both are close enough below deck that
+# nothing here has to be large to be seen. A Maxi 77 is a small, plain,
+# well-made Swedish boat, so this stops well short of everything a cabin could
+# have -- see `blender/_handoff_interior.md` for what was left out and why.
+
+
+def _build_books(collection, inner):
+    """A few books on the shelf, propped against the fiddle.
+
+    Not a shelf's worth, and only over one settee: a full run of books both
+    sides is more library than a 7.6 m cruiser carries, and the shelf exists to
+    be "ideal for smasaker" generally, not to be a bookcase. This is the one
+    thing on it substantial enough to need the fiddle at all.
+    """
+    sizes = ((0.185, 0.026), (0.205, 0.021), (0.165, 0.031), (0.195, 0.023))
+    side = 1  # starboard, over the settee that runs the shelf's full length
+    z0 = params.SHELF_LEVEL + params.SHELF_THICKNESS
+
+    books = []
+    station = (params.BULKHEAD_AFT + SALOON_END) / 2 - 0.10
+    for i, (height, spine) in enumerate(sizes):
+        out = inner(station, z0)
+        x_in = out - params.SHELF_DEPTH + params.FIDDLE_THICKNESS + 0.008
+        x_out = min(x_in + 0.105, out - 0.015)
+        if x_out <= x_in:
+            continue
+        books.append(
+            _box(
+                f"book_{i}",
+                collection,
+                station,
+                station + spine,
+                side * x_in,
+                side * x_out,
+                z0,
+                z0 + height,
+                sharp=15.0,
+                bevel_width=0.0015,
+            )
+        )
+        station += spine + 0.006
+
+    return join(books, "books")
+
+
+def _build_grabrails(collection):
+    """Twin handrails on the deckhead, flanking the mast post over the table.
+
+    A post on the centreline already gives a hand something to find there; the
+    rails are for the rest of the walk between the doorway and the table, which
+    on a boat that heels is exactly the reach a single centreline post cannot
+    cover.
+    """
+    ceiling = interior.deckhead_function()
+    start, end = params.BULKHEAD_AFT + 0.120, SALOON_END - 0.120
+    offset = 0.150
+    drop = 0.026
+    radius = 0.011
+    segments = 8
+
+    pieces = []
+    for side in (-1, 1):
+        rings = []
+        for station in _stations(start, end, 10):
+            z = ceiling(station, offset) - drop
+            y = _y(station)
+            rings.append(
+                [
+                    (
+                        side * offset + radius * cos(2 * pi * i / segments),
+                        y,
+                        z + radius * sin(2 * pi * i / segments),
+                    )
+                    for i in range(segments)
+                ]
+            )
+        obj = grid_to_mesh(f"grabrail_{side}", rings, collection, close_rings=True)
+        cap_loop(obj, rings[0])
+        cap_loop(obj, list(reversed(rings[-1])))
+        pieces.append(_finish(obj, bevel_width=None))
+
+    return join(pieces, "grabrails")
+
+
+def _build_curtains(collection, inner):
+    """A curtain track at each saloon window, with the curtain itself gathered
+    to the after end rather than drawn across.
+
+    The two long saloon windows are otherwise the largest bare surface in the
+    cabin, and the brochure's own photographs of boats this size that have them
+    fitted keep them open -- a boat lying at anchor with the curtains drawn
+    reads as shut up rather than lived in.
+    """
+    import deck
+
+    sheer = interior.sheer_z
+    pieces = []
+
+    for w_index, (fwd, aft) in enumerate(params.WINDOWS):
+        mid = (fwd + aft) / 2
+        top = sheer(mid) - params.WINDOW_MARGIN_TOP
+        bottom = sheer(mid) - deck.band_height(mid) + params.WINDOW_MARGIN_BOTTOM
+        if bottom >= top - 0.030:
+            continue
+
+        for side in (-1, 1):
+            out = inner(mid, top)
+            x_in = out - 0.020
+            x_out = x_in - 0.010
+
+            pieces.append(
+                _box(
+                    f"curtain_track_{w_index}_{side}",
+                    collection,
+                    fwd + 0.015,
+                    aft - 0.015,
+                    side * x_in,
+                    side * x_out,
+                    top - 0.006,
+                    top,
+                    sharp=25.0,
+                )
+            )
+
+            # Gathered to the after end -- an open curtain is a bunch, not a
+            # straight edge.
+            pieces.append(
+                _box(
+                    f"curtain_{w_index}_{side}",
+                    collection,
+                    aft - 0.150,
+                    aft - 0.020,
+                    side * x_in,
+                    side * (x_in - 0.026),
+                    bottom,
+                    top - 0.015,
+                    sharp=20.0,
+                    bevel_width=0.003,
+                    bevel_segments=2,
+                )
+            )
+
+    return join(pieces, "curtains")
+
+
+def _build_cabin_lamp(collection, inner):
+    """A single cabin lamp on the deckhead, centreline, over the saloon table.
+
+    The brochure counts three, "varav en i forpiken" -- one of which is in the
+    forepeak -- but this is the one the saloon camera stop actually looks up
+    at, and one fixture says lamp as clearly as three would.
+    """
+    ceiling = interior.deckhead_function()
+    station = (params.BULKHEAD_AFT + SALOON_END) / 2
+    z = ceiling(station, 0.0) - 0.004
+    y = _y(station)
+    segments = 10
+
+    def ring(radius, dz):
+        return [
+            (
+                radius * cos(2 * pi * i / segments),
+                y + radius * sin(2 * pi * i / segments),
+                z - dz,
+            )
+            for i in range(segments)
+        ]
+
+    rings = [ring(0.022, 0.0), ring(0.022, 0.012), ring(0.055, 0.014), ring(0.048, 0.045)]
+    obj = grid_to_mesh("cabin_lamp", rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    return _finish(obj, bevel_width=None)
+
+
+def _build_bilge_hatch(collection):
+    """A hatch in the cabin sole, between the table and the galley.
+
+    Bilge access has to be somewhere along the keel, and this is the one
+    stretch of saloon walkway not already claimed by the table, the steps or a
+    berth. Proud of the sole rather than let into it, for the same reason the
+    anchor box's lid is: the liner is a single lofted surface with no hole in
+    it, so a recess cut into its top renders nothing at all. The fiddle round
+    its own edge and the pull are what read as a hatch instead of a smear.
+    """
+    start, end = 4.300, 4.600
+    half = params.SOLE_HALF_WIDTH - 0.030
+    z = params.SOLE_LEVEL
+    proud = 0.004
+    rim = 0.016
+
+    pieces = [
+        _box(
+            "bilge_hatch_panel", collection, start, end, -half, half, z, z + proud,
+            sharp=20.0,
+        ),
+    ]
+    for s0, s1, x0, x1 in (
+        (start, start + rim, -half, half),
+        (end - rim, end, -half, half),
+        (start + rim, end - rim, -half, -half + rim),
+        (start + rim, end - rim, half - rim, half),
+    ):
+        pieces.append(
+            _box(
+                f"bilge_hatch_fiddle_{s0:.3f}_{x0:.3f}",
+                collection, s0, s1, x0, x1, z + proud, z + proud + 0.006,
+                sharp=20.0,
+            )
+        )
+
+    mid = (start + end) / 2
+    pieces.append(
+        _box(
+            "bilge_hatch_pull", collection, mid - 0.028, mid + 0.028, -0.017, 0.017,
+            z + proud, z + proud + 0.007, sharp=20.0,
+        )
+    )
+
+    return join(pieces, "bilge_hatch")
+
+
+def _build_washboard(collection):
+    """The lower washboard, in place across the foot of the companionway.
+
+    A real one lifts out; this one does not need to, because nobody in the
+    scene is going anywhere -- and an empty doorway reads as a hole through to
+    the cockpit rather than as the way the crew actually come and go. Built on
+    the same lean the doorway itself is cut on (`deck.companionway_lean`), so
+    it sits in the opening rather than standing square across a face that does
+    not.
+    """
+    import deck
+
+    half, sill, head = deck.companionway_opening()
+    height = min(0.320, (head - sill) * 0.6)
+    station = params.COACHROOF_END
+    thickness = 0.018
+    half_board = half - 0.012
+
+    def y_at(z):
+        return params.station_to_y(station) + deck.companionway_lean(station, z)
+
+    rings = []
+    for z in (sill + height, sill):
+        yc = y_at(z)
+        rings.append(
+            [
+                (-half_board, yc - thickness / 2, z),
+                (half_board, yc - thickness / 2, z),
+                (half_board, yc + thickness / 2, z),
+                (-half_board, yc + thickness / 2, z),
+            ]
+        )
+
+    obj = grid_to_mesh("washboard", rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[1])))
+    return _finish(obj, sharp=25.0)
+
+
+def _build_fire_extinguisher(collection, inner):
+    """A small extinguisher strapped to the aft bulkhead, within reach of both
+    the galley and the steps -- which is where the regulations that do not
+    otherwise touch this model would put one.
+    """
+    station = params.BULKHEAD_AFT + 0.026
+    x = params.LOCKER_DOORWAY_HALF_WIDTH + 0.065
+    z0 = interior.floor_level(station) + 0.220
+    radius = 0.038
+    height = 0.260
+    y = _y(station)
+    segments = 10
+
+    def ring(r, z):
+        return [
+            (x + r * cos(2 * pi * i / segments), y + r * sin(2 * pi * i / segments), z)
+            for i in range(segments)
+        ]
+
+    rings = [
+        ring(radius, z0),
+        ring(radius, z0 + height),
+        ring(radius * 0.6, z0 + height + 0.030),
+    ]
+    obj = grid_to_mesh("fire_extinguisher", rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    return _finish(obj, bevel_width=None)
