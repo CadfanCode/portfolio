@@ -132,11 +132,33 @@ back against. Modelled as a rise on a zero-thickness section it came out as a
 blade rather than a coaming; it needs a section of its own before it earns a
 number here."""
 
-COACHROOF_START = 3.100
+DECK_STEP_APEX = 2.770
+"""Where the step in the deck reaches furthest forward: the nose of the chevron,
+on the centreline.
+
+3250 - 480. The riser in CABIN_BAND tops out at station 3250, and
+DECK_STEP_SWEEP carries the same riser 480 mm further forward on the centreline
+than at the deck edge. Written out rather than computed from those two, because
+both of them are below this in the file and neither is going to move without
+this being looked at anyway.
+
+This is the landmark everything on top of the deck is hung from: the coachroof
+starts here and the raised panel over the companionway starts here, so all three
+noses -- step, roof, panel -- are the same point, and the superstructure reads as
+one wedge growing forward out of the deck rather than as things set down on it."""
+
+COACHROOF_START = DECK_STEP_APEX
 COACHROOF_END = COCKPIT_START
 """The coachroof runs from the foredeck back to the cockpit. Cross-check: the
 mast steps on the coachroof (F.7.1) at station 3450, which lands comfortably
-inside this span. If the coachroof were placed wrongly, that would not hold."""
+inside this span. If the coachroof were placed wrongly, that would not hold.
+
+It used to start at 3100, which was "just abaft the step" read off the drawing
+at the deck edge. But the step is a chevron: at the deck edge is exactly where
+it reaches furthest aft, and the roof was being started 330 mm behind its own
+nose. Everything between the two ended up flat -- a dead level shelf between the
+step and the coachroof, with the rise resuming after it, which is the bump the
+profile showed most clearly."""
 
 COACHROOF_HALF_WIDTH = [
     # Half-width of the coachroof *top*. Tapers hard over its forward third and
@@ -155,7 +177,7 @@ COACHROOF_HALF_WIDTH = [
     # point with a flat run beside it, and without one the width came off its
     # start value at full tilt while the roof was still rising out of the deck,
     # which put a visible hook in the edge of the nose.
-    (2.840, 0.400),
+    (2.500, 0.400),
     (COACHROOF_START, 0.400),
     (3.300, 0.500),
     (3.700, 0.560),
@@ -164,12 +186,20 @@ COACHROOF_HALF_WIDTH = [
     (COACHROOF_END, 0.600),
 ]
 
-COACHROOF_NOSE_FADE = 0.260
-"""Over how much of its forward end the coachroof rises out of the deck.
+COACHROOF_NOSE_FADE = 0.900
+"""Over how much of its forward end the coachroof takes on its own camber.
 
 The roof does not start at a wall. It grows out of the raised deck just abaft
 the step, which is what makes the two read as one moulding -- and what the
-brochure's "djarva formen" is: a wedge, not a box set down on a deck."""
+brochure's "djarva formen" is: a wedge, not a box set down on a deck.
+
+This used to fade the roof's *height* in as well, and that was the swelling on
+the nose: see COACHROOF_HEIGHT, which now starts at zero and needs no help. What
+is left for the fade is the flatter camber the roof carries, which does have to
+be eased in -- switched on at a station it folds the surface along the roof's
+half-width. Stretched from 260 mm to nearly a metre while it was being taken off
+the height, because a camber blend has no reason to be brief and this one was
+the last measurable ripple left in the centreline."""
 
 COACHROOF_SIDE_FLARE = 0.075
 """How far the coachroof side leans out between its top edge and the side deck.
@@ -186,9 +216,31 @@ COACHROOF_HEIGHT = [
     # Measured off the trailer side elevation, which is the only true profile
     # here: the coachroof top stands about 173 mm above the deck edge at the
     # after end, of which some 45 mm is the deck's own camber getting there.
-    (COACHROOF_START, 0.012),
-    (3.400, 0.085),
-    (4.200, 0.111),
+    #
+    # A straight run between those two measured ends. It used to reach 85 mm by
+    # station 3400 and then crawl the rest of the way, which put three quarters
+    # of the rise into the first sixth of the length: a knee at the nose you
+    # could see from anywhere off the bow, and a top that went flat behind it.
+    # Nothing was measured at 3400 -- only the ends are -- so the intermediate
+    # points were shape, and the shape they made was a bump.
+    #
+    # Zero at the forward end, not 12 mm, and rising from the step's apex with
+    # no lead-in and no easing. The roof's height used to be faded in by
+    # COACHROOF_NOSE_FADE on top of this, and a curve that starts at a height
+    # multiplied by a fade that starts at zero gives a rise that starts at zero
+    # either way -- but with a gradient that peaks in the middle of the fade and
+    # then falls back, which is a swelling on the nose. Starting the curve at
+    # zero lets the fade come off the height entirely.
+    #
+    # A flat lead-in was tried here, as COACHROOF_HALF_WIDTH has, and it is
+    # wrong for a height: zeroing the tangent means the rise has to make the
+    # time up later, and a shape-preserving spline does that by overshooting the
+    # average gradient by a third in the middle. The roof does not need easing
+    # off the deck, because at its forward end it has no height to ease off --
+    # what it needs is to leave from the same point the deck step ends at, which
+    # is what starting at the apex does.
+    (COACHROOF_START, 0.000),
+    (4.000, 0.065),
     (COACHROOF_END, 0.130),
 ]
 """A low crown on top of the raised deck, not a trunk standing on a flat one.
@@ -200,21 +252,32 @@ remainder was measured rather than guessed, and came out taller than the 86 mm
 that was left standing after those two corrections -- the deck below is right
 now, so the swelling above it can have its real height back."""
 
-COMPANIONWAY_RAISE_FORWARD = 3.450
-"""Where the raised section over the companionway dies out: the mast.
+COMPANIONWAY_RAISE_FORWARD = DECK_STEP_APEX
+"""Where the raised section over the companionway runs out forward: the apex of
+the deck step, the same point the coachroof under it starts from.
 
-The same number as MAST_STATION, which rule F.2.2 fixes at 3450 +/- 20 mm.
-Written out again rather than read from it because the deck block is evaluated
-before the rig block -- if the mast moves, this moves with it."""
+It used to stop at the mast (3450), where it faded to nothing. That left the
+panel ending in mid-coachroof against no line in particular. Run forward to the
+apex instead it finishes on the one line that is already there -- the nose of
+the chevron."""
 
 COMPANIONWAY_RAISE = [
-    # How far the raised section over the companionway stands above the
-    # coachroof around it. Full at the after end, where the hatch garage and the
-    # way below need the height, and tapering out forward to nothing at the mast.
+    # How far the raised section over the companionway stands above the deck or
+    # coachroof around it: nothing at the step's apex, full at the after end
+    # where the hatch garage and the way below need the height.
+    #
+    # One straight ramp between those, and it has to stay one. Every earlier
+    # version put the rise where the accommodation wanted it -- flat to the mast,
+    # then hard up over the saloon, then easing off again -- and the eye reads
+    # that as three separate swellings rather than as one slope. A constant
+    # gradient is the only version of this that looks like a single moulding.
+    #
+    # It reaches zero rather than standing 50 mm proud at the apex: the panel is
+    # swept out along the same chevron as the deck step below it (see
+    # DECK_STEP_SWEEP), so a non-zero value here is not a nose, it is a 50 mm
+    # cliff across the front of one.
     (COMPANIONWAY_RAISE_FORWARD, 0.000),
-    (3.900, 0.070),
-    (4.400, 0.155),
-    (4.850, 0.212),
+    (4.000, 0.116),
     (COACHROOF_END, 0.226),
 ]
 """The second tier: a flat-topped centre panel standing above the coachroof,
@@ -225,12 +288,20 @@ than a swelling -- it is the part you look straight at from the cockpit stop,
 and the only part of the deck the camera path ever gets close to."""
 
 COMPANIONWAY_RAISE_WIDTH = 2 / 3
-"""Half-width of that flat top, as a fraction of the coachroof's own half-width.
+COMPANIONWAY_RAISE_WIDTH_FORWARD = 0.500
+"""Half-width of that flat top, as a fraction of the coachroof's own half-width:
+full at the after end, a quarter narrower by the time it reaches the step apex.
 
 A fraction rather than a dimension so the shoulder either side never runs out of
 room: the coachroof narrows to 400 mm at its nose, and an absolute centre panel
 of about that width would leave the shoulder nothing to slope over and collapse
-three of the section's points onto one another."""
+three of the section's points onto one another.
+
+The taper is on top of that. Held parallel, the panel followed the coachroof's
+own widening and read as a second hull line running alongside the first; taken
+in a quarter as it runs forward it reads as one wedge instead, converging on the
+apex the same way the deck step below it does. The two effects compound -- 400
+mm of half-width aft against 200 mm at the apex -- which is the point."""
 
 DECK_STEP_SWEEP = 0.480
 """How much further aft the step in the deck falls at the deck edge than it

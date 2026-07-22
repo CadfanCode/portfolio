@@ -100,6 +100,46 @@ _CABIN_BAND = Curve(params.CABIN_BAND)
 _COMPANIONWAY_RAISE = Curve(params.COMPANIONWAY_RAISE)
 
 
+def companionway_raise(station, t_out=0.0):
+    """How far the raised centre panel stands above whatever it is sitting on,
+    at a fractional half-offset -- 0 on the centreline, 1 at the deck edge.
+
+    Swept, exactly as `deck_lift` sweeps the step below it, and for the same
+    reason: sweeping the *sample station* rather than the height gives every
+    point the identical profile at a different moment, so the panel cannot come
+    out a different height on the centreline than at its own edge.
+
+    Sweeping it is what points the nose. The panel reaches nothing at the apex
+    on the centreline and a `DECK_STEP_SWEEP` later at each offset outboard of
+    it, so the line where it leaves the deck is a chevron on exactly the rake of
+    the step's -- the panel noses forward to a point, over the point the raised
+    deck already makes, instead of ending in a face across the front of it.
+
+    The sweep runs the other way from `deck_lift`'s: that one is anchored at the
+    deck edge and reaches furthest forward on the centreline, while this is
+    anchored on the centreline, at the apex the other one arrives at. Same rake,
+    same direction of lead, different end held still.
+    """
+    return _COMPANIONWAY_RAISE(station - params.DECK_STEP_SWEEP * t_out)
+
+
+def companionway_raise_width(station):
+    """Half-width of the raised panel, as a fraction of the coachroof's own.
+
+    Straight-line taper, not eased. The shoulder either side of the panel is a
+    moulded gable with a crease down each edge of it, and those creases want to
+    be straight in plan for the same reason they are straight in section.
+    """
+    span = params.COACHROOF_END - params.COMPANIONWAY_RAISE_FORWARD
+    t = (station - params.COMPANIONWAY_RAISE_FORWARD) / span
+    t = max(0.0, min(1.0, t))
+    return _lerp(
+        params.COMPANIONWAY_RAISE_WIDTH_FORWARD,
+        params.COMPANIONWAY_RAISE_WIDTH,
+        t,
+    )
+
+
 def band_height(station):
     """How far the deck edge stands above the rubrail at a station.
 
@@ -204,16 +244,21 @@ def height_function():
 
         presence = _coachroof_presence(station)
         rw = _coachroof_half_width(roof_half, station, edge_x)
-        if presence <= 0.0 or rw <= 0.0:
-            return deck_at(0.0)
 
-        rh = roof_height(station) * presence
+        # Forward in the bow the deck runs out of width before the coachroof's
+        # half-width does, and there is nothing up here but deck. The raise is
+        # zero that far forward, but it is carried rather than dropped: this
+        # branch is a guard on the geometry, not a statement about the panel.
+        if rw <= 0.0:
+            return deck_at(0.0) + companionway_raise(station)
+
+        rh = roof_height(station)
         deck_crown = deck_at(0.0) - deck_at(rw)
         return (
             deck_at(rw)
             + rh
             + _lerp(deck_crown, crown * 0.45, presence)
-            + _COMPANIONWAY_RAISE(station)
+            + companionway_raise(station)
         )
 
     return height
@@ -263,13 +308,19 @@ def _build_forward(collection, sheer, half_beam):
 
 
 def _coachroof_presence(station):
-    """How much coachroof there is at a station: 1 over its length, easing to 0
-    at its forward end so the roof rises out of the deck instead of switching on.
+    """How much of the coachroof's own camber applies at a station: 1 over its
+    length, easing to 0 at its forward end so the roof takes on its flatter
+    crown gradually instead of switching to it.
 
     It used to switch on, and with a 30 mm tumblehome and 8 mm of height nobody
     could see it. Given a real slope and a real height it showed at once: over
     one station the point distribution jumped from all-deck to a third-of-a-metre
     of roof, and the nose came out as a fold with a crease running away from it.
+
+    The roof's *height* is no longer faded by this -- `COACHROOF_HEIGHT` starts
+    at zero and eases itself in. Fading a height in on top of a curve that
+    already starts at zero only bends the gradient, and a bent gradient in the
+    middle of the nose is the swelling this was supposed to prevent.
     """
     fade = params.COACHROOF_NOSE_FADE
 
@@ -309,7 +360,7 @@ def _forward_section(station, sheer, half_beam, roof_half, roof_height):
 
     presence = _coachroof_presence(station)
     rw = _coachroof_half_width(roof_half, station, edge_x)
-    rh = roof_height(station) * presence
+    rh = roof_height(station)
 
     crown = _crown(edge_x)
     deck_at = _deck_surface(station, raw_z, edge_x, crown)
@@ -333,23 +384,28 @@ def _forward_section(station, sheer, half_beam, roof_half, roof_height):
 
     # Flat top of the raised section over the companionway. It keeps the roof's
     # own camber -- this is a panel lifted off the coachroof, not a level plate
-    # laid on it.
-    lift = _COMPANIONWAY_RAISE(station)
-    lift_half = rw * params.COMPANIONWAY_RAISE_WIDTH
+    # laid on it. The two share a forward end at the step's apex, so there is
+    # nowhere the panel is standing on anything but coachroof.
+    def lift_at(x):
+        """The panel's rise at a half-offset, on the same sweep as the step."""
+        return companionway_raise(station, x / edge_x if edge_x > 0 else 0.0)
+
+    lift_half = rw * companionway_raise_width(station)
 
     for i in range(ROOF_CENTRE_POINTS):
         t = i / (ROOF_CENTRE_POINTS - 1)
         x = lift_half * t
-        points.append((x, roof_at(x) + lift))
+        points.append((x, roof_at(x) + lift_at(x)))
 
     # Shoulder, sloping down from that top to the coachroof edge. Straight, not
     # eased: a moulded gable with a crease at each end of it, which the 32-degree
-    # sharp-edge threshold then keeps as a crease. Forward of the mast the lift
-    # is zero and this is simply more coachroof top.
+    # sharp-edge threshold then keeps as a crease. The lift is swept, so near the
+    # nose it is already zero out here while the centreline still has some, and
+    # the gable closes itself down to nothing without being told to.
     for i in range(1, ROOF_SHOULDER_POINTS + 1):
         t = i / ROOF_SHOULDER_POINTS
         x = _lerp(lift_half, rw, t)
-        points.append((x, roof_at(x) + lift * (1 - t)))
+        points.append((x, roof_at(x) + lift_at(x) * (1 - t)))
 
     # Coachroof side, sloping out and down to meet the side deck. Landed on
     # `deck_at(x)` rather than on the roof's base height, so the foot of the
