@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "model:build": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/build_exterior.py\" -- --project \"$PWD\"",
+    "model:verify": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/verify.py\" -- --project \"$PWD\"",
+    "model:preview": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/preview.py\" -- --project \"$PWD\""
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
