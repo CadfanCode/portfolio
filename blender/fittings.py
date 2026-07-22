@@ -854,6 +854,18 @@ def _transom_station(z):
     return params.LOA - (params.FREEBOARD_STERN - z) * rake
 
 
+def outboard_cowl_base():
+    """The height at which the cowling sits down onto the leg.
+
+    Public because `materials` splits the motor's single mesh into cowling and
+    leg at this plane. A materials module carrying its own number for it would
+    put the paint line somewhere that stopped being a seam the first time the
+    motor was re-proportioned, which is the same argument that keeps every
+    fitting in this module asking the deck where it is.
+    """
+    return _outboard_layout()["cowl_base"]
+
+
 def _outboard_layout():
     """Every point the outboard and its fuel line hang from, computed once.
 

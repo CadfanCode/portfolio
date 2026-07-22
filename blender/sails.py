@@ -276,7 +276,7 @@ def _build_genoa(collection, g):
 # --------------------------------------------------------------------------
 
 
-NUMBER_ANCHOR = (0.42, 0.62)
+NUMBER_ANCHOR = (0.46, 0.52)
 """Where on the mainsail the number is centred, in the sail's own `(u, v)`.
 
 High and just forward of mid-chord: `v` above 0.5 puts it in the upper half of
@@ -288,6 +288,14 @@ the roach -- which curls away from a straight leech line by up to 155 mm here
 the sail and centring on it at every height would walk the number aft as it
 climbed; anchored at a single `(u, v)` it stays put on one point of the cloth
 the way a sail number sewn to a real sail does.
+
+`v` was 0.62 to begin with and came down to 0.52 for a reason worth recording:
+a mainsail is a triangle, so the higher the number goes the less cloth there is
+to put it on. At 0.62 the string was 1.83 m long across a chord of about 1 m,
+and it did not fail by looking cramped -- it ran straight off the luff, past
+the mast, and hung over the genoa beyond, where it read as a second ghost
+number on the wrong sail. The height limit below is what actually guarantees it
+fits; this is what keeps the limit from having to shrink the number to nothing.
 
 This replaced a genoa placement low and forward on the headsail, which existed
 because a 160% genoa runs a long way past the mast and there was nowhere else
@@ -317,9 +325,20 @@ def _build_sail_number(collection, surface):
     right everywhere.
 
     Both faces carry a copy, each reading the right way round from its own side
-    and each standing 4 mm off the cloth. Two copies rather than one because the
-    camera path passes the boat down one side and stops on the other, and a sail
-    number that is backwards is worse than no sail number at all.
+    and each standing off the cloth along the cloth's own normal. Two copies
+    rather than one because the camera path passes the boat down one side and
+    stops on the other, and a sail number that is backwards is worse than no
+    sail number at all.
+
+    The normal is the part that has to be computed rather than assumed. Lifting
+    the glyphs along world X instead -- which is what this did first -- works
+    only where the sail happens to stand square athwartships, and a mainsail
+    sheeted in with camber and twist in it does that nowhere. Everywhere else a
+    4 mm sideways step is partly *along* the cloth rather than off it, so the
+    two copies interpenetrate the sail and each other: the render came out
+    reading `SWE 2878`, the far side's mirrored glyphs showing through the near
+    side's and turning the 5 into an 8. A number that cannot be trusted to say
+    what it says is worse than the backwards one this was guarding against.
     """
     glyphs = _glyph_mesh(params.SAIL_NUMBER)
     if glyphs is None:
@@ -344,18 +363,64 @@ def _build_sail_number(collection, surface):
     tall = params.SAIL_NUMBER_HEIGHT
     wide = tall * (gx1 - gx0) / (gy1 - gy0)
 
+    # Fit it to the cloth. `SAIL_NUMBER_HEIGHT` says how big a sail number ought
+    # to be; the sail says how big one can be, and on a triangle those two stop
+    # agreeing somewhere below the head. Rather than trust an anchor to be low
+    # enough, measure the chord under the number and shrink to fit if it is not
+    # -- eight characters at 300 mm is 1.8 m of string, and there is nowhere on
+    # a 7.6 m boat's mainsail above half height that will take that.
+    #
+    # 0.72 of the chord, not all of it: a number that touches both the luff and
+    # the leech has been laid on the cloth by a machine. Real ones sit inside a
+    # margin, because the luff is full of slides and the leech is where the sail
+    # is stitched and stretched most.
+    chord = metres((0.0, mid_v), (1.0, mid_v))
+    limit = 0.72 * chord
+    if wide > limit > 0.0:
+        tall *= limit / wide
+        wide = limit
+
+    def normal(u, v):
+        """The cloth's outward normal at a point, by finite difference.
+
+        Signed so that it always points to starboard. The cross product's own
+        sign depends on which way `u` and `v` happen to run, which is a
+        property of the sail's parameterisation and not of the boat; pinning it
+        to a side here means the two copies below differ only in `run`.
+        """
+        p = surface(u, v)
+        du = [a - b for a, b in zip(surface(u + step, v), p)]
+        dv = [a - b for a, b in zip(surface(u, v + step), p)]
+        n = (
+            du[1] * dv[2] - du[2] * dv[1],
+            du[2] * dv[0] - du[0] * dv[2],
+            du[0] * dv[1] - du[1] * dv[0],
+        )
+        length = hypot(hypot(n[0], n[1]), n[2])
+        if length <= 1e-9:
+            return p, (1.0, 0.0, 0.0)
+        sign = -1.0 if n[0] < 0.0 else 1.0
+        return p, tuple(sign * c / length for c in n)
+
+    # 6 mm, not the 4 this started with. The cloth is a zero-thickness sheet
+    # carrying a copy on each side, so the two are only ever 12 mm apart, and
+    # that gap is the entire defence against them z-fighting through each
+    # other where the sail is most curved.
+    stand_off = 0.006
+
     faces = []
     # The sail's `u` runs luff to leech, which is bow to stern. Text reads
     # forward from its first character, so `u` has to *decrease* across the
     # string for the copy on the starboard side and increase for the one to
     # port -- which is also the two copies' only difference.
-    for run, lift in ((-1, 0.004), (1, -0.004)):
+    for run in (-1, 1):
         verts = []
         for x, z in glyphs["verts"]:
             u = mid_u + run * (wide / per_u) * ((x - gx0) / (gx1 - gx0) - 0.5)
             v = mid_v + (tall / per_v) * ((z - gy0) / (gy1 - gy0) - 0.5)
-            point = surface(u, v)
-            verts.append((point[0] + lift, point[1], point[2]))
+            point, out = normal(u, v)
+            lift = stand_off * -run
+            verts.append(tuple(p + lift * c for p, c in zip(point, out)))
 
         mesh = bpy.data.meshes.new(f"sail_number_{run}")
         mesh.from_pydata(verts, [], glyphs["faces"])

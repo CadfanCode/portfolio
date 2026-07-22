@@ -34,8 +34,10 @@ Blender is installed as a Flatpak, which has two consequences worth knowing:
     interior.py       the moulded inner hull and the deckhead over it
     joinery.py        bulkheads, galley, steps, table, berths
     fitout.py         cushions, backrests, shelf, locker doors, sink, cooker
+    textures.py       every texture image, generated in numpy at build time
+    materials.py      the palette, and which geometry gets which material
     lib/curves.py     shape-preserving interpolation, section shapes
-    lib/mesh.py       grid lofting, mirroring, welding, shading
+    lib/mesh.py       grid lofting, mirroring, welding, shading, bevelling
     build.py          orchestrator -- run this
     verify.py         the class rules and the brochure, as a test suite
     preview.py        headless renders (--views interior for the cabin)
@@ -215,6 +217,44 @@ the hull is 520 mm wide, so the block stood 547 mm outside the boat -- and it
 looked perfectly correct from inside the cabin, because the part that was wrong
 was behind the topsides where no camera could reach it.
 
+## The textures
+
+`textures.py` generates every image the model uses, in numpy, at build time.
+Nothing is painted and nothing is downloaded: a teak grain is fbm plus a
+directional streak, a cushion is a woven over-and-under, a non-slip panel is a
+diamond lattice, and a normal map is the Sobel gradient of whichever height
+field made the colour. `materials.py` wires those into Principled BSDFs and
+`apply()` hands them out by object name.
+
+The constraint that shapes the whole module is that **glTF does not export
+Blender's procedural shader nodes.** A Noise or Voronoi tree renders correctly
+in the EEVEE previews and arrives in the browser as flat grey, which is the
+worst possible failure: it looks finished right up until it ships. So every
+texture is a real raster, packed into the .blend and embedded in the GLB.
+
+UVs are world-space metres. `project_box_uvs` runs over anything without a UV
+layer, projecting each face by its dominant normal, and `_textured`'s `tile`
+argument is the real size in metres that one copy of the image covers. That is
+what makes one teak image work on a 90 mm fiddle and a 700 mm bulkhead: the
+number that differs between them is `tile`, not the UV.
+
+Two things about the palette are worth knowing before changing it.
+
+**Roughness is the whole material.** The interior teak first shipped with a
+roughness that could reach zero, and every bulkhead came out as french-polished
+mahogany with a blown-out highlight across the saloon table. Varnish on a boat
+is a rubbed satin finish. It lifts a highlight; it does not reflect the cabin
+back at you.
+
+**Some materials are two materials.** The deck is split three ways -- band,
+smooth gelcoat, moulded non-slip -- and the outboard two, cowling and leg. Both
+splits are geometric, computed from the surface functions in `deck.py` and from
+`fittings.outboard_cowl_base()`, never by picking faces. A real non-slip panel
+is not a different colour, it is the same gelcoat moulded with a texture in it,
+and it stops short of the deck edge and of the centre strip over the
+companionway, because that is where the hatch slides and where a moulded
+pattern would foul it.
+
 ## The exported GLB *is* committed
 
 `src/assets/models/maxi77.glb` is checked in, unlike the `.blend` and the
@@ -222,9 +262,17 @@ renders. Vercel builds from GitHub and has no Blender, so the exported asset has
 to be in the repo -- it is the boundary between this pipeline and the app.
 Rebuild it and commit the result whenever the model changes.
 
-If its size ever becomes a problem, the lever is mesh compression -- Draco or
-meshopt -- not splitting it up. 786 KB for 18,000 faces is uncompressed float32,
-and almost all of it is the hull's 96 lofted stations.
+It is now 4.7 MB for 33,000 faces, up from 786 KB for 18,000. The faces are the
+detailing -- rope, the outboard, the fit-out, and the bevel on every hard edge
+-- but they are only half the story: 28 texture images account for 2.4 MB of
+it, or 53%. That is worth measuring before optimising the wrong half, and it is
+two lines of `struct` and `json` against the GLB's own header to measure.
+
+If the size becomes a problem there are two levers, in this order. Textures
+first: they are generated, so their resolution is a constant in `materials.py`
+and every one of them can be halved without touching geometry. Mesh compression
+-- Draco or meshopt -- second. Splitting the asset up is still not a lever, for
+the reasons in `build.py`.
 
 ## The .blend is a build artifact
 

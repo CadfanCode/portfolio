@@ -25,6 +25,7 @@ path: it ends in the cabin, at arm's length from the joinery.
 import bpy
 
 import deck
+import fittings
 import params
 import textures
 from lib.curves import Curve
@@ -232,6 +233,14 @@ def create():
         tile=0.05,
     )
     palette["engine"] = _pbr("engine", (0.10, 0.11, 0.12), roughness=0.38)
+    # The cowling, which is a different thing from the leg under it. An
+    # outboard is never one colour: the cowling is painted sheet or moulded
+    # plastic in the maker's livery and the leg below it is the dark grey-black
+    # everything anti-fouled and submerged gets. Painted in one grey the whole
+    # motor read as a single turned object -- a percolator hung on the transom
+    # -- because the only thing telling a cowling from a leg is where one stops
+    # being one colour and starts being the other.
+    palette["engine_cowl"] = _pbr("engine_cowl", (0.44, 0.45, 0.46), roughness=0.30)
     # Bare drawn aluminium: brighter and less anodised than `spar`, which is
     # the black extrusion the mast is. The compression post is the one of
     # these anybody gets close to.
@@ -293,12 +302,18 @@ def create():
     cushion_height = (cushion_weave - 0.5) * 0.0018
     cushion_normal = textures.make_image(
         "cushion_normal",
-        textures.normal_from_height(cushion_height, strength=25.0),
+        textures.normal_from_height(cushion_height, strength=13.0),
         non_color=True,
     )
     # Flat roughness rather than a fourth image -- see the note by `sailcloth`.
+    #
+    # Tile and normal strength both came down from 0.30 m and 25. A 52-thread
+    # weave over 300 mm is a 6 mm thread, which is upholstery webbing rather
+    # than cloth, and at strength 25 it read from across the cabin as a grid of
+    # dots -- pegboard, not fabric. Cloth is meant to be a texture you can see
+    # is there and cannot resolve.
     palette["cushion"] = _textured(
-        "cushion", colour=cushion_colour, roughness_value=0.86, normal=cushion_normal, tile=0.30
+        "cushion", colour=cushion_colour, roughness_value=0.86, normal=cushion_normal, tile=0.17
     )
 
     # Sailcover canvas: a coarser, plainer weave than the cushions -- acrylic
@@ -333,9 +348,14 @@ def create():
     teak_seam, teak_tint = textures.plank_seams(
         (_CLOSE, _CLOSE), planks=8, seam_width=0.05, seed=71
     )
-    teak_variance = (teak_grain - 0.5) * 0.7 + teak_tint * 0.6
+    # The per-plank tint is held well down against the grain. Teak-faced ply is
+    # cut from one flitch and laid up to match, so neighbouring planks differ
+    # by a shade, not by a colour. At the 0.6 this first carried, the saloon
+    # bulkhead came out as alternating light and dark boards -- which is what
+    # a floor looks like, not what a boat's joinery looks like.
+    teak_variance = (teak_grain - 0.5) * 0.7 + teak_tint * 0.22
     teak_colour = textures.colour_image(
-        "teak_colour", (0.30, 0.165, 0.078), teak_variance, amount=0.15
+        "teak_colour", (0.335, 0.196, 0.100), teak_variance, amount=0.11
     )
     teak_sheen = textures.speckle((_CLOSE, _CLOSE), cells=(14, 14), seed=72)
     # Downsampled to `_STANDARD` rather than generated fresh at that size: the
@@ -346,9 +366,17 @@ def create():
     # keeps the resolution `teak_colour` and `teak_normal` are packed at --
     # this is the one map in the whole palette that earns 1024, and it is not
     # this one.
+    # Satin, not gloss, and the three modulations are small on purpose. The
+    # first version subtracted up to 0.65 from a base of 0.5, so the varnish
+    # bottomed out at zero roughness over much of its area -- a mirror. In the
+    # saloon render that put a blown-out white highlight across the whole
+    # table and made every bulkhead read as french-polished mahogany. Interior
+    # boat varnish is a rubbed satin finish: it lifts a highlight, it does not
+    # reflect the cabin back at you. Base 0.44, and the darkest this now goes
+    # is about 0.25.
     teak_roughness = textures.grey_image(
         "teak_roughness",
-        (0.5 - 0.30 * teak_sheen - 0.20 * (1 - teak_grain) - 0.15 * teak_seam)[::2, ::2],
+        (0.44 - 0.10 * teak_sheen - 0.06 * (1 - teak_grain) - 0.05 * teak_seam)[::2, ::2],
     )
     teak_height = (teak_grain - 0.5) * 0.0006 - teak_seam * 0.0020
     teak_normal = textures.make_image(
@@ -425,6 +453,90 @@ def create():
     palette["sole"] = _textured(
         "sole", colour=sole_colour, roughness=sole_roughness, normal=sole_normal, tile=0.5
     )
+
+    # --- What the detailing tracks needed and the palette did not have. ------
+    #
+    # These arrived with the running rigging, the outboard and the cabin
+    # fit-out. Each is here because nothing already in the palette could stand
+    # in for it without lying about what the object is made of, which is a
+    # higher bar than it sounds: `chrome` was doing duty for the anchor, and a
+    # galvanised anchor that reflects like a pushpit is worse than a grey one.
+
+    # Rope. The one material on the boat whose texture is its whole shape: a
+    # braided line is a helix of over-and-under, and at 10 mm diameter that
+    # helix is the only thing distinguishing it from a bent grey cylinder.
+    # `woven_cloth` at a coarse thread count run down a small tile gives the
+    # over-under; the tile is deliberately near the rope's own diameter so one
+    # repeat is one lay of the braid rather than a fabric print.
+    rope_weave = textures.woven_cloth((_STANDARD, _STANDARD), threads=14, seed=140)
+    rope_colour = textures.colour_image(
+        "rope_colour", (0.74, 0.72, 0.66), rope_weave - 0.5, amount=0.10
+    )
+    rope_roughness = textures.grey_image("rope_roughness", 0.80 - 0.08 * rope_weave)
+    rope_normal = textures.make_image(
+        "rope_normal",
+        textures.normal_from_height((rope_weave - 0.5) * 0.0016, strength=26.0),
+        non_color=True,
+    )
+    palette["rope"] = _textured(
+        "rope",
+        colour=rope_colour,
+        roughness=rope_roughness,
+        normal=rope_normal,
+        tile=0.045,
+    )
+
+    # Curtain cloth. The cushions' weave at a different scale and a lighter,
+    # cooler colour -- the same bolt of fabric would be wrong, because a
+    # curtain hangs in front of a window and a cushion is sat on, so the
+    # curtain is the thing that has light coming through it and reads pale.
+    curtain_weave = textures.woven_cloth((_STANDARD, _STANDARD), threads=48, seed=141)
+    curtain_colour = textures.colour_image(
+        "curtain_colour", (0.62, 0.55, 0.46), curtain_weave - 0.5, amount=0.09
+    )
+    curtain_roughness = textures.grey_image("curtain_roughness", 0.88 - 0.06 * curtain_weave)
+    curtain_normal = textures.make_image(
+        "curtain_normal",
+        textures.normal_from_height((curtain_weave - 0.5) * 0.0009, strength=20.0),
+        non_color=True,
+    )
+    palette["curtain"] = _textured(
+        "curtain",
+        colour=curtain_colour,
+        roughness=curtain_roughness,
+        normal=curtain_normal,
+        tile=0.10,
+    )
+
+    # Moulded black plastic: clutch bodies, spreader boots, the winch handle's
+    # pocket, nav light housings. Matte, slightly rough, no grain worth an
+    # image -- these are small and never closer than the cockpit.
+    palette["plastic_black"] = _pbr("plastic_black", (0.045, 0.047, 0.050), roughness=0.52)
+
+    # White mouldings that are plainly not gelcoat: the mainsail's headboard,
+    # the batten ends. Brighter and glossier than sailcloth so they read as
+    # hardware against the cloth they are sewn into.
+    palette["plastic_white"] = _pbr("plastic_white", (0.80, 0.80, 0.78), roughness=0.30)
+
+    # Signal red, for the two objects on the boat that are red because a rule
+    # says so rather than because somebody chose it: the fire extinguisher and
+    # the portable fuel tank.
+    palette["paint_red"] = _pbr("paint_red", (0.42, 0.045, 0.035), roughness=0.36)
+
+    # Galvanising, not stainless. An anchor and its chain are hot-dipped: dull,
+    # grey, slightly blue, and emphatically not polished. Reusing `chrome` here
+    # put a mirror on the stemhead.
+    palette["galvanised"] = _textured(
+        "galvanised",
+        colour_value=(0.44, 0.45, 0.47),
+        roughness_value=0.62,
+        normal=metal_normal,
+        metallic=0.80,
+        tile=0.12,
+    )
+
+    # Book cloth. Dark, matte, and warm enough not to read as a row of bricks.
+    palette["book_cloth"] = _pbr("book_cloth", (0.185, 0.135, 0.115), roughness=0.80)
 
     return palette
 
@@ -633,7 +745,45 @@ def apply(built, band_surface):
         assign(built.get(name), palette["chrome"])
 
     assign(built.get("lifelines"), palette["wire"])
-    assign(built.get("outboard"), palette["engine"])
+    # The cowling parts company with the leg at the height `fittings` built the
+    # join at, asked for rather than guessed, so the line stays on the seam if
+    # the motor is ever re-proportioned.
+    assign_split(
+        built.get("outboard"),
+        palette["engine"],
+        palette["engine_cowl"],
+        plane_z=fittings.outboard_cowl_base(),
+    )
+
+    # Running rigging. Every line on the boat is one object and one material:
+    # halyards, sheets, the vang, the topping lift and their coils. Real
+    # halyards are colour-coded and these are not, which is a deliberate
+    # economy -- the codes only mean anything to somebody who already knows
+    # them, and a rope reads as a rope from its lay, not its colour.
+    for name in ("running_rigging", "sheets", "boltropes"):
+        assign(built.get(name), palette["rope"])
+
+    for name in (
+        "mast_clutches",
+        "spreader_boots",
+        "winch_handle",
+        "nav_lights",
+        "masthead_unit",
+    ):
+        assign(built.get(name), palette["plastic_black"])
+
+    for name in ("mooring_cleats", "boarding_ladder", "gooseneck", "sail_cringles"):
+        assign(built.get(name), palette["chrome"])
+
+    assign(built.get("genoa_track"), palette["alloy"])
+    assign(built.get("anchor"), palette["galvanised"])
+    # Tank and fuel line are one mesh, so they get one material, and black is
+    # the one that can be both. Red was the first choice -- portable tanks
+    # usually are -- but the line is 11 mm of tube running up over the coaming
+    # and down to the motor, and in red it read as a pair of scaffold poles
+    # pitched in the footwell rather than as a hose. The tank loses a little by
+    # being black; the cockpit gains a great deal.
+    assign(built.get("outboard_fuel"), palette["plastic_black"])
 
     # The tiller and the cockpit flooring are the only teak anybody sees from
     # outside the boat, and they are the two pieces the cockpit stop is
@@ -646,6 +796,8 @@ def apply(built, band_surface):
     for name in ("mainsail", "genoa"):
         assign(built.get(name), palette["sailcloth"])
     assign(built.get("sail_number"), palette["band"])
+    for name in ("mainsail_headboard", "mainsail_battens"):
+        assign(built.get(name), palette["plastic_white"])
 
     # --- Below deck.
     #
@@ -681,5 +833,21 @@ def apply(built, band_surface):
 
     for name in ("cushions", "backrests"):
         assign(built.get(name), palette["cushion"])
+
+    # --- The cabin's small stuff.
+    #
+    # `grabrails`, `washboard` and `bilge_hatch` are teak because that is what
+    # they are made of on the real boat. The bilge hatch had a case for taking
+    # the sole's colour instead and blending into the floor; teak wins because
+    # a hatch you cannot find is a hatch that reads as a seam in the moulding,
+    # and this one has a fiddle and a pull on it that only make sense as wood.
+    for name in ("grabrails", "washboard", "bilge_hatch"):
+        assign(built.get(name), palette["teak"])
+
+    assign(built.get("step_grabrail"), palette["chrome"])
+    assign(built.get("cabin_lamp"), palette["chrome"])
+    assign(built.get("curtains"), palette["curtain"])
+    assign(built.get("books"), palette["book_cloth"])
+    assign(built.get("fire_extinguisher"), palette["paint_red"])
 
     return palette
