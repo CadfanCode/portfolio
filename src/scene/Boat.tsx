@@ -1,56 +1,41 @@
 import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useLayoutEffect, useRef } from 'react'
-import { MathUtils, Mesh } from 'three'
-import type { Group } from 'three'
+import { Mesh } from 'three'
+import type { Material, WebGLProgramParametersWithUniforms } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
 import { usePointerSelect } from './usePointerSelect'
-import { sampleHeight } from './water/waves'
+import { windStrength } from './wind'
 import modelUrl from '../assets/models/maxi77.glb?url'
 
-/**
- * How far, fore-and-aft and athwartships, the buoyancy samples sit from the
- * centre. Roughly the waterline length and beam of the Maxi 77, so the boat
- * pitches and rolls off the slope of the wave under its actual ends rather than
- * a point: a long hull nods less than a cork in the same sea, and this is what
- * gives it that.
- */
-const HALF_LENGTH = 3.2
-const HALF_BEAM = 1.1
+/** The names of the two cloth sails in the GLB, the only meshes that flutter. */
+const SAIL_MESHES = new Set(['mainsail', 'genoa'])
 
-/** Multipliers turning a height difference into an angle, tuned by eye — a boat
- *  does not tilt to the full slope of the wave, it averages it and lags. */
-const PITCH_GAIN = 0.55
-const ROLL_GAIN = 0.65
+type PatchedMaterial = Material & {
+  userData: { shader?: WebGLProgramParametersWithUniforms }
+}
 
 /**
- * The Maxi 77, loaded from the generated GLB and floated on the shared waves.
+ * The Maxi 77, loaded from the generated GLB.
  *
- * No transform on the model itself: it is exported waterline-at-origin, bow at
- * -Z, Y up (see the axis note in `blender/params.py`), which is the scene's own
- * convention, so it drops straight in. The whole boat is one asset — hull, deck,
- * rig, sails and the accommodation — because the camera path passes through the
- * companionway and both halves have to be present at once (see `build.py`).
+ * No transform on the model: it is exported waterline-at-origin, bow at -Z, Y up
+ * (see the axis note in `blender/params.py`), so it drops straight in. It sits
+ * inside the scene's boat frame, which is what heaves, pitches, rolls and heels
+ * it — see `PortfolioWorld`. This component only loads it, turns shadows on, and
+ * stirs the sails.
  *
- * The buoyancy reads the same `waves.ts` the sea surface is displaced by, so the
- * hull sits on the water you can see. Heave is the wave height under the middle;
- * pitch and roll come from the difference between bow and stern, and port and
- * starboard — the boat tilting to the slope it is lying across.
- *
- * The motion eases off to nothing anywhere but the ocean stop. Once the camera
- * is aboard — in the cockpit or below — it is fixed in the world, not tied to
- * the hull, so a rolling boat would slide the whole cabin under a still camera
- * and turn the stomach. A steady boat at those stops reads as a calm mooring and
- * sidesteps that; coupling the camera to the deck is the cleaner fix, and waits
- * for the camera path to be re-authored against this geometry.
+ * The sails react to the wind by a vertex ripple, not a cloth sim: the shared
+ * `sailcloth` material (both sails carry the same one) gets a small along-normal
+ * wave injected into the standard shader, and its depth is driven by the same
+ * `windStrength` the boat heels to. Lighter, gustier air stirs the cloth more; a
+ * steady press holds it quieter — the look of a sail working, cheaply.
  */
 export function Boat() {
   const scene = useSceneStore((s) => s.scene)
   const goTo = useSceneStore((s) => s.goTo)
   const { scene: model } = useGLTF(modelUrl)
 
-  const hull = useRef<Group>(null)
-  const motion = useRef(0)
+  const sailShader = useRef<WebGLProgramParametersWithUniforms | null>(null)
 
   // From the ocean stop the whole boat is the hotspot: click it to come aboard.
   const { bind } = usePointerSelect({
@@ -58,46 +43,65 @@ export function Boat() {
     onSelect: () => goTo('cockpit'),
   })
 
-  // Shadows are opt-in per mesh in three, and the exporter does not set them.
-  // Every mesh both casts and receives: the coachroof shadows the side deck, the
-  // boom shadows the cabin top, and the hull takes its own rigging's shadow.
   useLayoutEffect(() => {
+    let patched = false
+
     model.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.castShadow = true
-        object.receiveShadow = true
+      if (!(object instanceof Mesh)) return
+      // Shadows are opt-in per mesh in three, and the exporter does not set them.
+      object.castShadow = true
+      object.receiveShadow = true
+
+      // Inject a wind ripple into the sail material's vertex stage. Both sails
+      // share one material, so patching the first sail seen drives both.
+      if (patched || !SAIL_MESHES.has(object.name) || Array.isArray(object.material)) {
+        return
       }
+      const material = object.material as PatchedMaterial
+      patched = true
+      if (material.userData.shader) return
+
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 }
+        shader.uniforms.uFlutter = { value: 0.5 }
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            '#include <common>',
+            `#include <common>
+             uniform float uTime;
+             uniform float uFlutter;`,
+          )
+          .replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+             // A travelling diagonal wave across the cloth. Kept small, and
+             // faded in only high on the sail (position.y is height in metres):
+             // near zero over the lower two-thirds, so it never lifts the cloth
+             // past the registration or the batten pockets stitched into it, and
+             // strongest up by the head where a real leech actually lives.
+             float wave = sin(position.y * 2.0 + position.x * 1.3 - uTime * 3.0);
+             float lift = smoothstep(7.0, 9.6, position.y);
+             transformed += normal * wave * 0.018 * lift * uFlutter;`,
+          )
+        material.userData.shader = shader
+        sailShader.current = shader
+      }
+      material.needsUpdate = true
     })
   }, [model])
 
-  useFrame((state, delta) => {
-    const group = hull.current
-    if (!group) return
-
-    // Ease the motion in for the ocean stop, out for everywhere else, so coming
-    // aboard settles the boat rather than freezing it mid-roll.
-    const target = scene === 'ocean' ? 1 : 0
-    motion.current = MathUtils.damp(motion.current, target, 3, delta)
-    const m = motion.current
-
+  useFrame((state) => {
+    const shader = sailShader.current
+    if (!shader) return
     const t = state.clock.elapsedTime
-    const midY = sampleHeight(0, 0, t)
-    const bow = sampleHeight(0, -HALF_LENGTH, t)
-    const stern = sampleHeight(0, HALF_LENGTH, t)
-    const port = sampleHeight(-HALF_BEAM, 0, t)
-    const starboard = sampleHeight(HALF_BEAM, 0, t)
-
-    group.position.y = midY * m
-    // Bow high (bow > stern) pitches the nose up: a negative rotation about +X.
-    group.rotation.x = ((stern - bow) / (2 * HALF_LENGTH)) * PITCH_GAIN * m
-    // Starboard high rolls the deck to port: a positive rotation about +Z.
-    group.rotation.z = ((starboard - port) / (2 * HALF_BEAM)) * ROLL_GAIN * m
-    // A slow yaw wander, so a moored boat is never quite dead ahead.
-    group.rotation.y = Math.sin(t * 0.13) * 0.02 * m
+    shader.uniforms.uTime.value = t
+    // A working sail in a steady press is quieter; in light, shifting air it
+    // stirs. So more flutter as the wind eases.
+    shader.uniforms.uFlutter.value = 0.3 + 0.7 * (1 - windStrength(t))
   })
 
   return (
-    <group ref={hull} {...bind}>
+    <group {...bind}>
       <primitive object={model} />
     </group>
   )

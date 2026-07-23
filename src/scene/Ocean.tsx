@@ -68,6 +68,8 @@ const fragmentShader = /* glsl */ `
   uniform vec3 uShallowColor;
   uniform vec3 uSkyHorizon;
   uniform vec3 uSkyZenith;
+  uniform float uHullHalfLength;
+  uniform float uHullHalfBeam;
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
@@ -83,6 +85,15 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
+    // The boat displaces the water it floats in: cut a hull-shaped hole in the
+    // sea at the origin, where the boat sits. Without it the flat sea slices
+    // straight through the hull — the cabin sole is below the waterline — and
+    // you get waves lapping across the middle of the cabin. An ellipse a touch
+    // inside the real waterline, so the hull's own topsides hide the cut edge.
+    float ex = vWorldPos.x / uHullHalfBeam;
+    float ez = vWorldPos.z / uHullHalfLength;
+    if (ex * ex + ez * ez < 1.0) discard;
+
     vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(cameraPosition - vWorldPos);
 
@@ -129,6 +140,10 @@ export function Ocean() {
       uShallowColor: { value: new Color('#245663') },
       uSkyHorizon: { value: new Color('#cfd8de') },
       uSkyZenith: { value: new Color('#5b86ad') },
+      // Just inside the Maxi 77's waterline (LWL ≈ 6.77 m, beam ≈ 2.5 m), so the
+      // hull overlaps the cut rather than leaving a gap of bare sea around it.
+      uHullHalfLength: { value: 3.25 },
+      uHullHalfBeam: { value: 1.15 },
     }),
     [],
   )
