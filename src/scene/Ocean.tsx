@@ -20,6 +20,25 @@ import { DERIVED, WAVES } from './water/waves'
  * apart.
  */
 
+/**
+ * The hull's half-beam at the waterline, sampled every 21 cm from stern to bow —
+ * measured off the built mesh (a 3 cm slice at z=0 of `maxi77.blend`'s hull,
+ * binned along its length), not drawn by hand. This is the outline the sea
+ * shader cuts out from under the boat; if the hull is ever re-lofted, re-run the
+ * slice and replace the table.
+ *
+ * World z runs stern (+3.684) to bow (−3.088): the model keeps the waterline at
+ * the origin and amidships at z = 0, so the two ends are not symmetric — the
+ * stern overhang is longer than the bow's.
+ */
+const WATERLINE_STERN_Z = 3.684
+const WATERLINE_BOW_Z = -3.088
+const WATERLINE_HALF_BEAM = [
+  0.726, 0.746, 0.767, 0.794, 0.844, 0.856, 0.862, 0.868, 0.868, 0.865, 0.859,
+  0.844, 0.831, 0.817, 0.799, 0.778, 0.754, 0.729, 0.664, 0.631, 0.597, 0.567,
+  0.531, 0.507, 0.443, 0.411, 0.388, 0.31, 0.287, 0.225, 0.166, 0.11,
+]
+
 const vertexShader = /* glsl */ `
   #define NUM_WAVES ${WAVES.length}
   uniform float uTime;
@@ -62,17 +81,30 @@ const vertexShader = /* glsl */ `
 `
 
 const fragmentShader = /* glsl */ `
+  #define WL_SAMPLES ${WATERLINE_HALF_BEAM.length}
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
   uniform vec3 uDeepColor;
   uniform vec3 uShallowColor;
   uniform vec3 uSkyHorizon;
   uniform vec3 uSkyZenith;
-  uniform float uHullHalfLength;
-  uniform float uHullHalfBeam;
+  uniform float uWaterline[WL_SAMPLES];
+  uniform float uWaterlineZ0;
+  uniform float uWaterlineZ1;
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
+
+  // The hull's half-beam at the waterline, by world z — a linear walk through
+  // the measured table. Zero outside the hull's length, so there is no hole
+  // ahead of the stem or abaft the transom.
+  float hullHalfBeam(float z) {
+    float f = (z - uWaterlineZ0) / (uWaterlineZ1 - uWaterlineZ0);
+    if (f <= 0.0 || f >= 1.0) return 0.0;
+    float s = f * float(WL_SAMPLES - 1);
+    int i = int(floor(s));
+    return mix(uWaterline[i], uWaterline[i + 1], fract(s));
+  }
 
   // The same gradient the drei <Sky> paints, boiled down to a colour per up-ness
   // of a ray, so the water reflects a sky that matches the one behind it.
@@ -86,13 +118,17 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     // The boat displaces the water it floats in: cut a hull-shaped hole in the
-    // sea at the origin, where the boat sits. Without it the flat sea slices
-    // straight through the hull — the cabin sole is below the waterline — and
-    // you get waves lapping across the middle of the cabin. An ellipse a touch
-    // inside the real waterline, so the hull's own topsides hide the cut edge.
-    float ex = vWorldPos.x / uHullHalfBeam;
-    float ez = vWorldPos.z / uHullHalfLength;
-    if (ex * ex + ez * ez < 1.0) discard;
+    // sea where the boat sits. Without it the flat sea slices straight through
+    // the hull — the cabin sole is below the waterline — and you get waves
+    // lapping across the middle of the cabin.
+    //
+    // The hole is the hull's own waterline outline, measured off the built
+    // mesh, not a stand-in shape. It was an ellipse first, and an ellipse is
+    // wrong twice over on a boat this shape: too fat amidships left a ring of
+    // missing sea round the hull, and too long put a void ahead of the stem
+    // where there is no boat at all. Inset a few percent so the cut edge lies
+    // just inside the skin and the topsides hide it.
+    if (abs(vWorldPos.x) < 0.97 * hullHalfBeam(vWorldPos.z)) discard;
 
     vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(cameraPosition - vWorldPos);
@@ -140,10 +176,9 @@ export function Ocean() {
       uShallowColor: { value: new Color('#245663') },
       uSkyHorizon: { value: new Color('#cfd8de') },
       uSkyZenith: { value: new Color('#5b86ad') },
-      // Just inside the Maxi 77's waterline (LWL ≈ 6.77 m, beam ≈ 2.5 m), so the
-      // hull overlaps the cut rather than leaving a gap of bare sea around it.
-      uHullHalfLength: { value: 3.25 },
-      uHullHalfBeam: { value: 1.15 },
+      uWaterline: { value: WATERLINE_HALF_BEAM },
+      uWaterlineZ0: { value: WATERLINE_STERN_Z },
+      uWaterlineZ1: { value: WATERLINE_BOW_Z },
     }),
     [],
   )
