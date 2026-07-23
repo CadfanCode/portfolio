@@ -10,6 +10,7 @@ import {
   Vector2,
   Vector3,
 } from 'three'
+import { sampleConditions } from './conditions'
 import { boatWorldInverse } from './water/boatPose'
 import {
   SECTION_BOW_Z,
@@ -55,9 +56,20 @@ const vertexShader = /* glsl */ `
   uniform float uOmega[NUM_WAVES];
   uniform float uAmp[NUM_WAVES];
   uniform float uQA[NUM_WAVES];
+  // The weather scales the reference sea: amplitude for how big, steepness for
+  // how peaked. Both come straight from conditions.ts so the drawn sea and the
+  // boat's buoyancy (which reads the same scale) cannot part company.
+  uniform float uAmpScale;
+  uniform float uSteepScale;
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
+  // How hard the crest is folding here, from the Gerstner Jacobian: ~0 on the
+  // open swell, ->1 where a steep crest pinches over itself. This is where a
+  // real sea throws white water, so the fragment shader breaks foam out of it.
+  varying float vFold;
+  // The wave's own displaced height above the mean, for the crest translucency.
+  varying float vHeight;
 
   void main() {
     vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -66,21 +78,37 @@ const vertexShader = /* glsl */ `
     vec3 disp = vec3(0.0);
     // Gerstner normal, accumulated per GPU Gems: start from straight up and bend.
     vec3 normal = vec3(0.0, 1.0, 0.0);
+    // Horizontal Jacobian, identity minus each wave's compression. Where its
+    // determinant drops toward zero the surface is folding — a breaking crest.
+    float jxx = 1.0;
+    float jzz = 1.0;
+    float jxz = 0.0;
 
     for (int i = 0; i < NUM_WAVES; i++) {
+      float amp = uAmp[i] * uAmpScale;
+      float qa = uQA[i] * uSteepScale * uAmpScale;
       float phase = uK[i] * dot(uDir[i], base) - uOmega[i] * uTime;
       float c = cos(phase);
       float s = sin(phase);
 
-      disp.x += uQA[i] * uDir[i].x * c;
-      disp.z += uQA[i] * uDir[i].y * c;
-      disp.y += uAmp[i] * s;
+      disp.x += qa * uDir[i].x * c;
+      disp.z += qa * uDir[i].y * c;
+      disp.y += amp * s;
 
-      float wa = uK[i] * uAmp[i];
+      float wa = uK[i] * amp;
       normal.x -= uDir[i].x * wa * c;
       normal.z -= uDir[i].y * wa * c;
-      normal.y -= uQA[i] * uK[i] * s;
+      normal.y -= qa * uK[i] * s;
+
+      float comp = qa * uK[i] * s;
+      jxx -= uDir[i].x * uDir[i].x * comp;
+      jzz -= uDir[i].y * uDir[i].y * comp;
+      jxz -= uDir[i].x * uDir[i].y * comp;
     }
+
+    float fold = jxx * jzz - jxz * jxz;
+    vFold = smoothstep(0.55, -0.15, fold);
+    vHeight = disp.y;
 
     vWorldPos = world + disp;
     vWorldNormal = normalize(normal);
@@ -103,9 +131,36 @@ const fragmentShader = /* glsl */ `
   uniform float uBowZ;
   uniform float uHeightMin;
   uniform float uHeightMax;
+  // Weather, all from conditions.ts.
+  uniform float uWind;       // how hard the wind ripples the fine surface
+  uniform float uFoam;       // whitecap amount on the open sea
+  uniform float uSpray;      // splash where the sea meets the hull
+  uniform float uOvercast;   // how far the sky greys toward the storm
+  uniform float uRain;       // rain stipple on the surface
+  uniform float uFogDensity; // matches the scene FogExp2
+  uniform vec3  uFogColor;
+  uniform vec3  uSSSColor;   // colour light glows when it passes through a crest
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
+  varying float vFold;
+  varying float vHeight;
+
+  #define PI 3.14159265
+
+  // Cheap value noise, for foam breakup and churn — no texture, tiles fine
+  // enough for water that is never still.
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
 
   // The hull's half-beam at a point given in the hull's own frame: a bilinear
   // fetch from the measured section table, station along z, height along y.
@@ -118,14 +173,41 @@ const fragmentShader = /* glsl */ `
     return texture2D(uSections, vec2(u, v)).r * uSectionRange;
   }
 
-  // The same gradient the drei <Sky> paints, boiled down to a colour per up-ness
-  // of a ray, so the water reflects a sky that matches the one behind it.
+  // The sky the water reflects: the same gradient the drei <Sky> paints, plus a
+  // real sun — a tight hot disc inside a broad warm glow — so the reflection
+  // carries an actual sun to shatter into glitter, not a flat wash.
   vec3 skyColor(vec3 dir) {
     float up = clamp(dir.y, 0.0, 1.0);
-    vec3 grad = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.45, up));
-    // The sun's own reflection: a tight, bright road across the water.
-    float sun = pow(max(dot(dir, uSunDir), 0.0), 340.0);
-    return grad + uSunColor * sun * 0.9;
+    vec3 grad = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.4, up));
+    float s = max(dot(dir, uSunDir), 0.0);
+    // A softer, wider sun than a pinpoint disc: a pinpoint reflected across the
+    // ripple is what turns into hard sparkle. The broad glow reads as a warm
+    // road on the water and lets the surface specular below carry the glitter.
+    grad += uSunColor * (pow(s, 350.0) * 2.0 + pow(s, 20.0) * 0.4);
+    return grad;
+  }
+
+  // Fine surface detail as slope, not height: a handful of short, fast wavelets
+  // criss-crossing the big Gerstner swell. They perturb only the normal, which is
+  // exactly what a real sea's wind-ripple does to the light — the mesh is far too
+  // coarse to carry ripple this fine, but the normal is what the eye reads, and
+  // breaking it up here is what turns a smooth sheet into water and the one sun
+  // into a field of glitter. Returns d(height)/d(xz), summed.
+  vec2 detailSlope(vec2 p, float t) {
+    vec2 g = vec2(0.0);
+    #define WAVELET(dx, dz, wl, am, sp) { \
+      vec2 d = normalize(vec2(dx, dz)); \
+      float k = 6.2831853 / (wl); \
+      float ph = dot(d, p) * k - t * (sp) * k; \
+      g += d * (am) * k * cos(ph); \
+    }
+    WAVELET( 1.0,  0.35, 4.70, 0.016, 0.9)
+    WAVELET(-0.75, 1.0,  3.10, 0.012, 1.1)
+    WAVELET( 0.45,-1.0,  1.90, 0.008, 1.4)
+    WAVELET( 1.0, -0.55, 1.15, 0.005, 1.8)
+    WAVELET(-1.0, -0.25, 0.72, 0.0032, 2.2)
+    #undef WAVELET
+    return g;
   }
 
   void main() {
@@ -152,36 +234,101 @@ const fragmentShader = /* glsl */ `
     float edge = abs(local.x) - 0.97 * halfBeam;
     if (halfBeam > 0.0 && edge < 0.0) discard;
 
-    vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(cameraPosition - vWorldPos);
+    float dist = length(cameraPosition - vWorldPos);
 
-    // Schlick Fresnel: glancing water is a mirror, water seen from above is not.
-    // The floor is lifted off 0.02 so even the flat water underfoot keeps a
-    // little sky in it rather than reading as a black hole in the foreground.
-    float f = 0.08 + 0.92 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    // The surface's own level of detail. A pixel far away, or seen grazing along
+    // the water, covers metres of sea; ripple finer than that footprint cannot
+    // be drawn without aliasing into the crawling "grid of cubes". So we estimate
+    // that footprint — it grows with distance and, hard, as the view flattens
+    // toward the horizon — and use it to fade the fine detail out and to roughen
+    // the sun highlight, leaving the far and glancing water smooth and fluid and
+    // keeping the crisp ripple only where the surface is close enough to hold it.
+    float graze = 1.0 - clamp(abs(V.y) * 1.6, 0.0, 1.0);
+    float footprint = dist * (0.006 + 0.05 * graze);
+    float detailFade = 1.0 / (1.0 + footprint);
 
-    // The body colour: deeper and greener where you look into it, paler where
-    // the surface tips towards you.
-    vec3 body = mix(uDeepColor, uShallowColor, pow(max(dot(N, V), 0.0), 1.5));
+    // Build the shading normal: the coarse Gerstner normal off the mesh, tilted
+    // by the fine wind-ripple (faded by the footprint). Work in slope space so
+    // the two simply add, then rebuild a unit normal.
+    vec2 slope = -vWorldNormal.xz / max(vWorldNormal.y, 0.25);
+    slope += detailSlope(vWorldPos.xz, uTime) * (0.35 + 0.9 * uWind) * detailFade;
+    vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
 
-    vec3 reflected = reflect(-V, N);
-    vec3 sky = skyColor(reflected);
+    float NoV = max(dot(N, V), 0.0);
 
-    // Direct sun sparkle on the ruffled facets, on top of the mirror term.
-    vec3 H = normalize(V + uSunDir);
-    float spec = pow(max(dot(N, H), 0.0), 200.0);
+    // Fresnel with water's real F0 (~0.02): looking straight down you see into
+    // the water; at a glancing angle it turns to a mirror of the sky.
+    float fres = 0.02 + 0.98 * pow(1.0 - NoV, 5.0);
 
-    vec3 color = mix(body, sky, f) + uSunColor * spec * 0.6;
+    // Body colour: deep teal looking into it, a paler green-blue where the face
+    // tips toward you.
+    vec3 body = mix(uDeepColor, uShallowColor, pow(NoV, 1.4));
 
-    // A quiet lap line where the water meets the hull: a slight paling of the
-    // sea in the last hand's-width before the skin, breathing slowly along the
-    // length. It is what moored water actually does at a boat, and it seats the
-    // hull in the sea instead of leaving a knife-edge cut.
-    if (halfBeam > 0.0) {
-      float lap = 1.0 - smoothstep(0.0, 0.16, edge);
-      float breathe = 0.7 + 0.3 * sin(uTime * 1.6 + local.z * 2.3);
-      color = mix(color, vec3(0.72, 0.79, 0.82), lap * breathe * 0.22);
+    // Translucency — the sea's signature. Light driven through a thin, backlit
+    // crest scatters out green: strongest on the high crests with the sun on the
+    // far side of the wave from the eye, and killed under an overcast that has no
+    // sun to drive it.
+    float back = pow(max(dot(V, -uSunDir), 0.0), 3.0);
+    float crest = smoothstep(0.0, 0.55, vHeight + 0.08);
+    vec3 sss = uSSSColor * back * crest * (1.0 - uOvercast) * 1.2;
+
+    // Sky reflection, greyed under cloud — the same haze the fog is made of.
+    vec3 sky = skyColor(reflect(-V, N));
+    sky = mix(sky, uFogColor, uOvercast * 0.75);
+
+    // Sun glitter: a GGX highlight against the ripple-broken normal, so the one
+    // sun spreads into a soft field of moving sparkle. The roughness widens with
+    // the footprint (geometric specular antialiasing), which is what stops the
+    // highlight from resolving into hard crawling cubes at distance.
+    vec3 Hh = normalize(V + uSunDir);
+    float NoH = max(dot(N, Hh), 0.0);
+    float rough = clamp(0.07 + footprint * 0.6, 0.07, 0.42);
+    float a2 = rough * rough; a2 *= a2;
+    float dnm = NoH * NoH * (a2 - 1.0) + 1.0;
+    float glint = (a2 / (PI * dnm * dnm)) * fres * (1.0 - uOvercast);
+
+    vec3 color = mix(body + sss, sky, fres) + uSunColor * min(glint, 3.5);
+
+    // Whitecaps: white water broken out of the folding crests the vertex shader
+    // flagged, gated by the weather's foam level so a calm sea stays unbroken
+    // and only a real blow turns the tops over. A little noise stops it reading
+    // as a clean painted line along each crest.
+    if (uFoam > 0.0) {
+      float churn = 0.55 + 0.45 * vnoise(vWorldPos.xz * 0.9 + uTime * vec2(0.15, -0.1));
+      float caps = clamp(vFold * uFoam * churn * 1.6, 0.0, 1.0);
+      color = mix(color, vec3(0.92, 0.95, 0.96), smoothstep(0.12, 0.6, caps));
     }
+
+    // Where the sea meets the hull. In a calm this is the old quiet lap line — a
+    // slight paling breathing along the waterline. As the sea gets up it becomes
+    // a wash of broken water surging against the topsides: the collar widens,
+    // churns on its own noise, and pulses as if each wave were slapping the
+    // side. That surge is the "splashing against the boat" the scene needs, done
+    // in the shader off the same hull-distance field the cut already computes.
+    if (halfBeam > 0.0) {
+      float width = 0.14 + 0.16 * uSpray;
+      float band = 1.0 - smoothstep(0.0, width, edge);
+      float churn = vnoise(local.xz * vec2(2.4, 3.2) + uTime * vec2(0.7, -0.5));
+      float breathe = 0.65 + 0.35 * sin(uTime * 1.6 + local.z * 2.3);
+      float slap = 0.6 + 0.4 * sin(uTime * 3.4 + local.z * 3.1);
+      float wash = band * mix(breathe, (0.4 + 0.6 * churn) * slap, uSpray);
+      float amt = mix(0.22, 0.85, uSpray) * wash;
+      color = mix(color, vec3(0.92, 0.95, 0.97), clamp(amt, 0.0, 1.0));
+    }
+
+    // Rain stippling the surface — a scatter of bright dimples where drops
+    // strike, stepped in time so they flicker rather than crawl.
+    if (uRain > 0.0) {
+      float cell = vnoise(vWorldPos.xz * 7.0 + floor(uTime * 11.0));
+      color += vec3(0.06) * uRain * step(0.82, cell);
+    }
+
+    // Aerial perspective / fog, matched to the scene's FogExp2 so the sea's
+    // horizon dissolves into the same haze the sky and boat do. dist is the
+    // camera distance computed up in the lighting section.
+    float fog = 1.0 - exp(-(uFogDensity * dist) * (uFogDensity * dist));
+    color = mix(color, uFogColor, clamp(fog, 0.0, 1.0));
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -226,10 +373,11 @@ export function Ocean() {
       uQA: { value: DERIVED.map((w) => w.qa) },
       uSunDir: { value: SUN_DIR },
       uSunColor: { value: new Color('#fff1dc') },
-      uDeepColor: { value: new Color('#123742') },
-      uShallowColor: { value: new Color('#245663') },
+      uDeepColor: { value: new Color('#08222c') },
+      uShallowColor: { value: new Color('#1b5866') },
       uSkyHorizon: { value: new Color('#cfd8de') },
       uSkyZenith: { value: new Color('#5b86ad') },
+      uSSSColor: { value: new Color('#1f7d63') },
       // The shared inverse is mutated in place by PortfolioWorld each frame;
       // handing the same object in means it is always current at upload.
       uBoatInverse: { value: boatWorldInverse },
@@ -239,14 +387,36 @@ export function Ocean() {
       uBowZ: { value: SECTION_BOW_Z },
       uHeightMin: { value: SECTION_HEIGHT_MIN },
       uHeightMax: { value: SECTION_HEIGHT_MAX },
+      // Weather, driven each frame from conditions.ts.
+      uAmpScale: { value: 1 },
+      uSteepScale: { value: 1 },
+      uWind: { value: 0.3 },
+      uFoam: { value: 0 },
+      uSpray: { value: 0 },
+      uOvercast: { value: 0 },
+      uRain: { value: 0 },
+      uFogDensity: { value: 0.0016 },
+      uFogColor: { value: new Color('#cfdae4') },
     }),
     [sections],
   )
 
   useFrame((state) => {
-    if (material.current) {
-      material.current.uniforms.uTime.value = state.clock.elapsedTime
-    }
+    const m = material.current
+    if (!m) return
+    const t = state.clock.elapsedTime
+    const c = sampleConditions(t)
+    const u = m.uniforms
+    u.uTime.value = t
+    u.uAmpScale.value = c.seaAmp
+    u.uSteepScale.value = c.seaChop
+    u.uWind.value = c.wind
+    u.uFoam.value = c.foam
+    u.uSpray.value = c.spray
+    u.uOvercast.value = c.overcast
+    u.uRain.value = c.rain
+    u.uFogDensity.value = c.fogDensity
+    u.uFogColor.value.copy(c.fog)
   })
 
   return (

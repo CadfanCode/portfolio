@@ -38,10 +38,19 @@ from lib.mesh import cap_loop, grid_to_mesh, join, recalc_normals, shade_smooth
 from lib.sweep import circle, sweep_rings
 
 
-CHORD_POINTS = 13
-HEIGHT_POINTS = 15
+CHORD_POINTS = 25
+HEIGHT_POINTS = 45
 """The grid. Enough that the camber reads as a curve rather than a crease, and
-regular enough that a vertex shader could displace it later."""
+fine enough that the vertex shader anticipated here -- see `src/scene/Boat.tsx`
+-- has real cloth to displace: a travelling luff wave and a leech flutter are
+only as smooth as the mesh carrying them, and at the old 13x15 the flutter came
+out faceted, a row of flat panels shivering rather than cloth. 25x45 is about
+1100 vertices a sail, which the leech (the trailing edge, where the flutter
+lives and where the head runs the grid down to a point) spends most of on
+height. Still cheap: the two sails together are a rounding error against the
+hull, and nothing else in this file reads the grid -- the number, battens and
+headboard all sample the surface function, not its tessellation, so they are
+unaffected by the count moving."""
 
 
 def build(collection):
@@ -544,7 +553,7 @@ def _ring(collection, name, surface, u, v, radius, tube_radius, segments=14):
             tuple(centre[k] + eu[k] * radius * c + ev[k] * radius * s for k in range(3))
         )
 
-    rings = sweep_rings(circle(tube_radius, 6), path)
+    rings = sweep_rings(circle(tube_radius, 8), path)
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     recalc_normals(obj)
     return obj
@@ -581,7 +590,7 @@ def _boltrope(collection, name, surface, count=14, tube_radius=0.004):
     from the spar. A boltrope is proud of the sail on the sail's own side of it.
     """
     path = [surface(0.015, i / (count - 1)) for i in range(count)]
-    rings = sweep_rings(circle(tube_radius, 6), path)
+    rings = sweep_rings(circle(tube_radius, 8), path)
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     recalc_normals(obj)
     return obj
@@ -615,7 +624,7 @@ def _batten(collection, name, surface, v, reach, segments=6, radius=0.006):
     the cloth it is stiffening, it does not fight it flat."""
     us = [_lerp(0.99, 1.0 - reach, i / segments) for i in range(segments + 1)]
     path = [surface(u, v) for u in us]
-    rings = sweep_rings(circle(radius, 6), path)
+    rings = sweep_rings(circle(radius, 8), path)
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
     cap_loop(obj, list(reversed(rings[-1])))

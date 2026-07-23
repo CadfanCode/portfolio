@@ -11,8 +11,11 @@ import { Vector2 } from 'three'
  * trains crossing at slight angles is enough; the longest and largest is the
  * swell, the shorter ones are the chop riding on it.
  *
- * Deliberately gentle. A moored 7.6 m boat in this rocks and nods; it does not
- * surf. The amplitudes are the knob to turn for a rougher day.
+ * These amplitudes are the *reference* sea — a fair-weather day. The weather in
+ * `conditions.ts` scales them up and down with an `ampScale`: ~0.15× for a
+ * glassy calm, ~2.6× for a storm. Both the shader (a `uAmpScale` uniform) and
+ * the buoyancy (`sampleHeight`'s argument) take the same factor, so the boat
+ * keeps floating on exactly the sea that is drawn however rough it gets.
  */
 
 export const GRAVITY = 9.81
@@ -78,11 +81,11 @@ export const DERIVED: DerivedWave[] = WAVES.map((w) => {
  * that would mean inverting the displacement per sample for a difference no one
  * standing on a 7.6 m boat could feel.
  */
-export function sampleHeight(x: number, z: number, time: number): number {
+export function sampleHeight(x: number, z: number, time: number, ampScale = 1): number {
   let h = 0
   for (const w of DERIVED) {
     const phase = w.k * (w.dir.x * x + w.dir.y * z) - w.omega * time
     h += w.amplitude * Math.sin(phase)
   }
-  return h
+  return h * ampScale
 }

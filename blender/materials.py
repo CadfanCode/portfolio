@@ -30,7 +30,7 @@ import params
 import textures
 
 
-def _glass(name):
+def _glass(name, roughness=None, tile=0.3):
     """Smoked window acrylic: a tinted sheet you can see through, not a slab.
 
     The windows used to be opaque near-black, which is right looked at from the
@@ -56,10 +56,48 @@ def _glass(name):
     # blend method for glTF's alphaMode, so both have to be set.
     bsdf.inputs["Alpha"].default_value = 0.45
     material.blend_method = "BLEND"
+
+    # An optional faint frosting. A pane this smooth is a perfect mirror of the
+    # sky, and a perfect mirror is the one thing a real window at sea never is:
+    # it carries a fine salt haze that scatters the reflection just enough to
+    # soften its edge. A shallow roughness map breaks the mirror without
+    # clouding the glass -- you still see through it, the sky reflected on it
+    # just stops being a razor line. World-scale UVs like every other map here.
+    if roughness is not None:
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        coord = nodes.new("ShaderNodeTexCoord")
+        mapping = nodes.new("ShaderNodeMapping")
+        mapping.inputs["Scale"].default_value = (1.0 / tile, 1.0 / tile, 1.0 / tile)
+        links.new(coord.outputs["UV"], mapping.inputs["Vector"])
+        node = nodes.new("ShaderNodeTexImage")
+        node.image = roughness
+        links.new(mapping.outputs["Vector"], node.inputs["Vector"])
+        links.new(node.outputs["Color"], bsdf.inputs["Roughness"])
     return material
 
 
-def _pbr(name, colour, roughness=0.4, metallic=0.0):
+def _coat(bsdf, coat, coat_roughness):
+    """Wire a clear top layer onto a Principled BSDF.
+
+    A single roughness value can only ever describe one specular lobe, and a
+    varnished or gelcoat surface has two: a broad, soft reflection off the wood
+    or the pigment underneath, and a second, tighter, brighter one off the clear
+    film sitting on top of it. That second lobe is what makes varnish read as
+    *varnished* rather than as matte wood the colour of varnish. `Coat Weight`
+    above zero is exported as `KHR_materials_clearcoat`, so it survives to the
+    web the same way the base layer does -- it is not a viewport-only nicety.
+
+    Kept off unless asked for: most of the boat is a single-lobe surface (cloth,
+    antifouling, drawn metal) where a coat would be a lie about the finish.
+    """
+    if coat <= 0.0:
+        return
+    bsdf.inputs["Coat Weight"].default_value = coat
+    bsdf.inputs["Coat Roughness"].default_value = coat_roughness
+
+
+def _pbr(name, colour, roughness=0.4, metallic=0.0, coat=0.0, coat_roughness=0.06):
     """A flat-colour material -- still the right choice for anything a texture
     would not improve: `wire` is 5 mm across and is colour and nothing else,
     `band` is a painted stripe."""
@@ -69,6 +107,7 @@ def _pbr(name, colour, roughness=0.4, metallic=0.0):
     bsdf.inputs["Base Color"].default_value = (*colour, 1.0)
     bsdf.inputs["Roughness"].default_value = roughness
     bsdf.inputs["Metallic"].default_value = metallic
+    _coat(bsdf, coat, coat_roughness)
     return material
 
 
@@ -81,6 +120,8 @@ def _textured(
     roughness_value=0.4,
     normal=None,
     metallic=0.0,
+    coat=0.0,
+    coat_roughness=0.06,
     tile=1.0,
 ):
     """A material built from images rather than constants.
@@ -101,6 +142,7 @@ def _textured(
     bsdf = material.node_tree.nodes["Principled BSDF"]
     bsdf.inputs["Metallic"].default_value = metallic
     bsdf.inputs["Roughness"].default_value = roughness_value
+    _coat(bsdf, coat, coat_roughness)
     if colour is None:
         bsdf.inputs["Base Color"].default_value = (*colour_value, 1.0)
 
@@ -138,20 +180,34 @@ def _textured(
     return material
 
 
-# Image sizes. 1024 only for the one surface the camera path ends at rest
-# against; 512 for everything else that earns a texture; 256 for the metal
-# grain, which exists only to give a specular highlight something to break
-# across and is never looked at closer than the cockpit stop.
-_CLOSE = 1024
+# Image sizes. 2048 only for the base colour of the one surface the camera path
+# ends at rest against -- the varnished teak, at arm's length in the cabin --
+# where the grain and the wear want more pixels than anything else on the boat.
+# Its normal and roughness stay at half that (see the teak block): a 2048 normal
+# map is a megabyte of PNG for detail a tiled grain does not resolve, and the
+# saving there pays for the sharper colour. 512 for everything else that earns a
+# texture; 256 for the metal grain, which exists only to give a specular
+# highlight something to break across and is never looked at closer than the
+# cockpit stop.
+_CLOSE = 2048
 _STANDARD = 512
 _SMALL = 256
 
 
 def create():
     """The whole palette."""
+    # A faint frost on the windows so the sky they reflect has a soft edge, not
+    # a razor one -- salt haze, standing in for the real thing. Small tile, low
+    # cell count: a fine, even scatter rather than visible streaks.
+    glass_frost = textures.fbm((_SMALL, _SMALL), (5, 5), octaves=3, seed=110)
+    glass_roughness = textures.grey_image("glass_roughness", 0.05 + 0.09 * glass_frost)
+
     palette = {
-        "band": _pbr("band", (0.045, 0.105, 0.215), roughness=0.22),
-        "glass": _glass("glass"),
+        # The painted topside stripe is glossy gelcoat like the hull it sits in,
+        # so it earns the same clear coat -- without it the band reads as a matte
+        # decal laid over a shiny hull.
+        "band": _pbr("band", (0.045, 0.105, 0.215), roughness=0.22, coat=0.3, coat_roughness=0.05),
+        "glass": _glass("glass", roughness=glass_roughness),
         "wire": _pbr("wire", (0.52, 0.54, 0.56), roughness=0.26, metallic=1.0),
     }
 
@@ -174,11 +230,18 @@ def create():
         "gelcoat_roughness",
         0.14 + 0.10 * textures.speckle((_STANDARD, _STANDARD), cells=(9, 9), seed=21),
     )
+    # Gelcoat is a pigmented base under a clear resin skin -- the deep wet shine
+    # on a hull's topsides is that skin, a second specular lobe the orange-peel
+    # roughness underneath cannot produce on its own. A modest coat: enough to
+    # wet the topsides, not so much the whole hull turns to chrome once the
+    # environment map is reflecting in it.
     palette["gelcoat"] = _textured(
         "gelcoat",
         colour_value=(0.82, 0.82, 0.80),
         roughness=gelcoat_roughness,
         normal=gelcoat_normal,
+        coat=0.25,
+        coat_roughness=0.05,
         tile=0.12,
     )
 
@@ -376,42 +439,79 @@ def create():
     teak_seam, teak_tint = textures.plank_seams(
         (_CLOSE, _CLOSE), planks=8, seam_width=0.05, seed=71
     )
+    # Wear and grime -- the whole reason this surface stops reading as a swatch
+    # of "varnished teak material" and starts reading as *this* boat's joinery.
+    # A real cabin is not uniform: the varnish has been handled dull in broad
+    # soft patches (a hand on a bulkhead, a shoulder against the hull side), and
+    # dirt has settled darker in the low-frequency hollows and along the seams.
+    # Two fields, both large and soft -- low cell counts -- so they read as
+    # history, not as a pattern printed on the wood.
+    teak_wear = textures.speckle((_CLOSE, _CLOSE), cells=(4, 4), seed=73)
+    teak_grime = textures.fbm((_CLOSE, _CLOSE), (6, 6), octaves=4, seed=74)
     # The per-plank tint is held well down against the grain. Teak-faced ply is
     # cut from one flitch and laid up to match, so neighbouring planks differ
     # by a shade, not by a colour. At the 0.6 this first carried, the saloon
     # bulkhead came out as alternating light and dark boards -- which is what
     # a floor looks like, not what a boat's joinery looks like.
-    teak_variance = (teak_grain - 0.5) * 0.7 + teak_tint * 0.22
+    #
+    # Grime pulls the colour down where it settles; rubbed-through wear lifts it,
+    # since worn varnish shows the paler, drier wood underneath. Both small, so
+    # the surface still reads as one board, just not a machined one.
+    teak_variance = (
+        (teak_grain - 0.5) * 0.7
+        + teak_tint * 0.22
+        - (teak_grime - 0.5) * 0.35
+        + (teak_wear - 0.5) * 0.25
+    )
     teak_colour = textures.colour_image(
         "teak_colour", (0.335, 0.196, 0.100), teak_variance, amount=0.11
     )
     teak_sheen = textures.speckle((_CLOSE, _CLOSE), cells=(14, 14), seed=72)
-    # Downsampled to `_STANDARD` rather than generated fresh at that size: the
-    # varnish sheen is a slow variation next to the grain and the seams, and
-    # subsampling the same field it is built from keeps it registered with
-    # them without a second noise call. Roughness is always recomposited into
-    # its own texture on export anyway (see `grey_image`), so nothing here
-    # keeps the resolution `teak_colour` and `teak_normal` are packed at --
-    # this is the one map in the whole palette that earns 1024, and it is not
-    # this one.
-    # Satin, not gloss, and the three modulations are small on purpose. The
-    # first version subtracted up to 0.65 from a base of 0.5, so the varnish
-    # bottomed out at zero roughness over much of its area -- a mirror. In the
-    # saloon render that put a blown-out white highlight across the whole
-    # table and made every bulkhead read as french-polished mahogany. Interior
-    # boat varnish is a rubbed satin finish: it lifts a highlight, it does not
-    # reflect the cabin back at you. Base 0.44, and the darkest this now goes
-    # is about 0.25.
+    # Roughness and normal are both packed at a quarter and a half of the base
+    # colour's `_CLOSE`, subsampling the same fields they are built from so they
+    # stay registered with the colour without a second noise call. The base
+    # colour is the map the eye resolves at arm's length in the cabin, so it
+    # keeps the full 2048; a 2048 roughness or normal is pixels spent on
+    # variation too fine to see and a PNG several times larger for it.
+    #
+    # Satin, not gloss, and the modulations are small on purpose. The first
+    # version subtracted up to 0.65 from a base of 0.5, so the varnish bottomed
+    # out at zero roughness over much of its area -- a mirror. In the saloon
+    # render that put a blown-out white highlight across the whole table and
+    # made every bulkhead read as french-polished mahogany. Interior boat
+    # varnish is a rubbed satin finish: it lifts a highlight, it does not reflect
+    # the cabin back at you. Base 0.44; the worn patches (`teak_wear`) dull it
+    # further, up toward 0.6, which is what makes the wear read as wear.
     teak_roughness = textures.grey_image(
         "teak_roughness",
-        (0.44 - 0.10 * teak_sheen - 0.06 * (1 - teak_grain) - 0.05 * teak_seam)[::2, ::2],
+        (
+            0.44
+            - 0.10 * teak_sheen
+            - 0.06 * (1 - teak_grain)
+            - 0.05 * teak_seam
+            + 0.18 * teak_wear
+        )[::4, ::4],
     )
     teak_height = (teak_grain - 0.5) * 0.0006 - teak_seam * 0.0020
     teak_normal = textures.make_image(
-        "teak_normal", textures.normal_from_height(teak_height, strength=30.0), non_color=True
+        "teak_normal",
+        textures.normal_from_height(teak_height[::2, ::2], strength=30.0),
+        non_color=True,
     )
+    # Varnished, so a clear coat over the grain -- the second, tighter specular
+    # lobe that a single roughness value cannot carry (see `_coat`). Rubbed
+    # satin, so the coat's own roughness is well up from a gloss: it lifts a
+    # soft highlight along the joinery, it does not turn the saloon into a
+    # mirror. This is the surface the whole camera path is pointed at, so it is
+    # the one the coat matters most on.
     palette["teak"] = _textured(
-        "teak", colour=teak_colour, roughness=teak_roughness, normal=teak_normal, tile=0.55
+        "teak",
+        colour=teak_colour,
+        roughness=teak_roughness,
+        normal=teak_normal,
+        coat=0.55,
+        coat_roughness=0.12,
+        tile=0.55,
     )
 
     weathered_grain = textures.directional_grain(
@@ -544,7 +644,9 @@ def create():
     # White mouldings that are plainly not gelcoat: the mainsail's headboard,
     # the batten ends. Brighter and glossier than sailcloth so they read as
     # hardware against the cloth they are sewn into.
-    palette["plastic_white"] = _pbr("plastic_white", (0.80, 0.80, 0.78), roughness=0.30)
+    palette["plastic_white"] = _pbr(
+        "plastic_white", (0.80, 0.80, 0.78), roughness=0.30, coat=0.3, coat_roughness=0.08
+    )
 
     # Signal red, for the two objects on the boat that are red because a rule
     # says so rather than because somebody chose it: the fire extinguisher and

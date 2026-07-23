@@ -106,7 +106,7 @@ def _finish(obj, sharp=45.0):
     return obj
 
 
-def _tube(name, collection, path, radius, segments=8):
+def _tube(name, collection, path, radius, segments=12):
     """A round bar or wire following a polyline, capped at both ends.
 
     The path is given in world space, densely enough that the sweep bends
@@ -451,14 +451,19 @@ def _build_winches(collection, afterdeck):
         for side in (-1, 1):
             x = side * centre
             foot = afterdeck(station, centre)
+            # 16 sides, not 12: the winch is a hero of the cockpit stop, its
+            # waist catches a bright ring of highlight, and at 80 mm across a
+            # 12-gon steps that highlight visibly. The drums are four small
+            # objects, so the rounder barrel is cheap.
+            sides = 16
             rings = [
                 [
                     (
-                        x + radius * cos(2 * pi * i / 12),
-                        _y(station) + radius * sin(2 * pi * i / 12),
+                        x + radius * cos(2 * pi * i / sides),
+                        _y(station) + radius * sin(2 * pi * i / sides),
                         foot + lift,
                     )
-                    for i in range(12)
+                    for i in range(sides)
                 ]
                 for (radius, lift) in profile
             ]
@@ -1776,7 +1781,7 @@ def _build_genoa_track(collection):
 # --------------------------------------------------------------------------
 
 
-def _rope(name, collection, path, radius=0.007, segments=6):
+def _rope(name, collection, path, radius=0.007, segments=8):
     """A length of sheet: a tube, fatter than a halyard because it is handled
     under load rather than just hoisted and cleated."""
     rings = sweep_rings(circle(radius, segments), _densify(path, per_segment=4))
@@ -1799,7 +1804,7 @@ def _flat_coil(collection, name, centre, z, radius, turns, tube_radius=0.0055):
         angle = 2 * pi * t
         r = radius * (1.0 - 0.82 * t / turns)
         path.append((centre[0] + r * cos(angle), centre[1] + r * sin(angle), z))
-    rings = sweep_rings(circle(tube_radius, 6), path)
+    rings = sweep_rings(circle(tube_radius, 8), path)
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     return _finish(obj, sharp=60.0)
 

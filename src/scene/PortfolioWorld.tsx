@@ -1,15 +1,26 @@
-import { Environment, Lightformer, Sky } from '@react-three/drei'
+import { Environment, Sky } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
+import type { ComponentRef } from 'react'
 import { Euler, MathUtils } from 'three'
-import type { Group, Vector3Tuple } from 'three'
+import type {
+  DirectionalLight,
+  FogExp2,
+  Group,
+  HemisphereLight,
+  Vector3Tuple,
+} from 'three'
 import { boatWorldInverse } from './water/boatPose'
 import { useSceneStore } from '../state/useSceneStore'
 import { Boat } from './Boat'
 import { Cabin } from './Cabin'
 import { CabinHatch } from './CabinHatch'
 import { CameraRig } from './CameraRig'
+import { Effects } from './Effects'
+import { EnvSky } from './EnvSky'
 import { Ocean } from './Ocean'
+import { Weather } from './Weather'
+import { sampleConditions } from './conditions'
 import { Exhibits } from './exhibits/Exhibits'
 import { sampleHeight } from './water/waves'
 import { heelAngle } from './wind'
@@ -57,25 +68,56 @@ export function PortfolioWorld() {
   const boatFrame = useRef<Group>(null)
   const seaFrame = useRef<Group>(null)
   const coupling = useRef(0)
+  const sun = useRef<DirectionalLight>(null)
+  const hemi = useRef<HemisphereLight>(null)
+  const sky = useRef<ComponentRef<typeof Sky>>(null)
+  const fog = useRef<FogExp2>(null)
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime
+    const c = sampleConditions(t)
 
     // Ease between the two frames as you come aboard and back.
     const target = scene === 'ocean' ? 0 : 1
     coupling.current = MathUtils.damp(coupling.current, target, 3, delta)
     const a = coupling.current
 
-    // The boat's motion off the shared sea and wind.
-    const heave = sampleHeight(0, 0, t)
-    const bow = sampleHeight(0, -HALF_LENGTH, t)
-    const stern = sampleHeight(0, HALF_LENGTH, t)
-    const port = sampleHeight(-HALF_BEAM, 0, t)
-    const starboard = sampleHeight(HALF_BEAM, 0, t)
+    // The boat's motion off the shared sea and wind. Buoyancy samples the sea at
+    // the weather's own amplitude — the same scale the water shader draws — so
+    // the boat rides higher and pitches harder as the sea gets up, and the two
+    // never drift apart.
+    const amp = c.seaAmp
+    const heave = sampleHeight(0, 0, t, amp)
+    const bow = sampleHeight(0, -HALF_LENGTH, t, amp)
+    const stern = sampleHeight(0, HALF_LENGTH, t, amp)
+    const port = sampleHeight(-HALF_BEAM, 0, t, amp)
+    const starboard = sampleHeight(HALF_BEAM, 0, t, amp)
 
     const pitch = ((stern - bow) / (2 * HALF_LENGTH)) * PITCH_GAIN
-    const roll = ((starboard - port) / (2 * HALF_BEAM)) * ROLL_GAIN + heelAngle(t)
+    const roll =
+      ((starboard - port) / (2 * HALF_BEAM)) * ROLL_GAIN + heelAngle(c.wind, t)
     const yaw = Math.sin(t * 0.13) * 0.02
+
+    // The light and sky follow the same front. The sun that casts shadows dims
+    // and greys under cloud; the soft hemisphere fill rises to stand in for an
+    // overcast sky that lights everything flatly; the drei Sky hazes; and the
+    // scene fog thickens and takes the fog's own colour so the boat, the sea and
+    // the sky all dissolve into one horizon.
+    if (sun.current) {
+      sun.current.intensity = c.sunIntensity
+      sun.current.color.copy(c.sun)
+    }
+    if (hemi.current) hemi.current.intensity = c.ambient
+    if (fog.current) {
+      fog.current.density = c.fogDensity
+      fog.current.color.copy(c.fog)
+    }
+    const skyUniforms = sky.current?.material.uniforms
+    if (skyUniforms) {
+      skyUniforms.turbidity.value = c.skyTurbidity
+      skyUniforms.rayleigh.value = c.skyRayleigh
+      skyUniforms.mieCoefficient.value = c.skyMie
+    }
 
     const boat = boatFrame.current
     if (boat) {
@@ -101,7 +143,14 @@ export function PortfolioWorld() {
     <>
       <CameraRig />
 
+      {/* The scene fog: the haze the boat, sea and sky all fade into. Thin and
+          blue in the clear, thick and grey in a squall, near-white in fog — all
+          driven per frame above. The ocean shader matches this exact density and
+          colour so the sea's horizon dissolves into the same wall. */}
+      <fogExp2 ref={fog} attach="fog" args={['#cfdae4', 0.0016]} />
+
       <Sky
+        ref={sky}
         sunPosition={SUN}
         turbidity={5}
         rayleigh={1.4}
@@ -109,9 +158,10 @@ export function PortfolioWorld() {
         mieDirectionalG={0.85}
       />
 
-      <hemisphereLight args={['#cfe3ff', '#1b3038', 0.55]} />
+      <hemisphereLight ref={hemi} args={['#cfe3ff', '#1b3038', 0.55]} />
 
       <directionalLight
+        ref={sun}
         position={SUN}
         intensity={2.6}
         color="#fff4e6"
@@ -123,30 +173,14 @@ export function PortfolioWorld() {
         <orthographicCamera attach="shadow-camera" args={[-7, 7, 9, -9, 0.1, 80]} />
       </directionalLight>
 
-      <Environment resolution={256}>
-        <Lightformer
-          form="rect"
-          intensity={0.9}
-          color="#dcecff"
-          position={[0, 12, 0]}
-          rotation={[Math.PI / 2, 0, 0]}
-          scale={[40, 40, 1]}
-        />
-        <Lightformer
-          form="ring"
-          intensity={5}
-          color="#fff1dc"
-          position={SUN}
-          scale={[6, 6, 1]}
-        />
-        <Lightformer
-          form="rect"
-          intensity={0.4}
-          color="#20455a"
-          position={[0, -6, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          scale={[40, 40, 1]}
-        />
+      <Weather />
+
+      {/* The reflection cubemap. It bakes the gradient dome — a real horizon and
+          a hot sun — so anything glossy on the boat reflects a sky that meets a
+          sea, not a flat blob. 512 is baked once, so it costs a single render and
+          buys visibly sharper highlights on the stainless and glass. */}
+      <Environment resolution={512}>
+        <EnvSky sun={SUN} />
       </Environment>
 
       {/* The sea rocks when you are aboard; the boat and everything on it rocks
@@ -168,6 +202,8 @@ export function PortfolioWorld() {
         <CabinHatch />
         <Exhibits />
       </group>
+
+      <Effects />
     </>
   )
 }

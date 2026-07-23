@@ -240,7 +240,7 @@ def _build_rigging(collection, g):
     Every wire named on the brochure's rig drawing: forstag, hackstag, toppvant,
     undervant, babystag.
     """
-    section = circle(params.STAY_DIAMETER / 2, 6)
+    section = circle(params.STAY_DIAMETER / 2, 8)
     masthead = (0.0, _y(g["mast_axis"]), g["masthead_z"] - 0.040)
 
     # The backstay comes down the centreline to a plate above the after deck and
@@ -468,7 +468,7 @@ def _box_local(name, collection, x0, x1, y0, y1, z0, z1):
     return obj
 
 
-def _tube_local(name, collection, path, radius, segments=8):
+def _tube_local(name, collection, path, radius, segments=12):
     """A round bar following a polyline, capped at both ends -- kept local for
     the same reason as `_box_local`."""
     rings = sweep_rings(circle(radius, segments), _densify(path, per_segment=3))
@@ -497,7 +497,7 @@ rigging. Everything that is handled is thicker than everything that only
 holds the rig up, which is true of the boat as well as the model."""
 
 
-def _rope(name, collection, path, radius=ROPE_RADIUS, segments=6):
+def _rope(name, collection, path, radius=ROPE_RADIUS, segments=8):
     """A length of running rigging: a tube, capped like a stay but fatter."""
     rings = sweep_rings(circle(radius, segments), _densify(path, per_segment=3))
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
@@ -560,7 +560,7 @@ def _hanging_coil(collection, name, hook, facing, radius, turns, tube_radius=0.0
             )
         )
 
-    rings = sweep_rings(circle(tube_radius, 6), path)
+    rings = sweep_rings(circle(tube_radius, 8), path)
     obj = grid_to_mesh(name, rings, collection, close_rings=True)
     recalc_normals(obj)
     return obj

@@ -17,8 +17,9 @@ const BASE = 0.62
 /** How hard the strongest gust presses over the base. */
 const GUST = 0.34
 
-/** Full-strength heel, radians. About 7°, a boat sailing along, not rail-down. */
-const MAX_HEEL = 0.12
+/** Full-strength heel, radians. About 9°, a boat pressed hard but not rail-down;
+ *  scaled by the weather's wind so a calm sits upright and a blow leans on. */
+const MAX_HEEL = 0.16
 
 /**
  * Wind strength at a time, 0…1. Two slow sine terms at unrelated rates give an
@@ -30,14 +31,16 @@ export function windStrength(time: number): number {
 }
 
 /**
- * How far the boat heels, radians, at a time. The boat is sailing close-hauled
- * on starboard tack — wind over the starboard side, sails eased to port (see
- * `sails.py`) — so it leans to port, its lee side. That is a positive rotation
- * about +Z here, the same axis the wave roll uses, so the two just add.
+ * How far the boat heels, radians, for a given steady wind (0…1, from the
+ * weather) at a time. The boat is sailing close-hauled on starboard tack — wind
+ * over the starboard side, sails eased to port (see `sails.py`) — so it leans to
+ * port, its lee side. That is a positive rotation about +Z here, the same axis
+ * the wave roll uses, so the two just add.
  *
- * Mostly the steady breeze with a little gust on top: the boat does not follow
- * every flap of the wind, it leans to the average and stiffens against the rest.
+ * The lean tracks the weather's wind — upright in a calm, hard over in a blow —
+ * with a little of the fast gust on top, so the boat leans to the average and
+ * stiffens against the rest rather than following every flap.
  */
-export function heelAngle(time: number): number {
-  return MAX_HEEL * (0.75 + 0.25 * windStrength(time))
+export function heelAngle(windLevel: number, time: number): number {
+  return MAX_HEEL * windLevel * (0.85 + 0.15 * windStrength(time))
 }

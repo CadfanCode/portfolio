@@ -91,6 +91,20 @@ def main() -> int:
 
     materials.apply(built, deck.band_surface_function())
 
+    # Triangulate before export so tangents can be calculated. glTF only stores
+    # triangles, so the exporter triangulates anyway -- but it computes the
+    # tangent basis (mikktspace) from the mesh it is handed *first*, and that
+    # calculation silently fails on any quad or n-gon ("Could not calculate
+    # tangents. Please try to triangulate the mesh first"). A Triangulate
+    # modifier, applied at export by `export_apply`, hands mikktspace a mesh it
+    # can actually solve, so every normal-mapped surface gets real tangents
+    # instead of the screen-space-derivative fallback. It preserves material
+    # indices, UVs and the sharp/smooth edge flags `shade_smooth` set.
+    for obj in built.values():
+        if obj is None:
+            continue
+        obj.modifiers.new("Triangulate", "TRIANGULATE")
+
     total = 0
     for name, obj in built.items():
         if obj is None:
@@ -112,6 +126,13 @@ def main() -> int:
         export_cameras=False,
         export_lights=False,
         use_visible=True,
+        # Write per-vertex tangents. Every textured material here carries a
+        # normal map, and without a tangent attribute three.js falls back to
+        # deriving a tangent basis per-fragment from screen-space derivatives --
+        # cheaper, but it wobbles the direction a bump tips the light, worst on
+        # exactly the low-poly curved surfaces this boat is made of. Exported
+        # tangents cost a vec4 per vertex and fix the normal maps to the mesh.
+        export_tangents=True,
     )
     size_kb = os.path.getsize(glb_path) / 1024
     print(f"[build] wrote     {glb_path} ({size_kb:.0f} KB)")
