@@ -1028,6 +1028,21 @@ about 160%, and it has to go somewhere. Out to port because that is the leeward
 side; the sheet leads to the port side deck and the clew is over the water
 outboard of the shrouds, which is what a genoa this size does."""
 
+GENOA_DRAFT = 0.200
+GENOA_TWIST = 0.460
+"""The genoa's own camber and twist, fuller than the mainsail's SAIL_DRAFT /
+SAIL_TWIST.
+
+An overlapping genoa is cut deeper than a main, and close-hauled its whole after
+body bags to leeward -- out past the spreader tips it sweeps across, so the tips
+and the leeward upper shroud bear on the cloth and pillow it (a spreader patch)
+instead of standing proud through the sail. With the main's flatter numbers the
+after body sat inboard of the leeward spreader and the tip speared the cloth.
+Only the shape moves: draft and twist are nil at the three corners, so the class
+outline (GENOA1_LUFF/LEECH/FOOT and the clew above) is untouched -- the twist
+does the work at spreader height, where it carries the leech to leeward without
+deepening the foot, which the draft alone would have bellied out over the water."""
+
 SAIL_NUMBER = "SWE 2875"
 SAIL_NUMBER_HEIGHT = 0.300
 """The registration, on the mainsail.
