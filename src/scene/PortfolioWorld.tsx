@@ -156,6 +156,14 @@ export function PortfolioWorld() {
       </group>
       <group ref={boatFrame}>
         <Boat />
+        {/* Daylight below deck. The sun cannot get in — the coachroof is opaque
+            and the windows are smoked — so without these the cabin renders very
+            nearly black, which is no use as a stop on the path. Two soft, cheap
+            point lights stand in for what really lights a cabin at sea: the
+            companionway hatch behind you and the side windows. Inside the boat
+            frame, so they ride with it. */}
+        <pointLight position={[0, 1.0, 0.5]} intensity={2.6} distance={5} decay={2} color="#eef3ff" />
+        <pointLight position={[0, 0.85, -2.1]} intensity={1.3} distance={3.5} decay={2} color="#e8eefc" />
         <Cabin />
         <CabinHatch />
         <Exhibits />
