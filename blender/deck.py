@@ -579,7 +579,16 @@ def _forward_section(station, sheer, half_beam, roof_half, roof_height):
 
     crown = _crown(edge_x)
     deck_at = _deck_surface(station, raw_z, edge_x, crown)
-    flare = params.COACHROOF_SIDE_FLARE
+
+    # The coachroof side flares out `COACHROOF_SIDE_FLARE` beyond the roof edge
+    # before the side deck proper begins -- but only as far as there is side deck
+    # to flare across. Near the bow the sheer edge closes on the centreline
+    # faster than the roof does, so `rw + flare` overran `edge_x`: the section
+    # laid its coachroof-side and side-deck points outboard of the hull, and the
+    # loft fanned them into a thin flat flap hanging over the stem. Clamping the
+    # flare to the gap that is actually there collapses that flap to nothing at
+    # the point, where a deck comes to an edge and not a shelf.
+    flare = min(params.COACHROOF_SIDE_FLARE, max(0.0, edge_x - rw))
     points = []
 
     def roof_at(x):
