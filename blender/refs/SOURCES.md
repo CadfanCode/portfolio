@@ -47,7 +47,15 @@ shape. Contents by page:
 - **p3 "Dacket"** -- deck fittings, and an overhead photograph that reads as a
   deck plan. **Cockpit stated as 2.30 x 2.0 m** -- a hard dimension, no other
   source gives it.
-- **p4 "Inredningen"** -- interior photographs. The reference for the cabin pass.
+- **p4 "Inredningen"** -- the whole accommodation, in prose and five
+  photographs, and the only description of it anywhere. It gives no dimension
+  at all, and it is still the source for every number in the interior section
+  of `params.py`, because what it does give is constraints: five berths, "tva i
+  forpiken och tre i salongen"; "Forpik med fullangdskojer"; companionway steps
+  that are "tva stora dragbara lador"; a shelf above the settee backrests; and
+  standing headroom **at the galley**, sold as the best thing about the boat --
+  which only means anything if there is not standing headroom elsewhere. Those
+  are what `verify.py --model interior` checks.
 - **p5 "Riggen"** -- fully dimensioned rig and sail plan drawing, cross-checking
   the class-rule rig numbers (2500 E, 7500 P, 3335 J) and naming every wire.
 - **p6 "Nyheter"** -- late-model changes, including the blue topsides tape that
@@ -107,6 +115,32 @@ things and these did:
 `blender/tools/crop_reference.py` pulls a region out of these and enlarges it,
 which is how the step and the bulb were measured.
 
+## 5. Year-by-year build changes (which boat this is)
+
+**URL:** http://www.zetternet.se/maxi77/andringar.htm
+Owner site, listing what changed each model year against the hull numbers it
+changed at. Nothing else found says *when* anything happened, which makes it the
+document that decides what a 1980 boat actually has. Not committed; it is a web
+page, and the lines relied on are quoted here.
+
+- **1975** (700-1209) -- "Nytt dack med forlig forvaringsbox" and, below,
+  "Basinredning i form av ett innerskrov i plast. Hojt rufftak vid nedgangen och
+  ny basinredning med lagre durkniva. Hojd sittbrunnsdurk. Ruffskottet flyttas
+  akterut med mindre lutning. Nya bankluckor. **Dubbla huvudskott mellan salong
+  och forpik**." The interior is a moulding, not joinery; the sole is lowered;
+  and there are *two* main bulkheads with a compartment between them, which is
+  where the wardrobe and the clothes locker are. The brochure describes those
+  two as facing each other -- "kladskapet mitt emot" -- and never explains why.
+  This does.
+- **1976** -- "Forbattrat fordacksstuv med dranering. Plexiglas i forluckan".
+- **1978** -- "Transparent forpikslucka".
+- **1979** -- "Nytt pentryutforande och innerkladsel".
+- **1972** -- "Garderobsskott om babord saknas", which is what names the side
+  the wardrobe is on: it is the thing the first year's boats did without.
+
+A 1980 boat is therefore the post-1975 interior with the late galley and a
+glazed foredeck hatch.
+
 ---
 
 ## Still wanted
@@ -116,3 +150,11 @@ which is how the step and the bulb were measured.
 - The original A0-1 lines drawing, if the class association will share it. That
   would replace the fitted section curves with real offsets.
 - Cockpit and coachroof photographs for the deck pass.
+- **A saloon photograph looking aft or up**, to settle whether there is a
+  compression post under the mast. The mast is deck-stepped (F.7.1) so its load
+  has to reach the keel somehow, and one is modelled -- but every interior
+  photograph to hand looks forward, and none of them shows the mast station.
+  See `params.HAS_MAST_POST`, which is flagged UNVERIFIED for this reason.
+- The A0-4 / A0-5A / A0-6A interior drawings, named in the class rules and held
+  by the class association. They would replace the whole fitted interior section
+  of `params.py` the way the A0-1 lines would replace the fitted hull sections.

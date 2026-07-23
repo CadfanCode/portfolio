@@ -11,6 +11,11 @@ so the shape is diffable, reproducible, and correctable by editing a value.
     npm run model:verify     # measure the result against the class rules
     npm run model:preview    # render orthographic views -> blender/renders/
 
+The accommodation is part of the same model. It has its own set of preview
+cameras, because looking at it means taking the deck off first:
+
+    npm run model:preview:interior
+
 Blender is installed as a Flatpak, which has two consequences worth knowing:
 
 - **Every path handed to Blender must be absolute.** The Flatpak's working
@@ -22,11 +27,20 @@ Blender is installed as a Flatpak, which has two consequences worth knowing:
 
     params.py         every dimension, each with its source
     hull.py           the hull skin and rubrail
+    deck.py           the deck moulding, coachroof and cockpit
+    fittings.py       rails, winches, steering, the outboard
+    rig.py            mast, boom, standing rigging
+    sails.py          mainsail, genoa and the registration on it
+    interior.py       the moulded inner hull and the deckhead over it
+    joinery.py        bulkheads, galley, steps, table, berths
+    fitout.py         cushions, backrests, shelf, locker doors, sink, cooker
+    textures.py       every texture image, generated in numpy at build time
+    materials.py      the palette, and which geometry gets which material
     lib/curves.py     shape-preserving interpolation, section shapes
-    lib/mesh.py       grid lofting, mirroring, welding, shading
-    build_exterior.py orchestrator -- run this
-    verify.py         the class rules as a test suite
-    preview.py        headless renders
+    lib/mesh.py       grid lofting, mirroring, welding, shading, bevelling
+    build.py          orchestrator -- run this
+    verify.py         the class rules and the brochure, as a test suite
+    preview.py        headless renders (--views interior for the cabin)
     refs/             reference material (not committed -- see refs/SOURCES.md)
 
 ## How the shape is controlled
@@ -66,16 +80,221 @@ difference between a boat that measures correctly and a boat that is correct.
 What verification cannot do is tell you it looks like a Maxi 77. That is what
 `preview.py` and `refs/` are for.
 
+## The fittings
+
+`fittings.py` is everything bolted to the deck: the pulpit, stanchions and
+lifelines, the mainsheet horse, the sheet winches, the chrome rail round the
+after coaming, the teak flooring in the footwell, the tiller and the outboard.
+
+It is a different kind of module from the ones above it. The hull, the deck and
+the rig are shapes that either read as a Maxi 77 or do not; nothing in here is
+bigger than a forearm or changes the silhouette. It earns its place because of
+where the camera stops. From the cockpit the traveller is at arm's length, the
+winches are at shoulder height and the tiller is in frame throughout -- these are
+the only objects on the boat the visitor is ever within two metres of.
+
+Nothing here carries a coordinate of its own. Every fitting asks the deck where
+it is (`cockpit_widths`, `deck_edge_half_width`, the three surface functions) or
+asks the rudder (`keel_rudder.rudder_axis`). That is not neatness: the side deck
+alongside this cockpit is 89 mm wide at the after winch, so a winch given a fixed
+offset would be over the water the first time the beam curve moved.
+
+Three of them have to agree with something built elsewhere, and those three are
+checked in `verify.py` rather than eyeballed -- the after locker lid against the
+footwell width, the winch bases against the side deck, and the tiller against the
+stern rail it passes under.
+
+That last one has already been wrong in both directions. The stern rail began as
+a capping rail lying 24 mm off the coaming, which put the tiller *over* it with
+20 mm of daylight and the helm's arm at deck height across the whole cockpit;
+raised to a 300 mm pushpit the tiller goes under with 257 mm clear. The check
+survived the reversal because it measures a gap rather than an arrangement.
+
+Two things fell out of adding them that were not about fittings at all. The
+backstay was landing 356 mm above the after deck, because the height function the
+rig reads answered with a coachroof wherever it was asked; and the shrouds were
+hung from the coachroof's centreline height while standing 950 mm off it. Neither
+was visible until something else had to share that space.
+
+## The sails
+
+`sails.py` bends on a mainsail and a genoa. They are two things at once: the
+largest object in the model by area, and the only part of it that is not built
+from a measurement.
+
+The class rules give a sail's three sides to the millimetre and say nothing about
+the one thing that makes it look like a sail, which is the shape in the cloth. So
+the outline comes from the rules and the shape comes from three numbers -- how
+much camber, where along the chord it sits, and how far the leech twists off by
+the head. Both sails are then generated as a plain grid from a single function of
+those three.
+
+That split is the whole design. **Making them react to wind later is a matter of
+driving those numbers from a direction and a strength, and swinging the boom.**
+Nothing in the geometry needs re-authoring, and nothing in the module knows which
+way the wind is blowing except the sign of the camber. As it stands they are set
+close-hauled on starboard, full to port, because the alternative -- a boat at
+anchor with its sails slatting -- is a cloth simulation, which is a great deal of
+work to make something look limp.
+
+The registration is Blender's own font, tessellated to a mesh and then put back
+through the sail's own surface function, so the letters follow the camber
+exactly rather than approximately. It is sized in metres and converted to the
+sail's parameters locally: `u` runs luff to leech and spans five metres at the
+foot and nothing at the head, so anything laid out in parameter space comes out
+with whatever aspect ratio the sail happened to have where it was put.
+
+Two departures from the class rules were made for the sails' sake, and both are
+marked as such in `params.py`: the boom is a foot longer than C.6.1 allows and
+half a foot lower than F.2.2 puts it. `verify.py` still measures the built spar,
+and still measures it against the parameter rather than the rule, so the geometry
+cannot drift -- but the parameter says plainly that it is outside the class.
+
+## The accommodation
+
+Part of the same model, and built the same way as everything else.
+
+It was briefly a second model with a GLB of its own, on the argument that the
+camera path starts on the ocean and reaches the cabin two stops later, so the
+first frame should not wait for cabin geometry. Two things killed that. The
+cabin turned out to be 32 KB over the wire against the exterior's 226 -- a 12%
+saving on first load, in exchange for two assets that could be committed at
+different times and drift apart. And the camera path routes cockpit -> cabin
+through the companionway, so both halves have to be loaded at once anyway; with
+only the exterior present you would not see an empty cabin through that opening,
+you would see through the boat, because the hull is a single-sided skin and its
+inner faces are not drawn.
+
+Splitting the *build* was worth it; splitting the *asset* was not. `interior.py`
+and `joinery.py` remain separate modules, and `preview.py --views interior` is
+still a separate set of cameras.
+
+From hull 700 on the interior is
+"ett innerskrov i plast" -- a second GRP moulding dropped inside the hull -- so
+the sole, the settees and the forepeak berth are one lofted surface with a
+section that changes along the boat, exactly like the hull and the deck. The
+forepeak berth flat *is* the saloon sole and settees, with the sole's width
+taken to zero and the settee front dropped flat, and the two fair into each
+other inside the wardrobe compartment where nothing can see the changeover.
+Only the asymmetric parts -- galley to port, quarter berth to starboard -- and
+the flat panels are built separately, in `joinery.py`.
+
+### Verifying it
+
+The class rules stop at the deck, so the interior has nothing to check against
+but the brochure's own prose, turned into measurements: berth lengths, and
+headroom at the galley -- which is checked in *both* directions, because the
+brochure sells standing headroom there as the best thing about the boat, and
+that only means anything if there is not standing headroom elsewhere.
+
+The fit-out -- cushions, backrests, the shelf, the locker doors, the sink and
+cooker -- is `fitout.py`, and it is to `interior.py` what `fittings.py` is to
+`deck.py`: nothing in it is structural and all of it is what makes the cabin read
+as somewhere someone sleeps rather than as a moulding with furniture in it. Three
+of the boat's five berths are in here and none of them looks like a berth until
+there is something on it.
+
+It goes through the clearance check below for exactly the reason the joinery
+does. The settee cushions were cut to the topsides at their top edge and stood
+33 mm outside them at their bottom one -- the hull tucks in 43 mm over the 75 mm
+of a cushion -- which is invisible from inside the cabin and shows from the water
+as a tan stripe down the middle of the hull.
+
+These run in the same `npm run model:verify` as the class rules, in one report
+with one exit code. That is the main practical gain from having one model: a
+green hull cannot hide a cabin that has come adrift from it.
+
+The check worth more than the rest is clearance: no interior vertex outside the
+hull skin. It is the interior's version of the displacement check. Every other
+measurement here describes the accommodation on its own terms, and an
+accommodation can satisfy all of them while standing outside its own topsides
+-- the liner is generated from a copy of the hull curves and the joinery is cut
+to fitted numbers, and nothing in that process forces the two to agree.
+
+It earned its place immediately. The first galley was a rectangular block cut
+to the hull at worktop height, where the hull is 1080 mm wide. At sole height
+the hull is 520 mm wide, so the block stood 547 mm outside the boat -- and it
+looked perfectly correct from inside the cabin, because the part that was wrong
+was behind the topsides where no camera could reach it.
+
+## The hull sections table
+
+The app's sea shader clips a hull-shaped hole in the water so waves do not
+render inside the cabin, and the shape it clips against is measured here:
+`tools/hull_sections.py` slices the built hull into a small (station, height)
+table of half-beams and writes it to `src/scene/water/hullSections.ts` as
+generated, committed source. Height-resolved rather than a waterline outline
+because the hull tucks inward below the waterline and flares above it, and the
+waves meet it at a different height every frame.
+
+It is the same contract as the exported GLB: derived from the model, consumed
+by the app, and stale the moment the hull is re-lofted. Regenerate it whenever
+the hull changes:
+
+    flatpak run org.blender.Blender -b --factory-startup \
+        --python "$PWD/blender/tools/hull_sections.py" -- --project "$PWD"
+
+## The textures
+
+`textures.py` generates every image the model uses, in numpy, at build time.
+Nothing is painted and nothing is downloaded: a teak grain is fbm plus a
+directional streak, a cushion is a woven over-and-under, a non-slip panel is a
+diamond lattice, and a normal map is the Sobel gradient of whichever height
+field made the colour. `materials.py` wires those into Principled BSDFs and
+`apply()` hands them out by object name.
+
+The constraint that shapes the whole module is that **glTF does not export
+Blender's procedural shader nodes.** A Noise or Voronoi tree renders correctly
+in the EEVEE previews and arrives in the browser as flat grey, which is the
+worst possible failure: it looks finished right up until it ships. So every
+texture is a real raster, packed into the .blend and embedded in the GLB.
+
+UVs are world-space metres. `project_box_uvs` runs over anything without a UV
+layer, projecting each face by its dominant normal, and `_textured`'s `tile`
+argument is the real size in metres that one copy of the image covers. That is
+what makes one teak image work on a 90 mm fiddle and a 700 mm bulkhead: the
+number that differs between them is `tile`, not the UV.
+
+Two things about the palette are worth knowing before changing it.
+
+**Roughness is the whole material.** The interior teak first shipped with a
+roughness that could reach zero, and every bulkhead came out as french-polished
+mahogany with a blown-out highlight across the saloon table. Varnish on a boat
+is a rubbed satin finish. It lifts a highlight; it does not reflect the cabin
+back at you.
+
+**Some materials are two materials.** The deck is split three ways -- band,
+smooth gelcoat, moulded non-slip -- and the outboard two, cowling and leg. Both
+splits are geometric, computed from the surface functions in `deck.py` and from
+`fittings.outboard_cowl_base()`, never by picking faces. A real non-slip panel
+is not a different colour, it is the same gelcoat moulded with a texture in it,
+and it stops short of the deck edge and of the whole raised coachroof -- its top
+and its sloped sides both -- because a foot walks on the flat side decks and the
+foredeck, not up on the centre structure, and a moulded pattern is never laid on
+a slope.
+
 ## The exported GLB *is* committed
 
-`src/assets/models/maxi77-exterior.glb` is checked in, unlike the `.blend` and
-the renders. Vercel builds from GitHub and has no Blender, so the exported asset
-has to be in the repo -- it is the boundary between this pipeline and the app.
+`src/assets/models/maxi77.glb` is checked in, unlike the `.blend` and the
+renders. Vercel builds from GitHub and has no Blender, so the exported asset has
+to be in the repo -- it is the boundary between this pipeline and the app.
 Rebuild it and commit the result whenever the model changes.
+
+It is now 4.7 MB for 33,000 faces, up from 786 KB for 18,000. The faces are the
+detailing -- rope, the outboard, the fit-out, and the bevel on every hard edge
+-- but they are only half the story: 28 texture images account for 2.4 MB of
+it, or 53%. That is worth measuring before optimising the wrong half, and it is
+two lines of `struct` and `json` against the GLB's own header to measure.
+
+If the size becomes a problem there are two levers, in this order. Textures
+first: they are generated, so their resolution is a constant in `materials.py`
+and every one of them can be halved without touching geometry. Mesh compression
+-- Draco or meshopt -- second. Splitting the asset up is still not a lever, for
+the reasons in `build.py`.
 
 ## The .blend is a build artifact
 
-`build_exterior.py` regenerates it from nothing every run. Open it in the GUI to
+`build.py` regenerates it from nothing every run. Open it in the GUI to
 look around and measure freely, but anything hand-edited is lost on the next
 build -- changes worth keeping go into `params.py`.
 

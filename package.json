@@ -8,13 +8,16 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "model:build": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/build_exterior.py\" -- --project \"$PWD\"",
+    "model:build": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/build.py\" -- --project \"$PWD\"",
     "model:verify": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/verify.py\" -- --project \"$PWD\"",
-    "model:preview": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/preview.py\" -- --project \"$PWD\""
+    "model:preview": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/preview.py\" -- --project \"$PWD\"",
+    "model:preview:interior": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/preview.py\" -- --project \"$PWD\" --views interior"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
+    "postprocessing": "^6.39.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "three": "^0.185.1",

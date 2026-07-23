@@ -126,6 +126,61 @@ def mirror_x(obj: bpy.types.Object, merge_distance: float = 1e-4) -> None:
     bm.free()
 
 
+def join(objs: list[bpy.types.Object], name: str) -> bpy.types.Object | None:
+    """Merge objects into one, under a given name.
+
+    Almost everything here that is built piece by piece -- a pair of windows, a
+    dozen stanchions, six wires -- ships as one mesh, because the export carries
+    an object's worth of overhead per object and these are a handful of faces
+    each. The first object is kept and renamed so that whatever the caller does
+    with the return value keeps working.
+    """
+    if not objs:
+        return None
+
+    target = objs[0]
+    target.name = name
+    target.data.name = name
+
+    bm = bmesh.new()
+    for obj in objs:
+        bm.from_mesh(obj.data)
+    bm.to_mesh(target.data)
+    bm.free()
+
+    for obj in objs[1:]:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+    return target
+
+
+def face_towards(obj: bpy.types.Object, direction: tuple) -> None:
+    """Make every face of an open sheet agree, and face the given way.
+
+    `recalc_normals` is for solids. It works out which side of a closed surface
+    is the outside, and a flat panel does not have one -- asked about a
+    single-sided sheet it makes the faces *consistent* with each other and then
+    picks a direction, and which direction it picks is not something to rely on.
+    That matters in the app rather than in Blender: three.js draws front faces
+    only, so a panel that comes out facing the wrong way is a hole.
+    """
+    from mathutils import Vector
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.normal_update()
+
+    # Area-weighted, so a handful of slivers cannot outvote the panel.
+    total = sum((f.normal * f.calc_area() for f in bm.faces), Vector())
+    if total.dot(Vector(direction)) < 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
+
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
 def cap_loop(obj: bpy.types.Object, points: list[tuple[float, float, float]]) -> bool:
     """Close a boundary with a single face through `points`, in order.
 
@@ -207,10 +262,85 @@ def shade_smooth(obj: bpy.types.Object, sharp_above_degrees: float = 40.0) -> No
     bm.free()
 
 
-def recalc_normals(obj: bpy.types.Object) -> None:
-    """Make normals point outwards consistently."""
+def bevel(
+    obj: bpy.types.Object,
+    width: float = 0.003,
+    segments: int = 2,
+    sharper_than_degrees: float = 25.0,
+    smooth_above_degrees: float = 40.0,
+) -> None:
+    """Take the arris off every hard edge, then shade the result smooth.
+
+    Nothing on a boat has a mathematically sharp edge. Joinery is radiused
+    because a square corner splinters and hurts to fall against; mouldings are
+    radiused because a female mould cannot be pulled off a knife edge; and metal
+    is radiused because it is drawn or cast. A model without that reads as
+    computer geometry no matter how correct its dimensions are, and it reads that
+    way for a specific reason: a real edge catches a highlight along its length,
+    and a zero-width edge has no length to catch one with.
+
+    So this is a lighting device before it is a shape one. `width` is deliberately
+    small -- a 3 mm radius is invisible as a shape at any distance and is the
+    difference between an edge that glints and an edge that does not.
+
+    Only edges between two faces are touched, and only those already sharper than
+    `sharper_than_degrees`. Boundary edges are left alone: an open sheet -- a
+    sail, the deckhead -- has nothing on the other side to bevel into, and
+    rounding its border would pull the border off the shape it was cut to.
+
+    `clamp_overlap` is on because the alternative is silent self-intersection
+    wherever a panel is thinner than twice the width, and thin panels are most of
+    the fit-out.
+    """
+    from math import degrees
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+
+    edges = [
+        edge
+        for edge in bm.edges
+        if len(edge.link_faces) == 2
+        and degrees(edge.calc_face_angle(0.0)) > sharper_than_degrees
+    ]
+
+    if edges:
+        bmesh.ops.bevel(
+            bm,
+            geom=edges,
+            offset=width,
+            offset_type="OFFSET",
+            segments=max(1, segments),
+            profile=0.5,
+            affect="EDGES",
+            clamp_overlap=True,
+            miter_outer="ARC" if segments > 1 else "SHARP",
+        )
+
+    for face in bm.faces:
+        face.smooth = True
+    for edge in bm.edges:
+        if len(edge.link_faces) == 2:
+            edge.smooth = degrees(edge.calc_face_angle(0.0)) < smooth_above_degrees
+
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
+def recalc_normals(obj: bpy.types.Object, inward: bool = False) -> None:
+    """Make normals point consistently outwards, or inwards.
+
+    Outwards is right for anything you look *at*. Inwards is right for anything
+    you look *into* -- a hatch well, the companionway -- because the faces that
+    show are the inside ones. It matters more in the app than in Blender:
+    Blender renders backfaces by default and three.js does not, so a well built
+    outwards is a well you can see straight through once it is exported.
+    """
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if inward:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
     bm.to_mesh(obj.data)
     bm.free()

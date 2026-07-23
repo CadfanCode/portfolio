@@ -21,10 +21,19 @@ export function Hotspot({
 }: HotspotProps) {
   const { hovered, bind } = usePointerSelect({ enabled, onSelect })
 
+  // 70 mm across, not the 150 it began at. That was sized against the
+  // placeholder box, when the nearest stop was metres off; the authored stops
+  // put the viewer about 1.5 m from the companionway marker, where a 300 mm ball
+  // is a beachball hanging in the hatch. This reads as a marker at that range
+  // and still catches the eye.
   return (
     <mesh position={position} name={label} {...bind}>
-      <sphereGeometry args={[0.15, 16, 16]} />
-      <meshBasicMaterial color={hovered ? '#ffffff' : '#ffcc33'} />
+      <sphereGeometry args={[0.07, 16, 16]} />
+      <meshBasicMaterial
+        color={hovered ? '#ffffff' : '#ffcc33'}
+        transparent
+        opacity={0.85}
+      />
     </mesh>
   )
 }

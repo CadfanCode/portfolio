@@ -23,30 +23,48 @@ function releaseLimits(c: CameraControlsImpl) {
 }
 
 /**
- * Pin the look constraints for a stop the camera has just arrived at. Called at
- * rest — setOrbitPoint must not run mid-animation.
+ * The point the camera orbits at a stop, written into `out`.
+ *
+ * For an orbit stop that is the stop's own target — the camera swings around
+ * the boat. For a first-person stop it collapses to a point just ahead of the
+ * eye, so dragging turns the head instead of swinging the camera through the
+ * hull. The pivot lies on the line from the eye to the target, so the view
+ * direction — and therefore the framing — is identical either way; only the
+ * radius the drag swings on changes.
+ *
+ * This is handed straight to `setLookAt` as the target rather than applied
+ * afterwards with `setOrbitPoint`, and that is load-bearing. `setOrbitPoint`
+ * re-derives the orbit radius from the camera's *current* world position, and
+ * camera-controls does not flush a new pose onto the camera until its next
+ * `update()` — so calling it right after `setLookAt` measured the radius from
+ * wherever the camera happened to be before the move. At the cockpit stop that
+ * was the Canvas's opening pose, 14 m astern: the pivot was correct, the radius
+ * was not, and the constraint pass then swung the camera around that 14 m arm
+ * and left the viewer sitting out in the sea watching the boat. Building the
+ * pivot into the call makes the radius correct by construction.
+ */
+function orbitTarget(stop: CameraStop, out: Vector3) {
+  if (stop.look !== 'firstPerson') return out.set(...stop.target)
+
+  eye.set(...stop.position)
+  return out
+    .set(...stop.target)
+    .sub(eye)
+    .normalize()
+    .multiplyScalar(FIRST_PERSON_PIVOT)
+    .add(eye)
+}
+
+/**
+ * Pin the look constraints for a stop the camera has just arrived at. Angles
+ * only — the pose itself was set by `setLookAt`.
  */
 function applyLookConstraints(c: CameraControlsImpl, stop: CameraStop) {
-  if (stop.look === 'firstPerson') {
-    // Collapse the orbit pivot to just ahead of the camera. The look direction
-    // is unchanged, so framing holds — only the radius the drag swings on shrinks.
-    eye.set(...stop.position)
-    pivot
-      .set(...stop.target)
-      .sub(eye)
-      .normalize()
-      .multiplyScalar(FIRST_PERSON_PIVOT)
-      .add(eye)
-
-    c.setOrbitPoint(pivot.x, pivot.y, pivot.z)
-  }
-
   const [minPolar, maxPolar] = stop.polarRange
   c.minPolarAngle = minPolar
   c.maxPolarAngle = maxPolar
 
-  // Azimuth is heading-relative, so it has to be read off the resting pose —
-  // after setOrbitPoint, which is the point the angle is measured against.
+  // Azimuth is heading-relative, so it has to be read off the resting pose.
   const resting = c.azimuthAngle
   c.minAzimuthAngle = resting - stop.azimuthRange
   c.maxAzimuthAngle = resting + stop.azimuthRange
@@ -95,13 +113,16 @@ export function CameraRig() {
     hasMounted.current = true
 
     releaseLimits(c)
+    orbitTarget(stop, pivot)
 
     let cancelled = false
-    void c.setLookAt(...stop.position, ...stop.target, animate).then(() => {
-      if (cancelled) return
-      applyLookConstraints(c, stop)
-      arrive()
-    })
+    void c
+      .setLookAt(...stop.position, pivot.x, pivot.y, pivot.z, animate)
+      .then(() => {
+        if (cancelled) return
+        applyLookConstraints(c, stop)
+        arrive()
+      })
 
     return () => {
       cancelled = true

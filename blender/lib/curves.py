@@ -94,6 +94,30 @@ def _fritsch_carlson_slopes(xs: list[float], ys: list[float]) -> list[float]:
     return m
 
 
+def section_half_beam(
+    half_beam: float,
+    z_sheer: float,
+    z_bottom: float,
+    fullness: float,
+    tuck: float,
+    z: float,
+) -> float:
+    """Half-width of a transverse section at a height.
+
+    The same curve `hull_section` walks, asked the other way round: it returns
+    points at chosen depths, this returns a width at a chosen height. The
+    interior needs the second form -- a settee top is at a height and wants to
+    know how far outboard it can run -- and the two have to be the same curve,
+    or the joinery is built to a hull the hull does not have.
+    """
+    depth = z_sheer - z_bottom
+    if depth <= 0 or half_beam <= 0:
+        return 0.0
+
+    u = min(1.0, max(0.0, (z_sheer - z) / depth))
+    return half_beam * (1.0 - u**fullness) ** (1.0 / tuck)
+
+
 def hull_section(
     half_beam: float,
     z_sheer: float,
@@ -134,9 +158,8 @@ def hull_section(
     points = []
     for i in range(count):
         t = i / (count - 1)  # 0 at the keel, 1 at the sheer
-        u = 1.0 - t  # normalised depth below the sheer
-        x = half_beam * (1.0 - u**fullness) ** (1.0 / tuck)
-        z = z_sheer - u * depth
+        z = z_sheer - (1.0 - t) * depth
+        x = section_half_beam(half_beam, z_sheer, z_bottom, fullness, tuck, z)
         points.append((x, z))
 
     return points

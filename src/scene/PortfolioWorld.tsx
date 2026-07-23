@@ -1,22 +1,209 @@
+import { Environment, Sky } from '@react-three/drei'
+import { useFrame } from '@react-three/fiber'
+import { useRef } from 'react'
+import type { ComponentRef } from 'react'
+import { Euler, MathUtils } from 'three'
+import type {
+  DirectionalLight,
+  FogExp2,
+  Group,
+  HemisphereLight,
+  Vector3Tuple,
+} from 'three'
+import { boatWorldInverse } from './water/boatPose'
+import { useSceneStore } from '../state/useSceneStore'
 import { Boat } from './Boat'
 import { Cabin } from './Cabin'
 import { CabinHatch } from './CabinHatch'
 import { CameraRig } from './CameraRig'
+import { Effects } from './Effects'
+import { EnvSky } from './EnvSky'
 import { Ocean } from './Ocean'
+import { Weather } from './Weather'
+import { sampleConditions } from './conditions'
 import { Exhibits } from './exhibits/Exhibits'
+import { sampleHeight } from './water/waves'
+import { heelAngle } from './wind'
 
-/** Root of the 3D world. Rendered inside a <Canvas>. */
+const SUN: Vector3Tuple = [-38, 14, -48]
+
+// Where the buoyancy samples the sea, fore-and-aft and athwartships — roughly
+// the boat's waterline length and beam, so it pitches and rolls off the slope
+// under its actual ends rather than a point.
+const HALF_LENGTH = 3.2
+const HALF_BEAM = 1.1
+const PITCH_GAIN = 0.55
+const ROLL_GAIN = 0.65
+
+// Scratch for composing the boat's transform without allocating per frame.
+const poseEuler = new Euler()
+
+/**
+ * The lit, moving world.
+ *
+ * Motion is carried by two frames rather than by moving the boat alone, which is
+ * what lets the rocking read correctly from every stop with a camera that never
+ * leaves world space. The boat's would-be motion `M` — heave and pitch and roll
+ * off the waves, plus the heel the wind presses on — is split between them by a
+ * coupling factor `a` that is 0 out on the ocean and 1 once aboard:
+ *
+ *  - the boat frame gets `(1 - a)·M`, so from the water you watch the hull rock
+ *    and heel against a level horizon;
+ *  - the sea frame gets `-a·M`, so once you are aboard the hull holds still and
+ *    the horizon rocks and tilts around you instead — which is exactly what
+ *    being on a boat looks like, and needs no camera trickery to pull off.
+ *
+ * Their difference is `M` at every value of `a`, so the boat always sits right
+ * on the water; only which of the two you see moving changes as you come aboard.
+ * That is also why coming below no longer freezes the boat: the motion does not
+ * stop, it moves from the hull to the horizon.
+ *
+ * Lighting is the cheap, self-contained rig from before — Sky, one shadow sun,
+ * and an Environment of local Lightformers for the reflections — and stays in
+ * world space: the sun does not roll when the boat does.
+ */
 export function PortfolioWorld() {
+  const scene = useSceneStore((s) => s.scene)
+
+  const boatFrame = useRef<Group>(null)
+  const seaFrame = useRef<Group>(null)
+  const coupling = useRef(0)
+  const sun = useRef<DirectionalLight>(null)
+  const hemi = useRef<HemisphereLight>(null)
+  const sky = useRef<ComponentRef<typeof Sky>>(null)
+  const fog = useRef<FogExp2>(null)
+
+  useFrame((state, delta) => {
+    const t = state.clock.elapsedTime
+    const c = sampleConditions(t)
+
+    // Ease between the two frames as you come aboard and back.
+    const target = scene === 'ocean' ? 0 : 1
+    coupling.current = MathUtils.damp(coupling.current, target, 3, delta)
+    const a = coupling.current
+
+    // The boat's motion off the shared sea and wind. Buoyancy samples the sea at
+    // the weather's own amplitude — the same scale the water shader draws — so
+    // the boat rides higher and pitches harder as the sea gets up, and the two
+    // never drift apart.
+    const amp = c.seaAmp
+    const heave = sampleHeight(0, 0, t, amp)
+    const bow = sampleHeight(0, -HALF_LENGTH, t, amp)
+    const stern = sampleHeight(0, HALF_LENGTH, t, amp)
+    const port = sampleHeight(-HALF_BEAM, 0, t, amp)
+    const starboard = sampleHeight(HALF_BEAM, 0, t, amp)
+
+    const pitch = ((stern - bow) / (2 * HALF_LENGTH)) * PITCH_GAIN
+    const roll =
+      ((starboard - port) / (2 * HALF_BEAM)) * ROLL_GAIN + heelAngle(c.wind, t)
+    const yaw = Math.sin(t * 0.13) * 0.02
+
+    // The light and sky follow the same front. The sun that casts shadows dims
+    // and greys under cloud; the soft hemisphere fill rises to stand in for an
+    // overcast sky that lights everything flatly; the drei Sky hazes; and the
+    // scene fog thickens and takes the fog's own colour so the boat, the sea and
+    // the sky all dissolve into one horizon.
+    if (sun.current) {
+      sun.current.intensity = c.sunIntensity
+      sun.current.color.copy(c.sun)
+    }
+    if (hemi.current) hemi.current.intensity = c.ambient
+    if (fog.current) {
+      fog.current.density = c.fogDensity
+      fog.current.color.copy(c.fog)
+    }
+    const skyUniforms = sky.current?.material.uniforms
+    if (skyUniforms) {
+      skyUniforms.turbidity.value = c.skyTurbidity
+      skyUniforms.rayleigh.value = c.skyRayleigh
+      skyUniforms.mieCoefficient.value = c.skyMie
+    }
+
+    const boat = boatFrame.current
+    if (boat) {
+      boat.position.y = (1 - a) * heave
+      boat.rotation.set((1 - a) * pitch, (1 - a) * yaw, (1 - a) * roll)
+    }
+    const sea = seaFrame.current
+    if (sea) {
+      sea.position.y = -a * heave
+      sea.rotation.set(-a * pitch, -a * yaw, -a * roll)
+    }
+
+    // Publish the boat frame's inverse for the sea shader's hull test —
+    // composed here from the same numbers just applied, not read back from the
+    // scene graph, whose matrices update after this callback and would lag.
+    poseEuler.set((1 - a) * pitch, (1 - a) * yaw, (1 - a) * roll)
+    boatWorldInverse.makeRotationFromEuler(poseEuler)
+    boatWorldInverse.setPosition(0, (1 - a) * heave, 0)
+    boatWorldInverse.invert()
+  })
+
   return (
     <>
       <CameraRig />
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[5, 10, 5]} intensity={1.5} />
-      <Ocean />
-      <Boat />
-      <Cabin />
-      <CabinHatch />
-      <Exhibits />
+
+      {/* The scene fog: the haze the boat, sea and sky all fade into. Thin and
+          blue in the clear, thick and grey in a squall, near-white in fog — all
+          driven per frame above. The ocean shader matches this exact density and
+          colour so the sea's horizon dissolves into the same wall. */}
+      <fogExp2 ref={fog} attach="fog" args={['#cfdae4', 0.0016]} />
+
+      <Sky
+        ref={sky}
+        sunPosition={SUN}
+        turbidity={5}
+        rayleigh={1.4}
+        mieCoefficient={0.005}
+        mieDirectionalG={0.85}
+      />
+
+      <hemisphereLight ref={hemi} args={['#cfe3ff', '#1b3038', 0.55]} />
+
+      <directionalLight
+        ref={sun}
+        position={SUN}
+        intensity={2.6}
+        color="#fff4e6"
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.02}
+      >
+        <orthographicCamera attach="shadow-camera" args={[-7, 7, 9, -9, 0.1, 80]} />
+      </directionalLight>
+
+      <Weather />
+
+      {/* The reflection cubemap. It bakes the gradient dome — a real horizon and
+          a hot sun — so anything glossy on the boat reflects a sky that meets a
+          sea, not a flat blob. 512 is baked once, so it costs a single render and
+          buys visibly sharper highlights on the stainless and glass. */}
+      <Environment resolution={512}>
+        <EnvSky sun={SUN} />
+      </Environment>
+
+      {/* The sea rocks when you are aboard; the boat and everything on it rocks
+          when you are on the water. See the coupling above. */}
+      <group ref={seaFrame}>
+        <Ocean />
+      </group>
+      <group ref={boatFrame}>
+        <Boat />
+        {/* Daylight below deck. The sun cannot get in — the coachroof is opaque
+            and the windows are smoked — so without these the cabin renders very
+            nearly black, which is no use as a stop on the path. Two soft, cheap
+            point lights stand in for what really lights a cabin at sea: the
+            companionway hatch behind you and the side windows. Inside the boat
+            frame, so they ride with it. */}
+        <pointLight position={[0, 1.0, 0.5]} intensity={2.6} distance={5} decay={2} color="#eef3ff" />
+        <pointLight position={[0, 0.85, -2.1]} intensity={1.3} distance={3.5} decay={2} color="#e8eefc" />
+        <Cabin />
+        <CabinHatch />
+        <Exhibits />
+      </group>
+
+      <Effects />
     </>
   )
 }
