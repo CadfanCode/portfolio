@@ -47,22 +47,22 @@ def build(collection):
         "traveller": _build_traveller(collection, cockpit),
         "stern_rail": _build_stern_rail(collection, afterdeck),
         "winches": _build_winches(collection, afterdeck),
-        "winch_handle": _build_winch_handle(collection, afterdeck),
         "tiller": _build_tiller(collection),
         "pulpit": _build_pulpit(collection, foredeck),
-        "pulpit_block": _build_pulpit_block(collection, foredeck),
         "stanchions": _build_stanchions(collection, foredeck),
         "lifelines": _build_lifelines(collection, foredeck),
         "outboard": _build_outboard(collection),
-        "outboard_fuel": _build_outboard_fuel(collection, cockpit),
         "mast_clutches": _build_mast_clutches(collection, g),
         "mooring_cleats": _build_mooring_cleats(collection, foredeck, afterdeck),
-        "anchor": _build_anchor(collection, foredeck),
         "boarding_ladder": _build_boarding_ladder(collection, afterdeck),
         "nav_lights": _build_nav_lights(collection, foredeck, afterdeck),
         "genoa_track": _build_genoa_track(collection),
         "sheets": _build_sheets(collection, cockpit, afterdeck, g),
     }
+    # Removed at the owner's request: the outboard's portable fuel tank and its
+    # line, the winch handle, the teak pulpit chafe block, and the bow anchor.
+    # Their builders are kept below -- correct, and free unbuilt -- so restoring
+    # any of them is a one-line entry in the dict above.
 
     # Every box, pad and moulded plate here gets its arris taken off -- see
     # `lib.mesh.bevel`. Swept tubes (rails, wires, rope) are left alone: they
@@ -71,11 +71,8 @@ def build(collection):
     for name in (
         "traveller",
         "outboard",
-        "pulpit_block",
-        "winch_handle",
         "mast_clutches",
         "mooring_cleats",
-        "anchor",
         "boarding_ladder",
         "nav_lights",
         "genoa_track",

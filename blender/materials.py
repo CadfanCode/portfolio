@@ -30,10 +30,39 @@ import params
 import textures
 
 
+def _glass(name):
+    """Smoked window acrylic: a tinted sheet you can see through, not a slab.
+
+    The windows used to be opaque near-black, which is right looked at from the
+    water -- a dark glossy pane against a bright sky -- and wrong from the one
+    place the camera path actually spends time, which is inside the cabin. From
+    in there an opaque pane is a navy slot painted on the topside, and the boat's
+    own windows, the most recognisable thing on it, read as a stripe.
+
+    So it is semi-transparent now: alpha blend rather than real refraction, which
+    is the cheap, in-keeping trick (CLAUDE.md: fake effects over simulation).
+    `KHR_materials_transmission` would refract the sea correctly and cost a whole
+    render pass to do it; a tinted 45%-opaque sheet with a low roughness reads as
+    smoked glass from either side and costs nothing but a sort. The tint is a
+    cool grey-blue, dark enough to still carry a sky reflection on the outside.
+    """
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    bsdf = material.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.055, 0.075, 0.095, 0.45)
+    bsdf.inputs["Roughness"].default_value = 0.06
+    bsdf.inputs["Metallic"].default_value = 0.0
+    # Alpha comes off the base colour's fourth channel; the exporter reads the
+    # blend method for glTF's alphaMode, so both have to be set.
+    bsdf.inputs["Alpha"].default_value = 0.45
+    material.blend_method = "BLEND"
+    return material
+
+
 def _pbr(name, colour, roughness=0.4, metallic=0.0):
     """A flat-colour material -- still the right choice for anything a texture
-    would not improve: `glass` is meant to be a mirror, `wire` is 5 mm across
-    and is colour and nothing else, `band` is a painted stripe."""
+    would not improve: `wire` is 5 mm across and is colour and nothing else,
+    `band` is a painted stripe."""
     material = bpy.data.materials.new(name)
     material.use_nodes = True
     bsdf = material.node_tree.nodes["Principled BSDF"]
@@ -122,7 +151,7 @@ def create():
     """The whole palette."""
     palette = {
         "band": _pbr("band", (0.045, 0.105, 0.215), roughness=0.22),
-        "glass": _pbr("glass", (0.020, 0.026, 0.032), roughness=0.06),
+        "glass": _glass("glass"),
         "wire": _pbr("wire", (0.52, 0.54, 0.56), roughness=0.26, metallic=1.0),
     }
 
@@ -784,7 +813,6 @@ def apply(built, band_surface):
     for name in (
         "mast_clutches",
         "spreader_boots",
-        "winch_handle",
         "nav_lights",
         "masthead_unit",
     ):
@@ -794,20 +822,17 @@ def apply(built, band_surface):
         assign(built.get(name), palette["chrome"])
 
     assign(built.get("genoa_track"), palette["alloy"])
-    assign(built.get("anchor"), palette["galvanised"])
-    # Tank and fuel line are one mesh, so they get one material, and black is
-    # the one that can be both. Red was the first choice -- portable tanks
-    # usually are -- but the line is 11 mm of tube running up over the coaming
-    # and down to the motor, and in red it read as a pair of scaffold poles
-    # pitched in the footwell rather than as a hose. The tank loses a little by
-    # being black; the cockpit gains a great deal.
-    assign(built.get("outboard_fuel"), palette["plastic_black"])
+
+    # The winch handle, the bow anchor, the outboard fuel tank and the pulpit
+    # chafe block were removed from the build at the owner's request; `.get()`
+    # would make their assignments harmless no-ops, but a line that can never
+    # fire is worse than no line.
 
     # The tiller and the cockpit flooring are the only teak anybody sees from
     # outside the boat, and they are the two pieces the cockpit stop is
     # closest to. Bare and weathered, not the interior's varnished material --
     # see `teak_exterior` in `create`.
-    for name in ("tiller", "cockpit_grating", "pulpit_block"):
+    for name in ("tiller", "cockpit_grating"):
         assign(built.get(name), palette["teak_exterior"])
 
     # --- Sails.
