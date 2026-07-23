@@ -103,7 +103,7 @@ def _camber(u):
     return sin(pi * warped)
 
 
-def _surface_function(luff, leech):
+def _surface_function(luff, leech, draft_fraction=None, twist_fraction=None):
     """Turn a luff and a leech into `place(u, v)`, a point on the sail.
 
     `v` runs 0 at the foot to 1 at the head, `u` runs 0 on the luff to 1 on the
@@ -115,7 +115,14 @@ def _surface_function(luff, leech):
     near the head is nowhere near horizontal -- and it is the right one here,
     because the chords of both these sails are within a few degrees of horizontal
     over the whole of the part anybody looks at.
+
+    `draft_fraction`/`twist_fraction` default to the shared `SAIL_DRAFT`/
+    `SAIL_TWIST` but can be overridden per sail: the overlapping genoa is cut and
+    sets fuller than the main, and has to bag to leeward of the spreader tips it
+    sweeps across rather than inboard of them, where the tips would spear it.
     """
+    draft_fraction = params.SAIL_DRAFT if draft_fraction is None else draft_fraction
+    twist_fraction = params.SAIL_TWIST if twist_fraction is None else twist_fraction
 
     def place(u, v):
         a = luff(v)
@@ -127,8 +134,8 @@ def _surface_function(luff, leech):
         # both sails were built with 10 mm of camber in them and looked exactly
         # like what they were, which is a pair of flat triangles.
         chord = hypot(hypot(b[0] - a[0], b[1] - a[1]), b[2] - a[2])
-        draft = params.SAIL_DRAFT * chord * (1.0 - 0.35 * v)
-        twist = params.SAIL_TWIST * chord * v**1.6
+        draft = draft_fraction * chord * (1.0 - 0.35 * v)
+        twist = twist_fraction * chord * v**1.6
 
         return (
             _lerp(a[0], b[0], u) - draft * _camber(u) - twist * u,
@@ -268,7 +275,9 @@ def _build_genoa(collection, g):
         point[1] += hollow
         return tuple(point)
 
-    place = _surface_function(luff, leech)
+    place = _surface_function(
+        luff, leech, draft_fraction=params.GENOA_DRAFT, twist_fraction=params.GENOA_TWIST
+    )
 
     def with_foot_sag(u, v):
         """The foot of an overlapping genoa hangs below the straight line from
