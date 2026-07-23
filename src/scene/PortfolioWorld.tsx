@@ -1,8 +1,9 @@
 import { Environment, Lightformer, Sky } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
-import { MathUtils } from 'three'
+import { Euler, MathUtils } from 'three'
 import type { Group, Vector3Tuple } from 'three'
+import { boatWorldInverse } from './water/boatPose'
 import { useSceneStore } from '../state/useSceneStore'
 import { Boat } from './Boat'
 import { Cabin } from './Cabin'
@@ -22,6 +23,9 @@ const HALF_LENGTH = 3.2
 const HALF_BEAM = 1.1
 const PITCH_GAIN = 0.55
 const ROLL_GAIN = 0.65
+
+// Scratch for composing the boat's transform without allocating per frame.
+const poseEuler = new Euler()
 
 /**
  * The lit, moving world.
@@ -83,6 +87,14 @@ export function PortfolioWorld() {
       sea.position.y = -a * heave
       sea.rotation.set(-a * pitch, -a * yaw, -a * roll)
     }
+
+    // Publish the boat frame's inverse for the sea shader's hull test —
+    // composed here from the same numbers just applied, not read back from the
+    // scene graph, whose matrices update after this callback and would lag.
+    poseEuler.set((1 - a) * pitch, (1 - a) * yaw, (1 - a) * roll)
+    boatWorldInverse.makeRotationFromEuler(poseEuler)
+    boatWorldInverse.setPosition(0, (1 - a) * heave, 0)
+    boatWorldInverse.invert()
   })
 
   return (

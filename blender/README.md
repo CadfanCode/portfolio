@@ -217,6 +217,23 @@ the hull is 520 mm wide, so the block stood 547 mm outside the boat -- and it
 looked perfectly correct from inside the cabin, because the part that was wrong
 was behind the topsides where no camera could reach it.
 
+## The hull sections table
+
+The app's sea shader clips a hull-shaped hole in the water so waves do not
+render inside the cabin, and the shape it clips against is measured here:
+`tools/hull_sections.py` slices the built hull into a small (station, height)
+table of half-beams and writes it to `src/scene/water/hullSections.ts` as
+generated, committed source. Height-resolved rather than a waterline outline
+because the hull tucks inward below the waterline and flares above it, and the
+waves meet it at a different height every frame.
+
+It is the same contract as the exported GLB: derived from the model, consumed
+by the app, and stale the moment the hull is re-lofted. Regenerate it whenever
+the hull changes:
+
+    flatpak run org.blender.Blender -b --factory-startup \
+        --python "$PWD/blender/tools/hull_sections.py" -- --project "$PWD"
+
 ## The textures
 
 `textures.py` generates every image the model uses, in numpy, at build time.

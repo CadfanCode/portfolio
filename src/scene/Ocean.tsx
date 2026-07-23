@@ -1,6 +1,25 @@
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
-import { Color, ShaderMaterial, Vector2, Vector3 } from 'three'
+import {
+  Color,
+  DataTexture,
+  LinearFilter,
+  RedFormat,
+  ShaderMaterial,
+  UnsignedByteType,
+  Vector2,
+  Vector3,
+} from 'three'
+import { boatWorldInverse } from './water/boatPose'
+import {
+  SECTION_BOW_Z,
+  SECTION_HALF_BEAM,
+  SECTION_HEIGHT_MAX,
+  SECTION_HEIGHT_MIN,
+  SECTION_HEIGHTS,
+  SECTION_STATIONS,
+  SECTION_STERN_Z,
+} from './water/hullSections'
 import { DERIVED, WAVES } from './water/waves'
 
 /**
@@ -21,23 +40,12 @@ import { DERIVED, WAVES } from './water/waves'
  */
 
 /**
- * The hull's half-beam at the waterline, sampled every 21 cm from stern to bow —
- * measured off the built mesh (a 3 cm slice at z=0 of `maxi77.blend`'s hull,
- * binned along its length), not drawn by hand. This is the outline the sea
- * shader cuts out from under the boat; if the hull is ever re-lofted, re-run the
- * slice and replace the table.
- *
- * World z runs stern (+3.684) to bow (−3.088): the model keeps the waterline at
- * the origin and amidships at z = 0, so the two ends are not symmetric — the
- * stern overhang is longer than the bow's.
+ * Metres of half-beam that the section texture's 0…255 range spans. The widest
+ * sample is ~1.23 m up at the sheer, so 1.5 leaves headroom while keeping the
+ * 8-bit quantisation step under 6 mm — well inside the 3% inset the cut hides
+ * behind.
  */
-const WATERLINE_STERN_Z = 3.684
-const WATERLINE_BOW_Z = -3.088
-const WATERLINE_HALF_BEAM = [
-  0.726, 0.746, 0.767, 0.794, 0.844, 0.856, 0.862, 0.868, 0.868, 0.865, 0.859,
-  0.844, 0.831, 0.817, 0.799, 0.778, 0.754, 0.729, 0.664, 0.631, 0.597, 0.567,
-  0.531, 0.507, 0.443, 0.411, 0.388, 0.31, 0.287, 0.225, 0.166, 0.11,
-]
+const SECTION_RANGE = 1.5
 
 const vertexShader = /* glsl */ `
   #define NUM_WAVES ${WAVES.length}
@@ -81,29 +89,33 @@ const vertexShader = /* glsl */ `
 `
 
 const fragmentShader = /* glsl */ `
-  #define WL_SAMPLES ${WATERLINE_HALF_BEAM.length}
+  uniform float uTime;
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
   uniform vec3 uDeepColor;
   uniform vec3 uShallowColor;
   uniform vec3 uSkyHorizon;
   uniform vec3 uSkyZenith;
-  uniform float uWaterline[WL_SAMPLES];
-  uniform float uWaterlineZ0;
-  uniform float uWaterlineZ1;
+  uniform mat4 uBoatInverse;
+  uniform sampler2D uSections;
+  uniform float uSectionRange;
+  uniform float uSternZ;
+  uniform float uBowZ;
+  uniform float uHeightMin;
+  uniform float uHeightMax;
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
 
-  // The hull's half-beam at the waterline, by world z — a linear walk through
-  // the measured table. Zero outside the hull's length, so there is no hole
-  // ahead of the stem or abaft the transom.
-  float hullHalfBeam(float z) {
-    float f = (z - uWaterlineZ0) / (uWaterlineZ1 - uWaterlineZ0);
-    if (f <= 0.0 || f >= 1.0) return 0.0;
-    float s = f * float(WL_SAMPLES - 1);
-    int i = int(floor(s));
-    return mix(uWaterline[i], uWaterline[i + 1], fract(s));
+  // The hull's half-beam at a point given in the hull's own frame: a bilinear
+  // fetch from the measured section table, station along z, height along y.
+  // Zero anywhere the hull is not — beyond either end, under the bow and stern
+  // overhangs, below the canoe body — so the water stays put there.
+  float hullHalfBeam(vec3 local) {
+    float u = (local.z - uSternZ) / (uBowZ - uSternZ);
+    float v = (local.y - uHeightMin) / (uHeightMax - uHeightMin);
+    if (u <= 0.0 || u >= 1.0 || v <= 0.0 || v >= 1.0) return 0.0;
+    return texture2D(uSections, vec2(u, v)).r * uSectionRange;
   }
 
   // The same gradient the drei <Sky> paints, boiled down to a colour per up-ness
@@ -122,13 +134,23 @@ const fragmentShader = /* glsl */ `
     // the hull — the cabin sole is below the waterline — and you get waves
     // lapping across the middle of the cabin.
     //
-    // The hole is the hull's own waterline outline, measured off the built
-    // mesh, not a stand-in shape. It was an ellipse first, and an ellipse is
-    // wrong twice over on a boat this shape: too fat amidships left a ring of
-    // missing sea round the hull, and too long put a void ahead of the stem
-    // where there is no boat at all. Inset a few percent so the cut edge lies
-    // just inside the skin and the topsides hide it.
-    if (abs(vWorldPos.x) < 0.97 * hullHalfBeam(vWorldPos.z)) discard;
+    // The test is done in the hull's own frame, in 3-D, because two simpler
+    // versions both failed visibly. An ellipse left a standing ring of missing
+    // sea (too fat amidships, and longer than a stem that is not where an
+    // ellipse thinks it is). A world-space waterline outline fixed that for a
+    // motionless boat and broke the moment anything moved: the hull heaves,
+    // pitches, rolls and heels away from a cut that stays put, and the waves
+    // meet the hull at heights where its section is nothing like its waterline
+    // — it tucks inward below and flares above. So: transform the displaced
+    // fragment into boat space with the same matrix the boat is posed by this
+    // frame, and ask the measured section table how wide the hull is at that
+    // station *and that height*. The cut follows the boat exactly, by
+    // construction, at every point of the motion and the transition between
+    // frames. Inset 3% so the edge lies just inside the skin.
+    vec3 local = (uBoatInverse * vec4(vWorldPos, 1.0)).xyz;
+    float halfBeam = hullHalfBeam(local);
+    float edge = abs(local.x) - 0.97 * halfBeam;
+    if (halfBeam > 0.0 && edge < 0.0) discard;
 
     vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(cameraPosition - vWorldPos);
@@ -150,6 +172,17 @@ const fragmentShader = /* glsl */ `
     float spec = pow(max(dot(N, H), 0.0), 200.0);
 
     vec3 color = mix(body, sky, f) + uSunColor * spec * 0.6;
+
+    // A quiet lap line where the water meets the hull: a slight paling of the
+    // sea in the last hand's-width before the skin, breathing slowly along the
+    // length. It is what moored water actually does at a boat, and it seats the
+    // hull in the sea instead of leaving a knife-edge cut.
+    if (halfBeam > 0.0) {
+      float lap = 1.0 - smoothstep(0.0, 0.16, edge);
+      float breathe = 0.7 + 0.3 * sin(uTime * 1.6 + local.z * 2.3);
+      color = mix(color, vec3(0.72, 0.79, 0.82), lap * breathe * 0.22);
+    }
+
     gl_FragColor = vec4(color, 1.0);
   }
 `
@@ -161,6 +194,27 @@ const SUN_DIR = new Vector3(-38, 14, -48).normalize()
 
 export function Ocean() {
   const material = useRef<ShaderMaterial>(null)
+
+  // The measured hull sections, packed into a small single-channel texture the
+  // fragment shader can fetch bilinearly. Built once; the table is generated
+  // source (see hullSections.ts) so this never touches the network.
+  const sections = useMemo(() => {
+    const data = new Uint8Array(SECTION_STATIONS * SECTION_HEIGHTS)
+    SECTION_HALF_BEAM.forEach((metres, i) => {
+      data[i] = Math.min(255, Math.round((metres / SECTION_RANGE) * 255))
+    })
+    const texture = new DataTexture(
+      data,
+      SECTION_STATIONS,
+      SECTION_HEIGHTS,
+      RedFormat,
+      UnsignedByteType,
+    )
+    texture.minFilter = LinearFilter
+    texture.magFilter = LinearFilter
+    texture.needsUpdate = true
+    return texture
+  }, [])
 
   const uniforms = useMemo(
     () => ({
@@ -176,11 +230,17 @@ export function Ocean() {
       uShallowColor: { value: new Color('#245663') },
       uSkyHorizon: { value: new Color('#cfd8de') },
       uSkyZenith: { value: new Color('#5b86ad') },
-      uWaterline: { value: WATERLINE_HALF_BEAM },
-      uWaterlineZ0: { value: WATERLINE_STERN_Z },
-      uWaterlineZ1: { value: WATERLINE_BOW_Z },
+      // The shared inverse is mutated in place by PortfolioWorld each frame;
+      // handing the same object in means it is always current at upload.
+      uBoatInverse: { value: boatWorldInverse },
+      uSections: { value: sections },
+      uSectionRange: { value: SECTION_RANGE },
+      uSternZ: { value: SECTION_STERN_Z },
+      uBowZ: { value: SECTION_BOW_Z },
+      uHeightMin: { value: SECTION_HEIGHT_MIN },
+      uHeightMax: { value: SECTION_HEIGHT_MAX },
     }),
-    [],
+    [sections],
   )
 
   useFrame((state) => {
