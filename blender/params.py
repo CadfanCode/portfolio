@@ -451,6 +451,27 @@ station compression at about 13%, which the coachroof -- a straight ramp over
 that whole length -- does not show at all. Fading it faster does show: at
 500 mm it puts a brow across the after end of the roof."""
 
+COCKPIT_SHELF_RADIUS = 0.100
+COCKPIT_SHELF_THICKNESS = 0.025
+COCKPIT_SHELF_FROM_FRAME = 0.200
+COCKPIT_SHELF_HEIGHT_FRACTION = 0.50
+"""Two small semi-circular teak shelves on the aft face of the coachroof, one
+either side of the companionway, in the cockpit.
+
+The flat edge lies against the coachroof face and the half-round juts into the
+cockpit -- 200 mm across the diameter, an inch thick, the size of a caddy for a
+handheld and a mug rather than a piece of joinery. Bare weathered teak, the same
+`teak_exterior` as the cockpit grating and the tiller: it is the only wood on
+this face of the boat, and it wears the same as the rest of it.
+
+Placed off the doorway rather than by a station of their own. The height is a
+fraction of the opening (`companionway_opening`), so the shelves sit at the same
+point on the frame whatever the frame does, and `COCKPIT_SHELF_FROM_FRAME` is
+the gap from the teak surround's outer edge to the nearest edge of the shelf.
+They ride the same forward lean as the frame and the doorway -- see
+`fittings._build_cockpit_shelves`, which shears them onto the face the same way
+`deck._build_companionway_frame` shears the surround."""
+
 
 # --- Cockpit seating ------------------------------------------------------
 
@@ -919,6 +940,20 @@ BOOM_SECTION = (0.076, 0.104)
 BOOM_RISE = 0.090
 """How much the boom lifts over its length. Slight."""
 
+BOOM_ANGLE_DEG = 20.0
+"""How far the boom is eased off the centreline, degrees, to leeward.
+
+The boat is reaching -- the sheets eased rather than close-hauled -- so the boom
+swings out about the gooseneck. A full beam-reach 45 deg carried the boom's outer
+end far enough out and forward that it fouled the eased genoa; easing less keeps
+the main off the centreline and drawing while holding the end in and aft, well
+clear of the headsail. Everything hung on the boom follows: `rig.boom_point`
+rotates by this, and the mainsheet, vang and topping lift all read that one line,
+so the spar and its gear cannot disagree. The mainsail's luff and head stay on
+the mast; only the clew swings out with the boom, and the leech lofts between
+the two into the twist an eased main falls into. `LEEWARD_SIGN` picks the side,
+so this is a magnitude. Zero is sheeted flat on the centreline."""
+
 SPREADER_HEIGHT_FRACTION = 0.52
 """Spreaders up the mast, as a fraction of its length. Single-spreader masthead
 rig, so they sit a little above half height."""
@@ -969,13 +1004,26 @@ has settled in for the night."""
 # Set drawing rather than hanging. The boat is at anchor, so strictly the sails
 # should be slatting with no shape in them at all -- and a slatting sail is a
 # cloth simulation, which is a great deal of work to make something look limp.
-# They are built full, sheeted flat, on a light breeze from starboard.
+# They are built full, sheeted flat, on a light breeze from port.
 #
 # The shape is described by three numbers -- draft, where the draft is, and how
 # much the leech twists off -- rather than by a mesh, because those three are
 # exactly what a wind would change. See `sails.py`: the surface is a plain grid
 # generated from them, so making it react to wind later means driving these from
 # a direction and a strength, not rebuilding the geometry.
+
+LEEWARD_SIGN = 1.0
+"""Which side the sails set to: +1 to starboard, -1 to port. The breeze is on
+the other side.
+
+This is the one number that knows which way the wind blows. Everything with a
+side carries it -- the camber and twist in both sails, the genoa clew's offset
+and the sheet lead to its winch, the masthead windex canted to windward -- and
+nothing else in the geometry does. Swinging the wind onto the other tack is a
+change to this and a boom angle (and the main is sheeted flat on the centreline,
+so on this boat it is just this). It was -1 while the boat lay to a starboard
+breeze; the camera path now passes it on the other side, so the sails set to
+starboard and the breeze is on the port bow."""
 
 MAINSAIL_LEECH = 7.800
 """Rule G.4.3: 7722-7880 mm. Mid-range."""
@@ -1001,10 +1049,11 @@ sail rather than as a triangle. A flat panel with the right outline is
 unmistakably wrong from any angle and it is not obvious why until you put the
 camber back.
 
-All three are to leeward, which here is to port: the main is sheeted flat on the
-centreline and the breeze is on the starboard side. Nothing in the geometry knows
-that except the sign of these, which is the point -- swinging the wind round
-later is a change to three numbers and a boom angle, not to a mesh."""
+All three go to leeward, which here is to starboard: the main is sheeted flat on
+the centreline and the breeze is on the port side. Nothing in the geometry knows
+that except `LEEWARD_SIGN`, which carries these onto the leeward side -- that is
+the point: swinging the wind round later is a change to that one number and a
+boom angle, not to a mesh."""
 
 MAINSAIL_ROACH = 0.155
 MAINSAIL_FOOT_ROUND = 0.055
@@ -1017,16 +1066,21 @@ length. It is kept modest because the backstay is standing rigging on this boat
 rather than something you ease, and a roach that fouls it is a roach nobody
 would cut."""
 
-GENOA_CLEW_STATION = 5.230
+GENOA_CLEW_STATION = 4.950
 GENOA_CLEW_ABOVE_TACK = 0.560
-GENOA_CLEW_OFFSET = -0.780
-"""Where the headsail's clew sits: aft, up a little, and out to port.
+GENOA_CLEW_OFFSET = 1.140
+"""Where the headsail's clew sits: aft, up a little, and eased well out to leeward.
 
 Aft of the mast, which makes this an overlapping genoa rather than a jib -- the
 class sail is 5315 mm on the foot against a 3335 mm foretriangle base, which is
-about 160%, and it has to go somewhere. Out to port because that is the leeward
-side; the sheet leads to the port side deck and the clew is over the water
-outboard of the shrouds, which is what a genoa this size does."""
+about 160%, and it has to go somewhere. On a beam reach the sheet is eased, so
+the clew comes forward off the aft lead and swings a long way outboard -- the
+whole after body follows it out and forward of the mast, clearing the spreader
+tips the close-hauled trim used to sweep across (the leech pressed on the
+leeward tip on starboard). Outboard because leeward is where a headsail this
+size goes: the clew ends over the water well outboard of the shrouds. A
+magnitude here -- `sails.genoa_clew` puts it on the leeward side with
+`LEEWARD_SIGN`, which is to starboard now."""
 
 GENOA_DRAFT = 0.200
 GENOA_TWIST = 0.460
@@ -1034,10 +1088,12 @@ GENOA_TWIST = 0.460
 SAIL_TWIST.
 
 An overlapping genoa is cut deeper than a main, and close-hauled its whole after
-body bags to leeward -- out past the spreader tips it sweeps across, so the tips
-and the leeward upper shroud bear on the cloth and pillow it (a spreader patch)
-instead of standing proud through the sail. With the main's flatter numbers the
-after body sat inboard of the leeward spreader and the tip speared the cloth.
+body bags to leeward -- out past the spreader tips it sweeps across, clearing
+them so that neither a tip nor the leeward upper shroud spears the cloth. It
+stands just off the leeward tip rather than bearing on it: the small gap is held
+in the shader (see `Boat.tsx`), so the tip stops short of the sail the way it
+does on a well-set headsail. With the main's flatter numbers the after body sat
+inboard of the leeward spreader and the tip speared the cloth.
 Only the shape moves: draft and twist are nil at the three corners, so the class
 outline (GENOA1_LUFF/LEECH/FOOT and the clew above) is untouched -- the twist
 does the work at spreader height, where it carries the leech to leeward without
@@ -1368,6 +1424,28 @@ interior photographs look forward and aft rather than up, and none of them
 settles it. Built, flagged, and to be checked against a photograph of a real
 saloon before it is treated as known -- the same standing as the cockpit
 coaming, which is left out for the opposite reason."""
+
+INSTRUMENT_RADIUS = 0.058
+INSTRUMENT_PROUD = 0.042
+INSTRUMENT_HEIGHT = 0.905
+INSTRUMENT_SPACING = 0.150
+"""The brass on the bulkhead: a matched clock and barometer, and a smaller
+tell-tale beside them, mounted on the aft face of the main bulkhead either side
+of the way through to the forepeak.
+
+Every boat of this era that was cruised has this corner -- "en klocka och en
+barometer" in brass on the main bulkhead, where they are read from the saloon
+and lit by the companionway. It is the one spot below deck the eye goes to that
+is neither structure nor stowage, and the cabin stop looks straight at it: the
+camera comes below and faces forward down the saloon to this bulkhead (see
+`cameraStops.ts`).
+
+Each is a drawn brass drum standing `INSTRUMENT_PROUD` off the panel, a glazed
+dial recessed in it. `INSTRUMENT_HEIGHT` puts their centres above the settee
+backrest and clear under the deckhead; `INSTRUMENT_SPACING` is the centre pitch
+of the pair. Placed off the doorway edge (`LOCKER_DOORWAY_HALF_WIDTH`) rather
+than by a half-offset of their own, so they follow the opening. Built in
+`fitout._build_instruments`."""
 
 
 # --- Hull shape curves ----------------------------------------------------

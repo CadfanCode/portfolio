@@ -61,9 +61,11 @@ export const CAMERA_STOPS: Record<SceneState, CameraStop> = {
    * about 13 m of visible height for a 10 m boat: it fills the frame without the
    * masthead clipping the top edge, which the old placeholder pose did.
    *
-   * Starboard is the windward side on this tack — the sails are set to port — so
-   * the hull and deck read clean instead of through a genoa, and the
-   * registration on the mainsail faces us the right way round.
+   * The sails are set to starboard now (see `LEEWARD_SIGN` in `blender/params.py`),
+   * the same side as this camera, so from off the starboard bow the boat is seen
+   * over its lee side with the main and genoa eased out on a reach and drawing
+   * across the view rather than lying flat. The registration is carried on both
+   * faces of the mainsail, so it still reads the right way round from here.
    */
   ocean: {
     position: [11, 6, -9],

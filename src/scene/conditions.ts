@@ -64,6 +64,9 @@ const SEGMENT = DWELL + FADE
 export type Conditions = {
   name: string
   wind: number
+  /** Raw sea state, 0 glassy … 1 storm — the calm→rough→squall axis. Passed
+   *  through so the sails' liveliness can scale with it (see `Boat.tsx`). */
+  sea: number
   /** Amplitude multiplier on the base sea in `waves.ts`. */
   seaAmp: number
   /** Steepness (choppiness) multiplier on the base sea. */
@@ -136,6 +139,7 @@ function resolve(p: Preset): Conditions {
   return {
     name: p.name,
     wind,
+    sea,
 
     // Sea: a glassy day is ~0.15× the reference swell, a storm ~2.6×; the chop
     // (Gerstner steepness) sharpens too, so big seas peak rather than just

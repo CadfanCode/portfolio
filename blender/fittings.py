@@ -44,6 +44,7 @@ def build(collection):
 
     parts = {
         "cockpit_grating": _build_grating(collection, cockpit),
+        "cockpit_shelves": _build_cockpit_shelves(collection),
         "traveller": _build_traveller(collection, cockpit),
         "stern_rail": _build_stern_rail(collection, afterdeck),
         "winches": _build_winches(collection, afterdeck),
@@ -239,6 +240,72 @@ def _build_grating(collection, cockpit):
         planks.append(_finish(obj, sharp=25.0))
 
     return join(planks, "cockpit_grating")
+
+
+def _build_cockpit_shelves(collection):
+    """Two small semi-circular teak shelves on the coachroof's aft face, one
+    either side of the companionway, at arm's length from the cockpit stop.
+
+    A half-disc slab, flat edge to the face, half-round into the cockpit. It is
+    built square against a vertical face and then sheared onto the real one, the
+    same two-line trick `deck._build_companionway_frame` uses on the teak
+    surround: the aft face of the coachroof leans forward, and a shear on y as a
+    function of z lands the shelf flush on it without the shelf having to know
+    the lean exists. Both edges of the slab -- the straight one on the face and
+    the curved one over the well -- come off the same pair of half-disc loops, so
+    the top, the bottom and the rim are one closed piece.
+
+    Placed off the doorway, not off a station: the height is a fraction of the
+    opening and the athwartships offset is measured from the teak surround's
+    outer edge, so the pair moves with the companionway rather than drifting off
+    it. Weathered `teak_exterior`, like the grating above and the tiller -- the
+    only bare wood anywhere on the outside of the boat.
+    """
+    _, sill, head = deck.companionway_opening()
+    z_mid = sill + (head - sill) * params.COCKPIT_SHELF_HEIGHT_FRACTION
+    r = params.COCKPIT_SHELF_RADIUS
+    half_t = params.COCKPIT_SHELF_THICKNESS / 2
+    z0, z1 = z_mid - half_t, z_mid + half_t
+
+    # Inboard edge of the shelf, out from the teak surround's outer edge.
+    frame_outer = params.COMPANIONWAY_WIDTH / 2 + params.COMPANIONWAY_FRAME_WIDTH
+    inner_x = frame_outer + params.COCKPIT_SHELF_FROM_FRAME
+
+    station = params.COCKPIT_START
+    y_face = _y(station)
+    count = 16
+
+    shelves = []
+    for side in (-1, 1):
+        centre_x = side * (inner_x + r)
+
+        def half_disc(z):
+            # The straight diameter lies on the face (y = y_face); the arc bulges
+            # aft into the cockpit (decreasing y). `close_rings` later shuts the
+            # loop back along the diameter, which is the edge against the wall.
+            ring = []
+            for i in range(count + 1):
+                theta = pi * i / count
+                ring.append(
+                    (centre_x + r * cos(theta), y_face - r * sin(theta), z)
+                )
+            return ring
+
+        top, bottom = half_disc(z1), half_disc(z0)
+        obj = grid_to_mesh(
+            f"cockpit_shelf_{side}", [top, bottom], collection, close_rings=True
+        )
+        cap_loop(obj, top)
+        cap_loop(obj, list(reversed(bottom)))
+
+        # Onto the leaning face, the same shear the frame and doorway carry.
+        for vertex in obj.data.vertices:
+            vertex.co.y += deck.companionway_lean(station, vertex.co.z)
+
+        bevel(obj, width=0.004, segments=1)
+        shelves.append(_finish(obj, sharp=35.0))
+
+    return join(shelves, "cockpit_shelves")
 
 
 # --------------------------------------------------------------------------
@@ -1703,8 +1770,8 @@ Both tracks are built, port and starboard, because a boat has one each side and
 the far one is in shot whenever the near one is. Each carries a single car, at
 the position this sail is trimmed to in this scene rather than a fully
 adjustable range -- the brief is a working sheet lead, not a catalogue of every
-hole in the track. Only the port car does any work: the genoa is set to a
-starboard wind and sheeted to port (see `params.GENOA_CLEW_OFFSET`)."""
+hole in the track. Only the leeward car does any work: the genoa is sheeted to
+leeward, which `params.LEEWARD_SIGN` puts to starboard now."""
 
 
 def genoa_car_x(station):
@@ -1715,13 +1782,13 @@ def genoa_car_x(station):
 
 
 def genoa_car_point():
-    """Where the sheet leaves the car, in world space -- port side, since the
-    genoa is set to starboard wind and sheeted to port (see
-    `params.GENOA_CLEW_OFFSET`'s note)."""
+    """Where the sheet leaves the car, in world space -- the leeward side, since
+    the genoa is sheeted to leeward (`params.LEEWARD_SIGN`, to starboard now;
+    see `params.GENOA_CLEW_OFFSET`'s note)."""
     car_station = (
         GENOA_TRACK_STATION - GENOA_TRACK_LENGTH / 2 + GENOA_TRACK_LENGTH * GENOA_CAR_POSITION
     )
-    x = -genoa_car_x(car_station)
+    x = params.LEEWARD_SIGN * genoa_car_x(car_station)
     z = deck.surface_function()(car_station, abs(x)) + 0.028
     return (x, _y(car_station), z)
 
@@ -1729,7 +1796,7 @@ def genoa_car_point():
 def _build_genoa_track(collection):
     """A short track and car on each side deck, where the genoa sheet leads aft
     to the winch. Port and starboard are identical bar the sign of `x`; only the
-    port car is loaded, but both are built -- see `GENOA_CAR_POSITION`'s note."""
+    leeward car is loaded, but both are built -- see `GENOA_CAR_POSITION`'s note."""
     start = GENOA_TRACK_STATION - GENOA_TRACK_LENGTH / 2
     end = GENOA_TRACK_STATION + GENOA_TRACK_LENGTH / 2
     surface = deck.surface_function()
@@ -1812,13 +1879,16 @@ def _flat_coil(collection, name, centre, z, radius, turns, tube_radius=0.0055):
 def _build_mainsheet(collection, cockpit, g):
     """Boom to the traveller car, car to a cleat on the bridgedeck step, and
     the tail flemished down beside it -- taut throughout, since the boat is
-    shown close-hauled and drawing rather than at rest."""
+    shown eased on a beam reach and drawing rather than at rest. The boom_bail
+    rides the swung boom (`rig.boom_point`), and the car is dropped to leeward,
+    which is where it sits when the mainsheet is eased off the wind."""
     boom_bail = rig.boom_point(g, 0.90)
     boom_bail = (boom_bail[0], boom_bail[1], boom_bail[2] - 0.030)
 
     station = params.TRAVELLER_STATION
     bar_z = cockpit(station, 0.0) + params.TRAVELLER_STAND
-    car = (0.0, _y(station), bar_z + 0.020)
+    car_x = params.LEEWARD_SIGN * 0.6 * params.TRAVELLER_HALF_WIDTH
+    car = (car_x, _y(station), bar_z + 0.020)
 
     cleat_station = station + 0.060
     cleat = (0.055, _y(cleat_station), cockpit(cleat_station, 0.055) + 0.030)
@@ -1836,13 +1906,15 @@ def _build_mainsheet(collection, cockpit, g):
 
 
 def _build_genoa_sheet(collection, afterdeck, g):
-    """Clew to the port genoa car, car aft to the port after winch, and the
-    tail flemished on the cockpit sole beside it."""
+    """Clew to the leeward genoa car, car aft to the leeward after winch, and the
+    tail flemished on the cockpit sole beside it. Which side is `LEEWARD_SIGN`,
+    so the whole lead follows the sail onto the tack rather than crossing the
+    boat to a windward winch."""
     clew = sails.genoa_clew(g)
     car = genoa_car_point()
 
     winch_station = params.COCKPIT_WINCH_STATIONS[0]
-    winch_x = -winch_centre(winch_station)
+    winch_x = params.LEEWARD_SIGN * winch_centre(winch_station)
     winch_top = (
         winch_x,
         _y(winch_station),
@@ -1853,7 +1925,7 @@ def _build_genoa_sheet(collection, afterdeck, g):
     coil = _flat_coil(
         collection,
         "genoa_sheet_coil",
-        (winch_x - 0.105, winch_top[1] - 0.120),
+        (winch_x + params.LEEWARD_SIGN * 0.105, winch_top[1] - 0.120),
         winch_top[2] - 0.095,
         0.085,
         2.8,
