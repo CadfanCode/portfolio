@@ -16,9 +16,10 @@ a strength -- and, for the mainsail, swinging the boom. No part of the geometry
 needs re-authoring for that, and nothing in here knows which way the wind is
 blowing except the sign of the camber.
 
-They are set as if close-hauled on starboard: main sheeted flat on the
-centreline, both sails full to port, twist opening the leeches aloft. The boat is
-at anchor, so strictly they should be slatting -- and a slatting sail is a cloth
+They are set as if close-hauled on port: main sheeted flat on the centreline,
+both sails full to starboard, twist opening the leeches aloft. Which side is one
+number, `params.LEEWARD_SIGN`; nothing else here knows the wind. The boat is at
+anchor, so strictly they should be slatting -- and a slatting sail is a cloth
 simulation, which is a lot of work to make something look limp.
 
 The sails are single surfaces with no thickness. Blender exports them with
@@ -137,8 +138,10 @@ def _surface_function(luff, leech, draft_fraction=None, twist_fraction=None):
         draft = draft_fraction * chord * (1.0 - 0.35 * v)
         twist = twist_fraction * chord * v**1.6
 
+        # Camber and twist both carry the cloth athwartships to leeward, so both
+        # take `LEEWARD_SIGN`: +1 sets the belly to starboard, -1 to port.
         return (
-            _lerp(a[0], b[0], u) - draft * _camber(u) - twist * u,
+            _lerp(a[0], b[0], u) + params.LEEWARD_SIGN * (draft * _camber(u) + twist * u),
             _lerp(a[1], b[1], u),
             _lerp(a[2], b[2], u),
         )
@@ -173,21 +176,34 @@ def _build_sail(name, collection, place):
 
 
 def _build_mainsail(collection, g):
-    """Bent on the mast and the boom, with roach in the leech.
+    """Bent on the mast and the boom, eased out to a beam reach, with roach in the
+    leech.
 
     The three corners come off the rig rather than off numbers of their own: the
     tack is at the gooseneck, the head is `MAINSAIL_HOIST` up the mast from the
     lower band, and the clew is at the boom's outer band. Move the boom and the
     sail follows it, which is what has to happen when the boom has just been
-    lengthened a foot and dropped half of one.
+    lengthened a foot and dropped half of one -- or eased off the centreline.
+
+    The reach is what makes this more than three static corners. The luff and the
+    head stay on the mast; only the clew swings out, riding the eased boom
+    (`rig.boom_point`). The leech then lofts from that swung clew up to the head
+    still on the spar, so the surface between falls into the twist an eased main
+    takes -- foot swung out, upper leech falling away inboard -- rather than
+    turning as one flat board.
     """
     y = params.station_to_y
 
     luff_station = g["mast_aft"] + 0.020
     tack_z = g["boom_z"] + 0.055
     head_z = g["boom_z"] + params.MAINSAIL_HOIST
+
+    head = (0.0, y(luff_station), head_z)
+    # The clew rides the eased boom's outer band: the same swung line the spar is
+    # built from, so the sail cannot come adrift from it.
     clew_station = g["mast_aft"] + params.BOOM_LENGTH - 0.060
     clew_z = g["boom_z"] + params.BOOM_RISE + 0.055
+    clew = rig.swing_boom(g, (0.0, y(clew_station), clew_z))
 
     def luff(v):
         # Straight up the after face of the mast. A real one is cut with luff
@@ -195,12 +211,15 @@ def _build_mainsail(collection, g):
         return (0.0, y(luff_station), _lerp(tack_z, head_z, v))
 
     def leech(v):
-        # Head to clew, bulged aft. The roach is what the battens are for and it
-        # is most of the difference between a mainsail and a triangle.
-        station = _lerp(clew_station, luff_station, v)
-        z = _lerp(clew_z, head_z, v)
+        # Swung clew up to the head on the mast, bulged aft. The athwartships
+        # swing carries full at the clew and runs out to nothing at the head,
+        # which is the twist. The roach is what the battens are for and it is
+        # most of the difference between a mainsail and a triangle; kept in the
+        # fore-aft term, which is a fair approximation while the boom is eased.
+        point = [_lerp(clew[i], head[i], v) for i in range(3)]
         roach = params.MAINSAIL_ROACH * sin(pi * v) ** 0.85
-        return (0.0, y(station + roach), z)
+        point[1] -= roach
+        return tuple(point)
 
     place = _surface_function(luff, leech)
 
@@ -232,22 +251,25 @@ def genoa_tack(g):
 
 
 def genoa_clew(g):
-    """Where the genoa's clew sits, in world space: aft, up, and out to port.
+    """Where the genoa's clew sits, in world space: aft, up, and out to leeward.
 
     Public because `fittings.py` reeves the genoa sheet from exactly this
     point. A sheet given the clew's coordinates a second time is a sheet that
     comes adrift from the sail the next time `GENOA_CLEW_*` moves.
+
+    `GENOA_CLEW_OFFSET` is a magnitude; `LEEWARD_SIGN` puts it on the leeward
+    side, so the clew and the sheet it carries follow the sails onto the tack.
     """
     tack = genoa_tack(g)
     return (
-        params.GENOA_CLEW_OFFSET,
+        params.LEEWARD_SIGN * params.GENOA_CLEW_OFFSET,
         params.station_to_y(params.GENOA_CLEW_STATION),
         tack[2] + params.GENOA_CLEW_ABOVE_TACK,
     )
 
 
 def _build_genoa(collection, g):
-    """Hanked on the forestay, sheeted to port.
+    """Hanked on the forestay, sheeted to leeward.
 
     Its luff lies on the stay rather than beside it -- the same two points
     `rig.py` runs the wire between -- so the sail cannot come adrift from the

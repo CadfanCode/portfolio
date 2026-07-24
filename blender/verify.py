@@ -319,9 +319,27 @@ def rig_checks(by_name):
 
     boom = by_name.get("boom")
     if boom is not None:
-        outer = params.y_to_station(min(p.y for p in world_verts([boom])))
+        # Rule E is a length along the boom, mast aft face to the outer band, and
+        # the boat is trimmed for a reach with the boom eased off the centreline
+        # -- so measure the real 3-D length, not the fore-aft projection a swung
+        # boom foreshortens. The swing is a rotation about the vertical axis at
+        # the gooseneck, so the two end-cap centres keep their true separation.
+        bverts = world_verts([boom])
+        gy = params.station_to_y(aft_station)
+        radius = lambda p: (p.x * p.x + (p.y - gy) ** 2) ** 0.5
+        rmax = max(radius(p) for p in bverts)
+        fwd_cap = [p for p in bverts if radius(p) <= 0.06]
+        outer_cap = [p for p in bverts if radius(p) >= rmax - 0.06]
+
+        def _centre(ps):
+            n = len(ps)
+            return (sum(p.x for p in ps) / n, sum(p.y for p in ps) / n, sum(p.z for p in ps) / n)
+
+        fx, fy, fz = _centre(fwd_cap)
+        ox, oy, oz = _centre(outer_cap)
+        length = ((ox - fx) ** 2 + (oy - fy) ** 2 + (oz - fz) ** 2) ** 0.5
         checks.append(
-            Check("boom band from mast aft face", outer - aft_station,
+            Check("boom band from mast aft face", length,
                   params.BOOM_LENGTH, 0.025, "C.6.1 max")
         )
 

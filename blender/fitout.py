@@ -29,7 +29,7 @@ def build(collection):
     """Build the fit-out. Returns a dict of named objects."""
     inner = interior.hull_inner_function()
 
-    return {
+    parts = {
         "shelf": _build_shelf(collection, inner),
         "backrests": _build_backrests(collection, inner),
         "cushions": _build_cushions(collection, inner),
@@ -39,6 +39,10 @@ def build(collection):
         "cabin_lamp": _build_cabin_lamp(collection, inner),
         "bilge_hatch": _build_bilge_hatch(collection),
     }
+    # The bulkhead instruments come back as three objects -- brass, dial, glass --
+    # so they can carry their three materials; see `_build_instruments`.
+    parts.update(_build_instruments(collection))
+    return parts
     # Removed at the owner's request: the cupboard (locker) doors, the window
     # curtains, the companionway washboard, and the fire extinguisher. The
     # builders below are kept -- they are correct and cost nothing unbuilt --
@@ -637,20 +641,59 @@ def _pipe(name, collection, path, radius, count=8):
     return _finish(obj, sharp=50.0, bevel_width=None)
 
 
+SINK_OPENING = 0.80
+"""The bowl's basin opening, as a fraction of the sink's rim half-sizes: the
+oval the basin drops through, inside the flange that rests on the worktop."""
+
+SINK_CUT_MARGIN = 0.006
+"""How much larger the worktop cut is than the basin opening, each half-axis.
+
+The bowl's flange laps the cut edge by this much rather than landing exactly on
+it, so the seam between chrome and teak is covered from above and there is no
+knife-edge of two surfaces meeting in the same plane."""
+
+
+def galley_sink_centre(inner):
+    """Athwartships centreline of the sink, shared by the bowl (here) and the
+    opening cut for it in the worktop (`joinery`). Single-sourced so the two
+    cannot disagree about where the hole is -- the same reasoning `verify.py`
+    applies to the three fittings that have to agree with something built
+    elsewhere."""
+    out = inner(params.GALLEY_START, params.GALLEY_TOP)
+    return -(out - params.GALLEY_DEPTH / 2)
+
+
+def galley_sink_opening(inner):
+    """The oval the worktop is cut to over the sink: `(station, x, rx, ry)`.
+
+    Read by `joinery._build_galley`, which cuts the hole, so the cut follows the
+    bowl automatically. Slightly larger than the bowl's own basin opening (see
+    `SINK_CUT_MARGIN`) so the flange covers the cut."""
+    x = galley_sink_centre(inner)
+    length, width, _ = params.SINK
+    return (
+        params.SINK_STATION,
+        x,
+        (length / 2) * SINK_OPENING + SINK_CUT_MARGIN,
+        (width / 2) * SINK_OPENING + SINK_CUT_MARGIN,
+    )
+
+
 def _build_galley_fittings(collection, inner):
     """Sink and cooker, immediately to port as you come below -- the closest the
     camera comes to any joinery on the boat, which is why neither is a box.
 
-    Both stand proud of the worktop rather than being let into it. The worktop is
-    a lofted solid with no hole in it, so a recess cut into its top renders
-    nothing at all -- the same problem the anchor box had, and the same answer:
-    stand the thing a few millimetres proud with a hollow of its own, and let it
-    cast its own line. A bowl built this way reads as inset from any angle a
-    person in the cabin actually has on it.
+    The cooker stands proud of the worktop with a hollow of its own, the way the
+    anchor box's lid and the bilge hatch do: the worktop is a lofted solid, and a
+    recess merely cut into its top renders nothing. The sink is the one place
+    that answer failed. A basin has to drop below the worktop, and the worktop's
+    own unbroken top face then stood between the eye and the bowl -- so the sink
+    read as a shallow wooden tray inside a chrome rim. It is let in properly now:
+    `joinery` cuts the worktop over it (`galley_sink_opening`) and the bowl drops
+    through, its flange resting on the teak and covering the cut.
     """
     top = params.GALLEY_TOP
-    out = inner(params.GALLEY_START, top)
-    centre = -(out - params.GALLEY_DEPTH / 2)
+    centre = galley_sink_centre(inner)
 
     sink_length, sink_width, _ = params.SINK
     cooker_length, cooker_width = params.COOKER
@@ -664,25 +707,27 @@ def _build_galley_fittings(collection, inner):
 
 
 def _sink(collection, station, x, top, length, width):
-    """A round-cornered bowl with a rolled rim, and a gooseneck mixer beside it.
+    """A round-cornered stainless drop-in bowl, and a gooseneck mixer beside it.
 
-    The bowl is a single loft: a rim standing 8 mm proud of the worktop, a flat
-    lip turned in from it, then the basin dropping away inside to a small flat
-    bottom below worktop level. Nothing under the rim shows -- the worktop solid
-    is behind it -- so the loft need only be honest from the lip inwards, which
-    is all anyone looking down into a sink can see.
+    Let into the worktop rather than standing on it. `joinery` cuts an oval
+    opening through the worktop over the sink (`galley_sink_opening`) and this
+    bowl drops through it: a flange sitting on the teak, turning in to the
+    opening, then the basin falling away to a small flat bottom. The flange laps
+    the cut edge, so the only teak that shows around the bowl is the worktop the
+    flange rests on -- and looking in, the basin is simply there, where before
+    the worktop's own top face covered it.
     """
     rx, ry = length / 2, width / 2
-    lip = 0.014
-    rim_z = top + 0.008
+    orx, ory = rx * SINK_OPENING, ry * SINK_OPENING   # basin opening / flange inner
+    rim_z = top + 0.006
 
     rings = [
-        _oval_ring(station, x, rx, ry, top),            # skirt foot, at worktop
-        _oval_ring(station, x, rx, ry, rim_z),          # rim, proud
-        _oval_ring(station, x, rx - lip, ry - lip, rim_z),      # flat lip, turned in
-        _oval_ring(station, x, rx - lip - 0.006, ry - lip - 0.006, top - 0.004),
-        _oval_ring(station, x, (rx - lip) * 0.62, (ry - lip) * 0.62, top - 0.046),
-        _oval_ring(station, x, (rx - lip) * 0.34, (ry - lip) * 0.34, top - 0.062),
+        _oval_ring(station, x, rx, ry, top),           # flange foot, on the worktop
+        _oval_ring(station, x, rx, ry, rim_z),         # flange rim, just proud
+        _oval_ring(station, x, orx, ory, rim_z),       # flange turned in to the opening
+        _oval_ring(station, x, orx, ory, top - 0.004),         # basin shoulder, into the hole
+        _oval_ring(station, x, orx * 0.64, ory * 0.64, top - 0.052),
+        _oval_ring(station, x, orx * 0.34, ory * 0.34, top - 0.072),
     ]
     bowl = grid_to_mesh("sink_bowl", rings, collection, close_rings=True)
     cap_loop(bowl, list(reversed(rings[-1])))
@@ -1015,6 +1060,121 @@ def _build_cabin_lamp(collection, inner):
     cap_loop(obj, rings[0])
     cap_loop(obj, list(reversed(rings[-1])))
     return _finish(obj, bevel_width=None)
+
+
+def _instrument(collection, x, z, r, y_back, proud, tag):
+    """One glazed brass instrument on the bulkhead: a drawn drum with an inturned
+    bezel, a pale dial recessed in it under glass, and a small brass hub.
+
+    Its axis is fore-and-aft (the y of the boat), so the whole thing is a stack
+    of circles at falling depths, the way the cabin lamp is. Returns three lists
+    -- brass, dial, glass -- kept apart so each can take its own material.
+
+    Depths are measured back from the bezel front (`y_front`); +y is into the
+    panel, so everything the eye sees is nested a few millimetres behind the one
+    in front of it, far enough apart that nothing z-fights: bezel, glass, hub,
+    dial, then the brass floor of the well.
+    """
+    seg = 20
+
+    def ring(rad, y):
+        return [
+            (x + rad * cos(2 * pi * i / seg), y, z + rad * sin(2 * pi * i / seg))
+            for i in range(seg)
+        ]
+
+    y_front = y_back - proud
+
+    # Brass case: back disc against the panel, drum wall, flat bezel annulus,
+    # bezel inner wall stepping back to the well floor.
+    seat = y_front + 0.018
+    case = grid_to_mesh(
+        f"instrument_case_{tag}",
+        [ring(r, y_back), ring(r, y_front), ring(r * 0.82, y_front), ring(r * 0.80, seat)],
+        collection,
+        close_rings=True,
+    )
+    cap_loop(case, ring(r, y_back))                        # back, on the panel
+    cap_loop(case, list(reversed(ring(r * 0.80, seat))))   # brass floor of well
+    brass = [_finish(case, sharp=45.0, bevel_width=None)]
+
+    # Brass centre hub, a small boss proud of the dial.
+    hub = grid_to_mesh(
+        f"instrument_hub_{tag}",
+        [ring(r * 0.10, y_front + 0.008), ring(r * 0.10, y_front + 0.006),
+         ring(r * 0.045, y_front + 0.006)],
+        collection,
+        close_rings=True,
+    )
+    cap_loop(hub, list(reversed(ring(r * 0.045, y_front + 0.006))))
+    brass.append(_finish(hub, sharp=45.0, bevel_width=None))
+
+    # Pale dial, a shallow slab seated in the well behind the hub.
+    dial = grid_to_mesh(
+        f"instrument_dial_{tag}",
+        [ring(r * 0.74, y_front + 0.008), ring(r * 0.74, seat)],
+        collection,
+        close_rings=True,
+    )
+    cap_loop(dial, ring(r * 0.74, y_front + 0.008))        # the face, toward the eye
+    dials = [_finish(dial, sharp=45.0, bevel_width=None)]
+
+    # Glass, a thin disc closing the bezel over the dial.
+    glass = grid_to_mesh(
+        f"instrument_glass_{tag}",
+        [ring(r * 0.80, y_front + 0.003), ring(r * 0.80, y_front + 0.004)],
+        collection,
+        close_rings=True,
+    )
+    cap_loop(glass, ring(r * 0.80, y_front + 0.003))
+    glasses = [_finish(glass, sharp=45.0, bevel_width=None)]
+
+    return brass, dials, glasses
+
+
+def _build_instruments(collection):
+    """The brass on the main bulkhead: a matched clock and barometer to one side
+    of the way forward, a smaller tell-tale to the other.
+
+    This is the corner of the saloon the cabin stop looks straight at -- the
+    camera comes below and faces forward down the boat to this bulkhead -- and it
+    is the one below-deck spot the eye goes to that is neither structure nor
+    stowage. Every cruised boat of the age has it: a clock and a barometer in
+    brass, read from the settee and lit by the companionway behind the lens.
+
+    Placed off the doorway rather than by a half-offset of their own, so the
+    group follows the opening. The pair sits together to starboard at a hand's
+    pitch; the single, smaller, balances it to port. All three stand on the flat
+    aft face of the panel and need no lean -- the bulkhead is upright, unlike the
+    coachroof face the cockpit shelves hang on.
+    """
+    y_back = _y(params.BULKHEAD_AFT + 0.018)
+    z = params.INSTRUMENT_HEIGHT
+    r = params.INSTRUMENT_RADIUS
+    proud = params.INSTRUMENT_PROUD
+    edge = params.LOCKER_DOORWAY_HALF_WIDTH
+
+    # (x, radius) for each: the clock and barometer to starboard, a smaller
+    # instrument to port, all clear of the doorway edge by a bezel's width.
+    first = edge + 0.075 + r
+    specs = [
+        (first, r),                               # clock, inboard of the pair
+        (first + params.INSTRUMENT_SPACING, r),   # barometer, outboard
+        (-(edge + 0.075 + r * 0.78), r * 0.78),   # tell-tale, to port
+    ]
+
+    brass, dials, glasses = [], [], []
+    for i, (x, rad) in enumerate(specs):
+        b, d, g = _instrument(collection, x, z, rad, y_back, proud, tag=i)
+        brass += b
+        dials += d
+        glasses += g
+
+    return {
+        "instruments": join(brass, "instruments"),
+        "instrument_dials": join(dials, "instrument_dials"),
+        "instrument_glass": join(glasses, "instrument_glass"),
+    }
 
 
 def _build_bilge_hatch(collection):

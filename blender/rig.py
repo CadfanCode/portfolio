@@ -128,17 +128,36 @@ def _y(station):
     return params.station_to_y(station)
 
 
+def swing_boom(g, point):
+    """Rotate a point about the vertical axis through the gooseneck by the boom's
+    eased angle, to leeward.
+
+    The boat is trimmed for a beam reach, so the boom is not on the centreline --
+    it swings out about the gooseneck (`params.BOOM_ANGLE_DEG`, side by
+    `LEEWARD_SIGN`). Both the spar and everything hung on it turn through this one
+    rotation, so `_build_boom`, `boom_point` and the mainsail clew (`sails.py`)
+    cannot drift apart. A point on the un-swung centreline boom is passed in; the
+    gooseneck itself (the pivot) does not move.
+    """
+    x, y, z = point
+    y0 = _y(g["mast_aft"])
+    phi = params.LEEWARD_SIGN * params.BOOM_ANGLE_DEG * pi / 180.0
+    dx, dy = x, y - y0
+    c, s = cos(phi), sin(phi)
+    return (dx * c - dy * s, y0 + dx * s + dy * c, z)
+
+
 def boom_point(g, t):
     """A point along the boom's centreline at fraction `t` of its length --
-    0 at the mast, 1 at the outer band.
+    0 at the mast, 1 at the outer band -- eased out to the beam-reach angle.
 
     Public so anything that hangs off the boom -- the mainsheet, the vang, the
-    topping lift -- reads the same line the spar itself is built from, rather
-    than each re-deriving an approximation of where it is.
+    topping lift, the mainsail clew -- reads the same swung line the spar itself
+    is built from, rather than each re-deriving an approximation of where it is.
     """
     station = g["mast_aft"] + params.BOOM_LENGTH * t
     z = g["boom_z"] + params.BOOM_RISE * t
-    return (0.0, _y(station), z)
+    return swing_boom(g, (0.0, _y(station), z))
 
 
 # --------------------------------------------------------------------------
@@ -177,7 +196,8 @@ def _build_mast(collection, g):
 
 
 def _build_boom(collection, g):
-    """From the mast's aft face, 2500 mm aft to the outer band."""
+    """From the mast's aft face, 2500 mm aft to the outer band, eased out to the
+    beam-reach angle about the gooseneck (`swing_boom`)."""
     width, height = params.BOOM_SECTION
     start, end = g["mast_aft"], g["mast_aft"] + params.BOOM_LENGTH
 
@@ -188,7 +208,7 @@ def _build_boom(collection, g):
         station = start + (end - start) * t
         z = g["boom_z"] + params.BOOM_RISE * t
         section = ellipse(width, height)
-        rings.append([(u, _y(station), z + v) for (u, v) in section])
+        rings.append([swing_boom(g, (u, _y(station), z + v)) for (u, v) in section])
 
     obj = grid_to_mesh("boom", rings, collection, close_rings=True)
     cap_loop(obj, rings[0])
@@ -429,17 +449,18 @@ def _build_masthead_unit(collection, g):
 
     box = _box_local("masthead_box", collection, -0.028, 0.028, y0 - 0.045, y0 + 0.045, top, top + 0.045)
 
-    # The windex: a needle on a pivot, canted to starboard the way a wind
-    # vane settles when the boat is close-hauled on this tack -- the same
-    # breeze `SAIL_DRAFT`'s sign describes.
+    # The windex: a needle on a pivot, canted to windward the way a wind vane
+    # settles when the boat is close-hauled -- windward is the side away from
+    # `LEEWARD_SIGN`, so the needle heads into the breeze the sails are set to.
     pivot_z = top + 0.045
+    wx = -params.LEEWARD_SIGN
     vane = _tube_local(
         "masthead_windex",
         collection,
         [
-            (-0.140, y0 + 0.010, pivot_z + 0.030),
-            (0.010, y0, pivot_z + 0.010),
-            (0.150, y0 - 0.030, pivot_z + 0.006),
+            (wx * 0.140, y0 + 0.010, pivot_z + 0.030),
+            (wx * 0.010, y0, pivot_z + 0.010),
+            (wx * 0.150, y0 - 0.030, pivot_z + 0.006),
         ],
         0.004,
     )

@@ -30,17 +30,24 @@ export function windStrength(time: number): number {
   return Math.min(1, Math.max(0, BASE + GUST * (gust - 0.5) * 2))
 }
 
+/** Which side the boat leans to: it heels to leeward, and the sails are set to
+ *  starboard (see `LEEWARD_SIGN` in `blender/params.py` and `sails.py`), so
+ *  leeward is starboard. A positive rotation about +Z leans the boat to port, so
+ *  leaning to starboard is the negative of it — hence the sign here. Flip this
+ *  with the sails if the tack ever changes. */
+const LEE_HEEL = -1
+
 /**
  * How far the boat heels, radians, for a given steady wind (0…1, from the
- * weather) at a time. The boat is sailing close-hauled on starboard tack — wind
- * over the starboard side, sails eased to port (see `sails.py`) — so it leans to
- * port, its lee side. That is a positive rotation about +Z here, the same axis
- * the wave roll uses, so the two just add.
+ * weather) at a time. The boat is reaching with the wind on the port side and
+ * the sails eased out to starboard (see `sails.py`), so it leans to starboard,
+ * its lee side — the negative rotation about +Z that `LEE_HEEL` carries, on the
+ * same axis the wave roll uses, so the two just add.
  *
  * The lean tracks the weather's wind — upright in a calm, hard over in a blow —
  * with a little of the fast gust on top, so the boat leans to the average and
  * stiffens against the rest rather than following every flap.
  */
 export function heelAngle(windLevel: number, time: number): number {
-  return MAX_HEEL * windLevel * (0.85 + 0.15 * windStrength(time))
+  return LEE_HEEL * MAX_HEEL * windLevel * (0.85 + 0.15 * windStrength(time))
 }

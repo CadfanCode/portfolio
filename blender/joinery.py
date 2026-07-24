@@ -144,6 +144,47 @@ def _stations(start, end, count):
     return [start + step * i for i in range(count)]
 
 
+def _oval_prism(collection, station, x, rx, ry, z0, z1, count=20):
+    """An upright oval prism, centred on `(x, station)` -- a boolean cutter for
+    the sink opening. `rx` runs athwartships, `ry` fore-and-aft, matching the
+    bowl's own `_oval_ring`."""
+    from math import cos, pi, sin
+
+    y = params.station_to_y(station)
+
+    def oval(z):
+        return [
+            (x + rx * cos(2 * pi * i / count), y + ry * sin(2 * pi * i / count), z)
+            for i in range(count)
+        ]
+
+    obj = grid_to_mesh("sink_cutter", [oval(z1), oval(z0)], collection, close_rings=True)
+    cap_loop(obj, oval(z1))
+    cap_loop(obj, list(reversed(oval(z0))))
+    recalc_normals(obj)
+    return obj
+
+
+def _difference(target, cutter):
+    """Subtract `cutter` from `target` in place and remove the cutter.
+
+    Applied immediately, not left as a modifier: the export applies modifiers at
+    write time, but so does every other piece here (via the Triangulate in
+    `build.py`), and baking it now keeps the cutter from having to be hidden from
+    the exporter and keeps `verify.py` measuring real vertices.
+    """
+    import bpy
+
+    bpy.context.view_layer.objects.active = target
+    target.select_set(True)
+    mod = target.modifiers.new("sink_cut", "BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.solver = "EXACT"
+    mod.object = cutter
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    bpy.data.objects.remove(cutter, do_unlink=True)
+
+
 def _join(objs, name):
     """Merge several boxes into one object, so the build reports one thing per
     piece of furniture rather than one per panel."""
@@ -228,10 +269,19 @@ def _build_bulkheads(collection, inner):
 def _build_galley(collection, inner):
     """The pentry: worktop and lockers, port, at the after end of the saloon.
 
-    One block. The sink is recessed into it and the two-burner hob beside them
-    is recessed too -- "Nedsankta ar ocksa dom tva stora matforvaringsboxarna"
-    -- so from any distance the whole run reads as a single worktop with things
-    let into it, which is what this is.
+    One block, with the sink let into it. The two-burner hob beside the sink is
+    recessed too -- "Nedsankta ar ocksa dom tva stora matforvaringsboxarna" --
+    so from any distance the whole run reads as a single worktop with things let
+    into it, which is what this is.
+
+    The sink is the one thing here that is a real hole rather than a proud
+    fitting. A basin has to drop below the worktop, and while the worktop stayed
+    an unbroken solid its own top face hid the bowl -- the sink read as a chrome
+    rim on a shelf of wood. Cutting the worktop is the honest fix, and this is
+    the piece of joinery the camera comes closest to, so it is worth the one
+    boolean the model otherwise does without. The opening follows the bowl:
+    `fitout.galley_sink_opening` is the single source both this cut and the bowl
+    are built from.
     """
     out = inner(params.GALLEY_START, params.GALLEY_TOP)
 
@@ -247,6 +297,18 @@ def _build_galley(collection, inner):
         params.GALLEY_TOP,
     )
     bevel(obj, width=0.004, segments=2)
+
+    # Open the worktop over the sink. Bevelled first, so the chamfer runs the
+    # worktop's own edges and not the raw edges of the hole (which the bowl's
+    # flange covers anyway).
+    import fitout
+
+    station, x, rx, ry = fitout.galley_sink_opening(inner)
+    cutter = _oval_prism(
+        collection, station, x, rx, ry,
+        params.GALLEY_TOP - 0.090, params.GALLEY_TOP + 0.010,
+    )
+    _difference(obj, cutter)
     return obj
 
 

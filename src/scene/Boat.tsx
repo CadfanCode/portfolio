@@ -48,9 +48,10 @@ type SailFrame = { footY: number; headY: number; edges: Vector4 }
 const COMMON_CHUNK = /* glsl */ `#include <common>
   uniform float uTime;
   uniform float uPower;   // steady press of the wind — how deep the belly breathes
-  uniform float uLuff;    // luffing — the leading edge backing and breaking in light air
+  uniform float uLuff;    // leading edge working — rises with the weather
   uniform float uFlutter; // leech shiver — the trailing edge working in a blow
   uniform float uGust;    // the fast gust, a little of it across the whole sail
+  uniform float uSea;     // master liveliness, 0 calm … 1 squall — scales all motion
   uniform float uFootY;
   uniform float uHeadY;
   uniform vec4  uEdges;   // (luffZ@foot, leechZ@foot, luffZ@head, leechZ@head)
@@ -72,29 +73,50 @@ const COMMON_CHUNK = /* glsl */ `#include <common>
     float breathe = 0.5 * sin(v * 2.0 + uTime * 0.8) + 0.5 * sin(u * 2.5 - uTime * 0.6);
     float d = belly * breathe * (0.006 + 0.014 * uPower);
 
-    // 2. Luffing: in light air the luff backs and breaks — a wave that enters at
-    //    the leading edge and rolls aft, dying before the leech. Loud in a calm,
-    //    gone in a working breeze. Held off the foot and head, where the sail is
-    //    pinned to boom and headboard.
+    // 2. Luff working: a wave that enters at the leading edge and rolls aft,
+    //    dying before the leech. Held off the head, but now free right down to
+    //    the foot, so the lower luff works too. Rises with the weather.
     float luffMask = smoothstep(0.55, 0.0, u)
-                   * smoothstep(0.03, 0.22, v) * smoothstep(1.0, 0.72, v);
+                   * smoothstep(0.02, 0.16, v) * smoothstep(1.0, 0.72, v);
     float luffWave = sin(u * 7.0 - uTime * 7.0 + v * 2.0)
                    + 0.5 * sin(u * 12.0 - uTime * 11.0 - v * 1.4);
-    d += luffMask * luffWave * (0.010 + 0.055 * uLuff);
+    d += luffMask * luffWave * (0.008 + 0.045 * uLuff);
 
     // 3. Leech flutter: the trailing edge and the upper leech shivering —
     //    fastest and finest of the three, loudest in a blow or a spray-throwing
     //    chop, where a real leech buzzes.
-    float leechMask = smoothstep(0.62, 1.0, u) * smoothstep(0.12, 0.9, v);
+    float leechMask = smoothstep(0.62, 1.0, u) * smoothstep(0.08, 0.9, v);
     float leechWave = sin(v * 9.0 - uTime * 16.0 + u * 4.0)
                     + 0.6 * sin(v * 17.0 - uTime * 23.0 - u * 3.0);
     d += leechMask * leechWave * (0.005 + 0.030 * uFlutter);
 
-    // 4. A little of the gust across the whole sail, so it never sits perfectly
+    // 4. Foot: the bottom edge lifting and working. Pinned only at the two foot
+    //    corners — the tack (u=0) and the clew (u=1) — via sin(pi*u), and fading
+    //    up the sail, so the loose foot of the main and the free foot of the
+    //    genoa both move instead of hanging dead. Grows hard with the sea.
+    float footMask = sin(SAIL_PI * u) * smoothstep(0.30, 0.03, v);
+    float footWave = sin(u * 4.0 + uTime * 5.0)
+                   + 0.5 * sin(u * 8.0 - uTime * 7.3 + 1.0);
+    d += footMask * footWave * (0.010 + 0.055 * uSea);
+
+    // 5. A little of the gust across the whole sail, so it never sits perfectly
     //    still between the slower motions above.
     d += belly * sin(v * 3.0 + u * 2.0 - uTime * 3.0) * 0.004 * uGust;
 
-    return d;
+    // 6. Strain: near the top of the range the whole cloth trembles under load —
+    //    a fine, full-surface vibration for a sail pressed hard in a squall, gone
+    //    entirely below a real blow. Kept low in amplitude and spatial frequency
+    //    on purpose: wind it up and the registration (which rides this same
+    //    field, mid-sail) warps and its two printed faces begin to show through
+    //    each other. This shimmers the cloth without shredding the number.
+    float strain = smoothstep(0.62, 1.0, uSea);
+    d += (sin(u * 12.0 + v * 15.0 - uTime * 29.0)
+        + 0.7 * sin(u * 9.0 - v * 12.0 - uTime * 24.0)) * 0.0032 * strain;
+
+    // Master liveliness: quiet in a calm, thrashing in a squall. The sail keeps
+    // the fullness baked into its geometry; this scales the life on top of it,
+    // so calm seas stir it a little and rough seas throw it about.
+    return d * (0.18 + 0.82 * uSea);
   }
 `
 
@@ -127,10 +149,10 @@ const BEGINVERTEX_CHUNK = /* glsl */ `#include <begin_vertex>
 
   // Then let the rig hold it. Each capsule is a length of spar or wire the cloth
   // cannot pass through; a vertex that has ended up inside one is pushed
-  // radially back out to its surface. That both clears the leeward spreader and
-  // shrouds that used to spear through the sail and, where a tip bears on the
-  // cloth, leaves a small bulge around it — a spreader patch, which is what a
-  // real sail does there.
+  // radially back out to its surface. That clears the leeward spreader and
+  // shrouds that used to spear through the sail; the spreader capsule is drawn
+  // a little fatter than the spar (see worldCapsules), so the genoa stands off
+  // its tip by a small gap rather than bearing on it.
   for (int i = 0; i < 4; i++) {
     if (i >= uCapN) break;
     vec3 ab = uCapB[i] - uCapA[i];
@@ -225,10 +247,16 @@ function sailFrame(mesh: Mesh): SailFrame {
   }
 }
 
+/** Which side the sails are set to: +1 starboard, -1 port. Kept in step with
+ *  `LEEWARD_SIGN` in `blender/params.py`, which bellies the baked cloth to this
+ *  side — the rig it drapes against is the leeward spreader and shroud, so this
+ *  picks which of the two spreaders to guard it from. */
+const LEEWARD_SIGN = 1
+
 /** The rig points the sails drape against, in world space. */
 type RigAnchors = {
-  portSpreaderTip: Vector3
-  portSpreaderRoot: Vector3
+  leeSpreaderTip: Vector3
+  leeSpreaderRoot: Vector3
   masthead: Vector3
   mastHeel: Vector3
 }
@@ -240,22 +268,25 @@ function rigAnchors(root: Object3D): RigAnchors | null {
 
   const v = new Vector3()
 
-  // The port spreader: its tip (furthest to port, most negative x) and its root
-  // (the port-side vertex nearest the centreline).
-  const portSpreaderTip = new Vector3()
-  const portSpreaderRoot = new Vector3()
-  let tipX = Infinity
-  let rootX = -Infinity
+  // The leeward spreader: its tip (furthest outboard on the leeward side) and
+  // its root (the leeward-side vertex nearest the centreline). "Outboard" is
+  // whichever direction LEEWARD_SIGN points, so a flipped tack picks the other
+  // spreader with no other change here.
+  const leeSpreaderTip = new Vector3()
+  const leeSpreaderRoot = new Vector3()
+  let tipX = -Infinity
+  let rootX = Infinity
   const sp = spreaders.geometry.attributes.position
   for (let i = 0; i < sp.count; i++) {
     v.fromBufferAttribute(sp, i).applyMatrix4(spreaders.matrixWorld)
-    if (v.x < tipX) {
-      tipX = v.x
-      portSpreaderTip.copy(v)
+    const lee = LEEWARD_SIGN * v.x
+    if (lee > tipX) {
+      tipX = lee
+      leeSpreaderTip.copy(v)
     }
-    if (v.x < 0 && v.x > rootX) {
-      rootX = v.x
-      portSpreaderRoot.copy(v)
+    if (lee > 0 && lee < rootX) {
+      rootX = lee
+      leeSpreaderRoot.copy(v)
     }
   }
 
@@ -277,18 +308,21 @@ function rigAnchors(root: Object3D): RigAnchors | null {
     }
   }
 
-  return { portSpreaderTip, portSpreaderRoot, masthead, mastHeel }
+  return { leeSpreaderTip, leeSpreaderRoot, masthead, mastHeel }
 }
 
 /** The capsules a given sail drapes against, in world space. */
 function worldCapsules(name: string, rig: RigAnchors): Capsule[] {
-  const { portSpreaderTip, portSpreaderRoot, masthead, mastHeel } = rig
-  // The leeward (port) spreader, and the upper shroud running from its tip up to
-  // the masthead — the two lengths of rig that cross the upper sail on the
-  // leeward side and used to show through it.
+  const { leeSpreaderTip, leeSpreaderRoot, masthead, mastHeel } = rig
+  // The leeward spreader, and the upper shroud running from its tip up to the
+  // masthead — the two lengths of rig that cross the upper sail on the leeward
+  // side and used to show through it. The genoa gets a fatter spreader capsule
+  // (below) so it stands off the tip with a small gap; the mainsail, aft of the
+  // spar, only needs it kept from spearing through.
+  const spreaderR = name === 'genoa' ? 0.11 : 0.06
   const caps: Capsule[] = [
-    { A: portSpreaderRoot.clone(), B: portSpreaderTip.clone(), R: 0.06 },
-    { A: portSpreaderTip.clone(), B: masthead.clone(), R: 0.03 },
+    { A: leeSpreaderRoot.clone(), B: leeSpreaderTip.clone(), R: spreaderR },
+    { A: leeSpreaderTip.clone(), B: masthead.clone(), R: 0.03 },
   ]
   if (name === 'genoa') {
     // The overlapping genoa also sweeps across the mast below the hounds. Guard
@@ -341,13 +375,14 @@ const smoothstep = (a: number, b: number, x: number) => {
  * gives the sails life.
  *
  * The sails react to the weather by a vertex displacement, not a cloth sim (see
- * the shader chunks above): a pressure-driven belly, a luff that backs in light
- * air, and a leech that flutters in a blow, all driven from the same
- * `sampleConditions` and `windStrength` the boat heels to, so the sail works
- * with the wind the hull leans on rather than to a rhythm of its own. Each sail
- * carries its own material clone so it can be given its own edges and its own
- * length of rig to drape against — the leeward spreader and shrouds no longer
- * spear through the cloth.
+ * the shader chunks above): a pressure-driven belly, a working luff, a fluttering
+ * leech and a lifting foot, all driven from the same `sampleConditions` and
+ * `windStrength` the boat heels to, so the sail works with the wind the hull
+ * leans on rather than to a rhythm of its own. Their liveliness tracks the sea
+ * state — barely a stir in a calm, thrown about in a rough sea, thrashing and
+ * strained in a squall. Each sail carries its own material clone so it can be
+ * given its own edges and its own length of rig to drape against — the leeward
+ * spreader and shrouds no longer spear through the cloth.
  */
 export function Boat() {
   const scene = useSceneStore((s) => s.scene)
@@ -386,6 +421,7 @@ export function Boat() {
         shader.uniforms.uLuff = { value: 0.3 }
         shader.uniforms.uFlutter = { value: 0.3 }
         shader.uniforms.uGust = { value: 0.5 }
+        shader.uniforms.uSea = { value: 0.3 }
         shader.uniforms.uFootY = { value: frame.footY }
         shader.uniforms.uHeadY = { value: frame.headY }
         shader.uniforms.uEdges = { value: frame.edges.clone() }
@@ -428,14 +464,20 @@ export function Boat() {
     const c = sampleConditions(t)
     const gust = windStrength(t)
 
-    // The three motions read straight off the weather so the sail agrees with
-    // the sea and the heel: a hard wind bellies it out and quiets it; light air
-    // lets the luff back and break; and a real blow or a spray-throwing chop
-    // sets the leech buzzing.
+    // The motions read straight off the weather so the sail agrees with the sea
+    // and the heel, and — as asked — its liveliness tracks the conditions: a
+    // glassy calm barely stirs it, a rough sea throws it about, and a squall has
+    // it thrashing and trembling under the strain. `intensity` is that one axis,
+    // leaning on the sea state with the wind behind it; every motion scales with
+    // it (the master term in `sailField`), and the belly still bellies out under
+    // the steady press.
+    const intensity = clamp01(0.6 * c.sea + 0.4 * c.wind)
     const power = c.wind
-    const luff = clamp01(1 - c.wind * 1.25)
+    // Leading edge and leech both rise with the weather now, the leech extra
+    // alive in a real blow or a spray-throwing chop where a real one buzzes.
+    const luff = clamp01(0.12 + 0.85 * intensity)
     const flutter = clamp01(
-      0.12 + 0.5 * c.spray + 0.35 * luff + 0.45 * smoothstep(0.62, 1, c.wind),
+      0.1 + 0.45 * intensity + 0.4 * c.spray + 0.35 * smoothstep(0.6, 1, c.wind),
     )
 
     for (const shader of shaders.current) {
@@ -444,6 +486,7 @@ export function Boat() {
       shader.uniforms.uLuff.value = luff
       shader.uniforms.uFlutter.value = flutter
       shader.uniforms.uGust.value = gust
+      shader.uniforms.uSea.value = intensity
     }
   })
 

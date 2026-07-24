@@ -343,6 +343,20 @@ def create():
         normal=metal_normal,
         tile=0.15,
     )
+    # Lacquered brass, for the bulkhead instruments. Warm and gold rather than
+    # the grey of `chrome` and `alloy`, and duller: ship's brass is lacquered
+    # against the salt and reads as a soft satin gold, not a mirror -- the same
+    # reasoning that keeps `chrome` off 1.0 metallic keeps this off it too, so it
+    # carries diffuse warmth without waiting for an environment to light it.
+    # Same drawn grain as the other metals, finer, since the piece is small.
+    palette["brass"] = _textured(
+        "brass",
+        colour_value=(0.63, 0.44, 0.16),
+        roughness_value=0.33,
+        metallic=0.82,
+        normal=metal_normal,
+        tile=0.04,
+    )
 
     # --- Cloth. --------------------------------------------------------------
     #
@@ -934,7 +948,7 @@ def apply(built, band_surface):
     # outside the boat, and they are the two pieces the cockpit stop is
     # closest to. Bare and weathered, not the interior's varnished material --
     # see `teak_exterior` in `create`.
-    for name in ("tiller", "cockpit_grating"):
+    for name in ("tiller", "cockpit_grating", "cockpit_shelves"):
         assign(built.get(name), palette["teak_exterior"])
 
     # --- Sails.
@@ -974,6 +988,14 @@ def apply(built, band_surface):
 
     assign(built.get("mast_post"), palette["alloy"])
     assign(built.get("galley_fittings"), palette["chrome"])
+
+    # The bulkhead brass: three objects rather than one, for the three materials
+    # a glazed instrument is -- the brass case, the pale dial behind the glass,
+    # and the glass itself. Split by object, the way the windows and their panes
+    # already are.
+    assign(built.get("instruments"), palette["brass"])
+    assign(built.get("instrument_dials"), palette["plastic_white"])
+    assign(built.get("instrument_glass"), palette["glass"])
 
     for name in ("cushions", "backrests"):
         assign(built.get(name), palette["cushion"])
