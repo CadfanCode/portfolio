@@ -33,20 +33,27 @@ def build(collection):
         "shelf": _build_shelf(collection, inner),
         "backrests": _build_backrests(collection, inner),
         "cushions": _build_cushions(collection, inner),
-        "galley_fittings": _build_galley_fittings(collection, inner),
-        "books": _build_books(collection, inner),
         "grabrails": _build_grabrails(collection),
         "cabin_lamp": _build_cabin_lamp(collection, inner),
         "bilge_hatch": _build_bilge_hatch(collection),
     }
-    # The bulkhead instruments come back as three objects -- brass, dial, glass --
-    # so they can carry their three materials; see `_build_instruments`.
+    # Four builders return several objects each rather than one, for the same
+    # reason `_build_instruments` does: a thing made of more than one material
+    # has to be more than one object, because glTF gives a mesh one material.
+    # A book is cloth and paper and gilt; a lamp is brass and enamel and the
+    # light inside it.
     parts.update(_build_instruments(collection))
+    parts.update(_build_books(collection, inner))
+    parts.update(_build_pillows(collection, inner))
+    parts.update(_build_desk_fittings(collection, inner))
+    parts.update(_build_vhf(collection))
     return parts
     # Removed at the owner's request: the cupboard (locker) doors, the window
-    # curtains, the companionway washboard, and the fire extinguisher. The
-    # builders below are kept -- they are correct and cost nothing unbuilt --
-    # so restoring any of them is a one-line entry in the dict above.
+    # curtains, the companionway washboard, the fire extinguisher, and the sink
+    # and cooker (the worktop is the chart table now -- see
+    # `_build_desk_fittings`). The builders below are kept -- they are correct
+    # and cost nothing unbuilt -- so restoring any of them is a one-line entry
+    # in the dict above.
 
 
 # --------------------------------------------------------------------------
@@ -474,6 +481,274 @@ def _build_forepeak_cushion(collection, inner):
 
 
 # --------------------------------------------------------------------------
+# Pillows
+# --------------------------------------------------------------------------
+#
+# Six scatter cushions: two on each settee and a pair at the head of the
+# V-berth. Owner's brief, and the reason for it is the same one the settee
+# cushions themselves answer, one step further on. A cushion is what stops the
+# liner reading as a moulding; a pillow left on the cushion is what stops the
+# *cabin* reading as an empty one. Nothing in the boat is out of place until
+# something is, and a scatter cushion is the cheapest thing in the world that
+# somebody has plainly moved.
+
+
+# (side, station, fabric) -- fabric 0 is the striped cloth, 1 the plain.
+# Alternated along each run so no two neighbours match, which is how a pair of
+# them on a settee reads as two cushions rather than as one modelled twice.
+_SALOON_PILLOWS = (
+    (1, 3.560, 0),
+    (1, 4.200, 1),
+    (-1, 3.480, 1),
+    (-1, 4.060, 0),
+)
+
+_FOREPEAK_PILLOWS = (
+    (-1, 1.300, 0),
+    (1, 1.300, 1),
+)
+
+
+def _build_pillows(collection, inner):
+    """Scatter cushions on the settees and in the forepeak.
+
+    Two objects for the two fabrics, plus one for the piping, which every one of
+    them shares -- see `build` for why a thing made of several materials has to
+    be several objects.
+    """
+    fabrics = {0: [], 1: []}
+    piping = []
+
+    for side, station, fabric in _SALOON_PILLOWS:
+        body, cord = _settee_pillow(collection, inner, side, station)
+        fabrics[fabric].append(body)
+        piping.append(cord)
+
+    for side, station, fabric in _FOREPEAK_PILLOWS:
+        body, cord = _forepeak_pillow(collection, inner, side, station)
+        fabrics[fabric].append(body)
+        piping.append(cord)
+
+    return {
+        "pillows_stripe": join(fabrics[0], "pillows_stripe"),
+        "pillows_plain": join(fabrics[1], "pillows_plain"),
+        "pillow_piping": join(piping, "pillow_piping"),
+    }
+
+
+def _settee_pillow(collection, inner, side, station):
+    """One pillow on a settee, leaning back against the backrest.
+
+    Everything about where it sits is asked for rather than fitted. The cushion
+    it rests on is `interior.seat_level` plus the cushion's own thickness -- the
+    same two calls `_build_flat_cushion` used to lay that cushion down -- and
+    the backrest it leans on is the hull less `BACKREST_THICKNESS` at the
+    pillow's own centre height, so the pair stay together if either moves.
+
+    The one clamp is at the top. There is 275 mm between the settee cushion and
+    the underside of the shelf, and a 290 mm pillow tipped back does not fit
+    upright in it -- the first pass put two of them through the shelf, which is
+    invisible from every interior camera and obvious from the section. So the
+    centre is dropped until the highest point of the loft clears the shelf by
+    10 mm, and if that means the pillow sits deeper into the cushion than it
+    would, that is what a cushion is for.
+    """
+    lean = 0.44  # radians off vertical: leaning back, not lying down
+    half_u, half_v, half_w = params.PILLOW_SIZE
+
+    base = interior.seat_level(station) + params.CUSHION_THICKNESS
+    along = (0.0, 1.0, 0.0)
+    face = (-side * cos(lean), 0.0, sin(lean))
+    up = _cross(face, along)
+
+    # How far the loft reaches above its own centre. Not simply `half_v` -- the
+    # plan shrinks as the section swells (see `_pillow`), so the highest point
+    # is neither the seam nor the face but somewhere between them, and it is
+    # cheaper to find it by walking the same profile the loft uses than to
+    # solve for it.
+    reach = max(
+        abs(up[2]) * half_v * k + abs(face[2]) * half_w * w
+        for (k, w) in _PILLOW_PROFILE
+    )
+    centre_z = min(base + half_v * 0.92, params.SHELF_LEVEL - 0.010 - reach)
+
+    # Backed up against the backrest, which follows the hull.
+    back = inner(station, centre_z) - params.BACKREST_THICKNESS
+    centre = (side * (back - half_w * 0.85), _y(station), centre_z)
+
+    return _pillow(
+        f"pillow_{side}_{station:.2f}", collection, centre, along, face,
+        half_u, half_v, half_w,
+    )
+
+
+def _forepeak_pillow(collection, inner, side, station):
+    """One pillow at the head of the V-berth, lying nearly flat.
+
+    Nearly flat and not upright, because there is nothing here to lean one
+    against: the forepeak bumper is 200 mm above the mattress and wraps the
+    topsides, and a pillow propped on it would be a pillow standing in the
+    middle of a berth two people sleep in. Laid down and angled outboard along
+    the arm of the V, which is where a pillow in a forepeak actually is.
+    """
+    half_u, half_v, half_w = params.PILLOW_SIZE
+    tilt = 0.20
+
+    base = interior.floor_level(station) + params.CUSHION_THICKNESS
+    # Along the arm of the V: forward and outboard, following the berth rather
+    # than lying square across a boat that has no square left this far forward.
+    along = _unit((side * 0.42, 0.91, 0.0))
+    face = _unit((-side * sin(tilt) * 0.5, -sin(tilt), cos(tilt)))
+    up = _cross(face, along)
+
+    reach = max(
+        abs(up[2]) * half_v * k + abs(face[2]) * half_w * w
+        for (k, w) in _PILLOW_PROFILE
+    )
+
+    # Out from the centreline as far as the forepeak allows. The hull is 4.5 m
+    # of boat away from its widest here and closing fast, and a pillow set at a
+    # fixed offset went through the topsides at the head of the berth -- so the
+    # offset is whatever leaves the pillow's own outboard half inside the hull,
+    # or the nominal quarter-metre if the bow is wide enough to spare it.
+    half = inner(station, base)
+    reach_x = abs(up[0]) * half_v + abs(along[0]) * half_u
+    centre = (
+        side * min(0.230, max(0.0, half - reach_x - 0.020)),
+        _y(station),
+        base + reach - 0.012,   # settled 12 mm into the mattress
+    )
+
+    return _pillow(
+        f"pillow_fwd_{side}", collection, centre, along, face,
+        half_u, half_v, half_w,
+    )
+
+
+def _pillow_profile(steps=5, sweep=1.45, flatness=0.32):
+    """The pillow's section, as `(plan scale, offset)` pairs from one face round
+    the seam to the other.
+
+    A pillow is not an ellipsoid and it is not a rounded box; it is a flat bag
+    stuffed until it is not flat. What that produces is a broad, slightly domed
+    face on each side, a hard maximum in plan exactly at the seam where the two
+    panels are sewn, and a fast turn between them.
+
+    `cos(phi) ** flatness` is that shape in one term. At `flatness = 1` it is a
+    circle -- a bolster. Pulling the exponent down towards zero holds the plan
+    near its full size for most of the sweep and then drops it quickly at the
+    ends, which broadens the faces and tightens the turn: 0.32 is a well-filled
+    scatter cushion, and the number is worth stating because it is the only
+    thing in this file standing in for a cloth simulation.
+
+    `sweep` stops short of a right angle so the loft ends on a real ring rather
+    than on a degenerate point, and `_pillow` caps those two rings -- which is
+    also what gives each face its flat middle.
+    """
+    return [
+        (
+            cos(sweep * (2 * i / (steps - 1) - 1)) ** flatness,
+            sin(sweep * (2 * i / (steps - 1) - 1)),
+        )
+        for i in range(steps)
+    ]
+
+
+_PILLOW_PROFILE = _pillow_profile()
+
+
+def _pillow(name, collection, centre, along, face, half_u, half_v, half_w,
+            plan_points=16):
+    """A plush cushion in an arbitrary plane, with a corded seam round it.
+
+    Built in its own frame -- `along` its long axis, `face` its front normal,
+    and their cross product for the third -- so the same call makes a pillow
+    leaning against a backrest and one lying flat in the bow, and neither needs
+    to know which way the boat is pointing.
+
+    The plan is a superellipse rather than a rounded rectangle, for the same
+    reason the section is `cos ** flatness` rather than a fillet: a sewn corner
+    on a stuffed cushion is not an arc of a circle joined to two straight lines,
+    it is full at the middle of each side and pulled in continuously to the
+    corner. One exponent describes that and no amount of filleting does.
+
+    Returns `(body, piping)`. The piping is a small tube run round the seam
+    ring -- the widest ring of the loft, where the two panels meet -- closed by
+    repeating its first section at the end rather than by capping, so it is a
+    real loop with no seam of its own.
+    """
+    u, v, w = _unit(along), _unit(_cross(face, along)), _unit(face)
+
+    def at(a, b, c):
+        return (
+            centre[0] + u[0] * a + v[0] * b + w[0] * c,
+            centre[1] + u[1] * a + v[1] * b + w[1] * c,
+            centre[2] + u[2] * a + v[2] * b + w[2] * c,
+        )
+
+    # Superellipse plan, walked once.
+    plan = []
+    for i in range(plan_points):
+        angle = 2 * pi * i / plan_points
+        ca, sa = cos(angle), sin(angle)
+        plan.append(
+            (
+                half_u * (1 if ca >= 0 else -1) * abs(ca) ** 0.5,
+                half_v * (1 if sa >= 0 else -1) * abs(sa) ** 0.5,
+            )
+        )
+
+    rings = [
+        [at(pu * scale, pv * scale, half_w * offset) for (pu, pv) in plan]
+        for (scale, offset) in _PILLOW_PROFILE
+    ]
+    body = grid_to_mesh(name, rings, collection, close_rings=True)
+    cap_loop(body, rings[0])
+    cap_loop(body, list(reversed(rings[-1])))
+    _finish(body, sharp=60.0, bevel_width=None)
+
+    # The cord, round the widest ring.
+    seam = rings[len(rings) // 2]
+    radius = params.PILLOW_PIPING
+    cord_rings = []
+    for i in range(len(seam) + 1):
+        point = seam[i % len(seam)]
+        ahead = seam[(i + 1) % len(seam)]
+        behind = seam[(i - 1) % len(seam)]
+        tangent = _unit(tuple(ahead[k] - behind[k] for k in range(3)))
+        outward = _unit(_cross(tangent, w))
+        cord_rings.append(
+            [
+                tuple(
+                    point[k]
+                    + outward[k] * radius * cos(2 * pi * j / 6)
+                    + w[k] * radius * sin(2 * pi * j / 6)
+                    for k in range(3)
+                )
+                for j in range(6)
+            ]
+        )
+
+    cord = grid_to_mesh(f"{name}_piping", cord_rings, collection, close_rings=True)
+    _finish(cord, sharp=60.0, bevel_width=None)
+
+    return body, cord
+
+
+def _cross(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _unit(v):
+    length = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** 0.5 or 1.0
+    return (v[0] / length, v[1] / length, v[2] / length)
+
+
+# --------------------------------------------------------------------------
 # Locker doors
 # --------------------------------------------------------------------------
 
@@ -683,6 +958,13 @@ def _build_galley_fittings(collection, inner):
     """Sink and cooker, immediately to port as you come below -- the closest the
     camera comes to any joinery on the boat, which is why neither is a box.
 
+    No longer built. Owner's brief: the worktop is a chart table now, and what
+    stands on it is in `_build_desk_fittings` below. Kept whole, with `_sink`,
+    `_cooker`, `_burner`, `_knob` and `galley_sink_opening` -- they are correct,
+    they are the only geometry in this file that a boolean in `joinery` was ever
+    written for, and restoring the pentry is one entry in `build`'s dict and
+    three lines in `joinery._build_galley`.
+
     The cooker stands proud of the worktop with a hollow of its own, the way the
     anchor box's lid and the bilge hatch do: the worktop is a lofted solid, and a
     recess merely cut into its top renders nothing. The sink is the one place
@@ -882,6 +1164,616 @@ def _burner(collection, station, x, z):
 
 
 # --------------------------------------------------------------------------
+# The chart table
+# --------------------------------------------------------------------------
+#
+# The same block of joinery the pentry stood on -- `joinery._build_galley`
+# still builds it and `params.GALLEY_*` still place it -- with a lamp, a chart,
+# a pipe, two pencils and a safe on it instead of a sink and a hob.
+#
+# Two of the five are placeholders in the portfolio's sense: the safe becomes
+# the authentication exhibit, and the chart is what the radar exhibit will be
+# drawn on. The other three are not, and that is the point of them. An exhibit
+# standing on a bare worktop is a button on a shelf; the pipe somebody put down
+# and the pencils they left on the chart are what make the safe read as a safe
+# on a desk rather than as a prop with a hotspot attached to it.
+
+
+def _ring_across(station, x, z, radius, count=12):
+    """A ring in the athwartships/vertical plane at one station: the section of
+    anything whose axis runs *fore and aft* -- a pencil, a knob on a panel that
+    faces forward.
+
+    The third of the three. `_oval_ring` is the section of anything standing up
+    and `_ring_along` below is the section of anything pointing athwartships,
+    and between them they cover every round thing below deck. Naming them for
+    the axis they are perpendicular to rather than for the plane they lie in is
+    deliberate: the axis is what you know when you reach for one of these, and
+    the first version of this file had one helper called for the wrong plane,
+    which put the safe's combination dial on the side of the safe nobody can
+    see and left a brass teardrop on the door.
+    """
+    return [
+        (
+            x + radius * cos(2 * pi * i / count),
+            _y(station),
+            z + radius * sin(2 * pi * i / count),
+        )
+        for i in range(count)
+    ]
+
+
+def _ring_along(station, x, z, radius, count=12):
+    """A ring in the fore-and-aft/vertical plane at one offset: the section of
+    anything whose axis runs *athwartships* -- the dial on a safe whose door
+    faces across the boat. See `_ring_across`."""
+    return [
+        (
+            x,
+            _y(station + radius * cos(2 * pi * i / count)),
+            z + radius * sin(2 * pi * i / count),
+        )
+        for i in range(count)
+    ]
+
+
+def _build_desk_fittings(collection, inner):
+    """Everything standing on the chart table.
+
+    Laid out in the worktop's four corners, which is what 640 x 480 mm and five
+    objects allows and what a person sitting at the inboard edge of it wants.
+
+    The safe takes the after outboard corner -- the angle between the bulkhead
+    and the topsides, the one part of the table nobody reaches across. The lamp
+    stands in the forward outboard corner diagonally opposite it, the other spot
+    no hand goes, and arches its neck inboard over the middle. The chart lies
+    along the inboard half under that reach, with the pipe and the pencils on it.
+
+    Everything inboard of the safe, in other words, and that ordering is the
+    whole of the layout: the two objects you are meant to look at are the safe,
+    which stands up and is seen against the bulkhead, and the chart, which lies
+    flat and is seen under the lamp. Neither has anything in front of it.
+
+    Returns one object per material rather than one per object: brass, enamel,
+    the light itself, the chart, the safe's paintwork and its brass, the pipe's
+    briar, and one pool of dark matte for the pipe's stem and the pencils'
+    points together. See `build`.
+    """
+    top = params.GALLEY_TOP
+    out = inner(params.GALLEY_START, top)
+    edge = -(out - params.GALLEY_DEPTH)  # signed: the worktop's inboard edge
+
+    brass, enamel, glow = _desk_lamp(collection)
+    chart, chart_top = _desk_chart(collection, edge, top)
+    safe_body, safe_brass = _desk_safe(collection, inner, top)
+    briar, vulcanite = _desk_pipe(collection, edge, chart_top)
+    pencils, points = _desk_pencils(collection, edge, chart_top)
+
+    return {
+        "desk_lamp": join(brass, "desk_lamp"),
+        "desk_lamp_shade": enamel,
+        "desk_lamp_glow": glow,
+        "desk_chart": chart,
+        "desk_safe": join(safe_body, "desk_safe"),
+        "desk_safe_brass": join(safe_brass, "desk_safe_brass"),
+        "desk_pipe": briar,
+        # The pencil points join the pipe's stem and bit: both are the dark
+        # matte the palette already carries, and neither is worth an object of
+        # its own for eight millimetres of graphite.
+        "desk_pipe_stem": join(vulcanite + points, "desk_pipe_stem"),
+        "desk_pencils": join(pencils, "desk_pencils"),
+    }
+
+
+def _desk_lamp(collection):
+    """A gooseneck lamp: weighted brass base, an arm that rises and arches back
+    over the table, and an enamelled shade hanging off the end of it.
+
+    The one object in the cabin that is a light rather than being lit, and the
+    reason it is worth building carefully: `build.py` exports with
+    `export_lights=False`, so nothing in this file can put an actual lamp in the
+    GLB. What it can do is put a surface in there that *looks* lit -- the
+    emissive disc across the shade's mouth, returned separately below -- and let
+    the app hang a real point light at the same place (`PortfolioWorld`). The
+    two together are what a lamp is: a bright thing you can see, and a pool of
+    light under it. Either alone reads as a mistake.
+
+    The arm is `_pipe` along a hand-placed path rather than a curve solved for,
+    which is the same call the old galley tap used and for the same reason: it
+    turns through gentle angles over a 20 mm tube and a mitre would never show.
+    """
+    top = params.GALLEY_TOP
+    x = params.DESK_LAMP_X
+    station = params.DESK_LAMP_STATION
+    head = top + params.DESK_LAMP_HEIGHT
+
+    # The base: a shallow drawn dish, wide enough to hold the arm's overhang
+    # down, which on a boat that heels is not a detail.
+    base_rings = [
+        _oval_ring(station, x, 0.054, 0.054, top),
+        _oval_ring(station, x, 0.054, 0.054, top + 0.009),
+        _oval_ring(station, x, 0.042, 0.042, top + 0.016),
+        _oval_ring(station, x, 0.014, 0.014, top + 0.022),
+    ]
+    base = grid_to_mesh("desk_lamp_base", base_rings, collection, close_rings=True)
+    cap_loop(base, base_rings[0])
+    cap_loop(base, list(reversed(base_rings[-1])))
+    _finish(base, sharp=40.0, bevel_width=None)
+
+    # Up, then inboard and aft over the table. The shade hangs at the end.
+    #
+    # Where the end lands is set by the safe and not by the lamp. The safe
+    # stands 230 mm off the worktop and the shade's rim is 144 mm across, so an
+    # arm carried too far aft puts the rim on top of it -- an earlier version
+    # cleared the safe's back corner by 4 mm, which from across the cabin reads
+    # as the lamp resting on it. With the safe now in the after outboard corner
+    # the arm goes the other way: hard inboard and only a little aft, so the
+    # shade hangs over the middle of the chart and stays 74 mm forward of the
+    # safe. It reaches further across the table than it used to and clears it
+    # by more, which is the corner layout paying for itself.
+    shade_x = x + 0.170
+    shade_station = station + 0.180
+    arm = _pipe(
+        "desk_lamp_arm",
+        collection,
+        [
+            (x, _y(station), top + 0.018),
+            (x, _y(station), top + 0.130),
+            (x + 0.008, _y(station + 0.030), top + 0.222),
+            (x + 0.048, _y(station + 0.086), head - 0.012),
+            (x + 0.112, _y(station + 0.140), head + 0.005),
+            (shade_x, _y(shade_station), head - 0.002),
+        ],
+        0.010,
+        count=8,
+    )
+
+    # The shade: a plain cone, open at the bottom, hanging under the arm's end.
+    mouth = head - 0.076
+    shade_rings = [
+        _oval_ring(shade_station, shade_x, 0.026, 0.026, head),
+        _oval_ring(shade_station, shade_x, 0.030, 0.030, head - 0.010),
+        _oval_ring(shade_station, shade_x, 0.072, 0.072, mouth),
+        _oval_ring(shade_station, shade_x, 0.070, 0.070, mouth + 0.006),
+    ]
+    shade = grid_to_mesh("desk_lamp_shade", shade_rings, collection, close_rings=True)
+    cap_loop(shade, shade_rings[0])
+    _finish(shade, sharp=40.0, bevel_width=None)
+
+    # The light. A disc across the mouth, a few millimetres up inside the shade
+    # so the rim shades it from directly across the cabin the way a real one
+    # does -- an emissive plane flush with the mouth glares from every angle,
+    # which is the giveaway that it is a plane and not a lamp.
+    glow_rings = [
+        _oval_ring(shade_station, shade_x, 0.062, 0.062, mouth + 0.011),
+        _oval_ring(shade_station, shade_x, 0.062, 0.062, mouth + 0.014),
+    ]
+    glow = grid_to_mesh("desk_lamp_glow", glow_rings, collection, close_rings=True)
+    cap_loop(glow, glow_rings[0])
+    _finish(glow, sharp=40.0, bevel_width=None)
+
+    return [base, arm], shade, glow
+
+
+def _desk_chart(collection, edge, top):
+    """The chart: a sheet lying on the table, lifted at its edges.
+
+    Returns the object and the height of its own top surface amidships, which
+    the pipe and the pencils are then stood on -- they lie on the chart, not on
+    the table, and 1.5 mm of paper is exactly enough to make that a z-fight if
+    each works out its own height.
+
+    The lift is the whole modelling idea here. A sheet of paper on a table is
+    the easiest thing in the world to model as a rectangle and the easiest thing
+    in the world to recognise as one: real paper has been folded, and it never
+    lies down again. Corners up, middle flat -- a fourth power of the distance
+    from the centre in each direction, so the rise is nothing at all over the
+    middle two-thirds and then goes quickly at the edges, which is the shape a
+    crease actually relaxes to.
+    """
+    length, width = params.DESK_CHART
+    station0 = params.DESK_CHART_STATION - length / 2
+    x0 = edge - 0.020
+    rise = 0.0045
+    thickness = 0.0015
+
+    across, along = 5, 6
+    rings = []
+    for i in range(along):
+        u = i / (along - 1)
+        station = station0 + length * u
+        y = _y(station)
+
+        line = []
+        for j in range(across):
+            v = j / (across - 1)
+            x = x0 - width * v
+            lift = rise * ((2 * u - 1) ** 4 + 0.6 * (2 * v - 1) ** 4)
+            line.append((x, top + lift))
+
+        # Top surface out, under-surface back: one closed section per station.
+        rings.append(
+            [(x, y, z + thickness) for (x, z) in line]
+            + [(x, y, z) for (x, z) in reversed(line)]
+        )
+
+    obj = grid_to_mesh("desk_chart", rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[-1])))
+    _finish(obj, sharp=25.0, bevel_width=None)
+
+    return obj, top + thickness
+
+
+def _desk_safe(collection, inner, top):
+    """A small document safe in the after outboard corner of the table: body, a
+    door proud of its face, a combination dial and a lever handle.
+
+    Cornered, not placed. Owner's brief, and the geometry follows it literally:
+    the after face is measured off `GALLEY_END` -- the bulkhead the worktop stops
+    at -- and the outboard face off the hull's own offset at the stations the
+    safe spans, both less `DESK_SAFE_INSET`. Neither is a fitted number, so the
+    safe stays in its corner if the block is ever re-proportioned, and it can
+    never end up standing through the topsides at its base, which is what a
+    fixed offset would risk here: the hull moves 20 mm outboard over the
+    worktop's own length.
+
+    Taken at the *worktop*, not at the safe's head. The topsides flare as they
+    rise, so the narrowest the hull gets over the safe's 230 mm is at its foot,
+    and that is the height the outboard face has to clear.
+
+    The exhibit that will be authentication, so it is built to be recognised at
+    a glance and from one angle -- the door faces inboard, at the person sitting
+    at the table and at the camera stop across the cabin, and everything that
+    says "safe" rather than "box" is on that one face. Nothing is modelled on the
+    three faces that are against the hull, against the bulkhead, or turned away.
+
+    The door hinges on its forward edge, which is the corner's doing too: with
+    the bulkhead immediately abaft it, a door hung on the after edge is a door
+    that opens into a wall. The handle goes at the free edge, where it always is.
+
+    The door stands 8 mm proud of the body rather than being let into it, which
+    is backwards for a real safe and right for this one: a recess cut into a
+    lofted solid renders as nothing at all (the same argument the anchor box's
+    lid and the bilge hatch settled), while 8 mm of overlap throws a shadow line
+    round all four sides of the door and reads as a door from anywhere.
+    """
+    length, depth, height = params.DESK_SAFE
+    inset = params.DESK_SAFE_INSET
+
+    b = params.GALLEY_END - inset
+    a = b - length
+    centre = (a + b) / 2
+    # Outboard face against the topsides, at the narrowest station it spans.
+    reach = min(inner(station, top) for station in (a, b))
+    back = -(reach - inset)      # outboard face of the body, signed (port)
+    face = back + depth          # the door, facing inboard
+    z1 = top + height
+
+    body = _box(
+        "desk_safe_body", collection, a, b, face, back, top, z1,
+        sharp=30.0, bevel_width=0.003, bevel_segments=2,
+    )
+
+    door = _box(
+        "desk_safe_door", collection,
+        a + 0.014, b - 0.014,
+        face + 0.008, face,
+        top + 0.014, z1 - 0.014,
+        sharp=30.0, bevel_width=0.002, bevel_segments=2,
+    )
+
+    # Hinges, on the *forward* edge of the door, so it opens away from the
+    # bulkhead the safe is backed into rather than into it.
+    hinges = [
+        _box(
+            f"desk_safe_hinge_{i}", collection,
+            a + 0.006, a + 0.020,
+            face + 0.013, face + 0.002,
+            top + z, top + z + 0.022,
+            sharp=30.0, bevel_width=None,
+        )
+        for i, z in enumerate((0.042, height - 0.064))
+    ]
+
+    # The dial, proud of the door on a short brass boss. The door faces
+    # athwartships, so the dial's axis does too and its section is a ring in
+    # the fore-and-aft plane -- `_ring_along`, and the distinction matters:
+    # built on the other axis it came out as a brass teardrop lying on the door.
+    dial_station = centre - 0.030
+    dial_z = top + height * 0.58
+    dial_rings = [
+        _ring_along(dial_station, face + 0.008, dial_z, 0.038, count=20),
+        _ring_along(dial_station, face + 0.020, dial_z, 0.038, count=20),
+        _ring_along(dial_station, face + 0.024, dial_z, 0.032, count=20),
+        _ring_along(dial_station, face + 0.025, dial_z, 0.031, count=20),
+    ]
+    dial = grid_to_mesh("desk_safe_dial", dial_rings, collection, close_rings=True)
+    cap_loop(dial, list(reversed(dial_rings[0])))
+    cap_loop(dial, dial_rings[-1])
+    # A straight cylinder wall with a chamfer and a flat top, and the smoothing
+    # angle held down to keep those three apart. Given a tapering profile and a
+    # 40-degree smooth this came out as a polished brass dome -- a doorknob, not
+    # a dial. What says combination lock is the flat face turned at the viewer
+    # and the rim standing round it, and both need a hard edge to exist.
+    _finish(dial, sharp=24.0, bevel_width=None)
+
+    # The index mark: the fixed pointer a dial is read against, on the door
+    # above it. Two millimetres of brass, and the only reason the disc below it
+    # reads as something that turns.
+    index = _box(
+        "desk_safe_index", collection,
+        dial_station - 0.002, dial_station + 0.002,
+        face + 0.008, face + 0.013,
+        dial_z + 0.041, dial_z + 0.050,
+        sharp=30.0, bevel_width=None,
+    )
+
+    # A lever handle forward of the dial: a round bar standing off the door on
+    # two bosses, not a plate lying on it. The bosses are the whole point --
+    # without them the bar is welded to the face and the shadow that says
+    # "this is something you take hold of" never appears under it.
+    handle_station = centre + 0.070
+    bar = _pipe(
+        "desk_safe_handle",
+        collection,
+        [
+            (face + 0.030, _y(handle_station), dial_z - 0.052),
+            (face + 0.030, _y(handle_station), dial_z + 0.052),
+        ],
+        0.008,
+        count=8,
+    )
+    bosses = [
+        _pipe(
+            f"desk_safe_boss_{i}",
+            collection,
+            [
+                (face + 0.002, _y(handle_station), dial_z + dz),
+                (face + 0.030, _y(handle_station), dial_z + dz),
+            ],
+            0.010,
+            count=8,
+        )
+        for i, dz in enumerate((-0.044, 0.044))
+    ]
+
+    return [body, door] + hinges, [dial, index, bar] + bosses
+
+
+def _desk_pipe(collection, edge, chart_top):
+    """A briar pipe resting on the chart: bowl standing, stem down to the paper.
+
+    Two materials, which is what a pipe is: the bowl and shank are briar, the
+    stem and bit are black vulcanite, and the join between them is the most
+    recognisable thing about the object after its silhouette. Built as a
+    hollowed bowl rather than a solid one for the reason the sink was --
+    a cylinder with a flat top is a cup at best -- and the hollow is four rings
+    deep, which is all that is ever seen of it from above.
+    """
+    station = params.DESK_PIPE_STATION
+    # Far enough outboard that the whole of it, stem and bit included, is on the
+    # table. The first pass stood the bowl 60 mm in from the worktop's inboard
+    # edge and let the stem run forward and inboard from there, which put the
+    # bit 22 mm past the edge and hanging in the walkway -- a pipe that had been
+    # put down where it would have fallen off.
+    x = edge - 0.135
+    foot = chart_top - 0.0005
+
+    # Bowl: out and up, then in over the rim and down inside to a floor.
+    bowl_rings = [
+        _oval_ring(station, x, 0.0155, 0.0155, foot + 0.002),
+        _oval_ring(station, x, 0.0185, 0.0185, foot + 0.012),
+        _oval_ring(station, x, 0.0205, 0.0205, foot + 0.044),
+        _oval_ring(station, x, 0.0160, 0.0160, foot + 0.044),
+        _oval_ring(station, x, 0.0140, 0.0140, foot + 0.020),
+    ]
+    bowl = grid_to_mesh("desk_pipe_bowl", bowl_rings, collection, close_rings=True)
+    cap_loop(bowl, list(reversed(bowl_rings[0])))
+    cap_loop(bowl, bowl_rings[-1])
+    _finish(bowl, sharp=40.0, bevel_width=None)
+
+    # Shank and stem: forward and inboard from the base of the bowl, falling to
+    # the paper. Briar as far as the join, vulcanite from there to the bit.
+    shank = _pipe(
+        "desk_pipe_shank",
+        collection,
+        [
+            (x + 0.012, _y(station - 0.006), foot + 0.016),
+            (x + 0.030, _y(station - 0.030), foot + 0.013),
+        ],
+        0.0072,
+        count=8,
+    )
+    stem = _pipe(
+        "desk_pipe_stem",
+        collection,
+        [
+            (x + 0.030, _y(station - 0.030), foot + 0.013),
+            (x + 0.056, _y(station - 0.066), foot + 0.008),
+            (x + 0.072, _y(station - 0.090), foot + 0.005),
+        ],
+        0.0058,
+        count=8,
+    )
+    bit = _box(
+        "desk_pipe_bit",
+        collection,
+        station - 0.104, station - 0.088,
+        x + 0.070, x + 0.082,
+        foot + 0.002, foot + 0.008,
+        sharp=30.0, bevel_width=0.0012,
+    )
+
+    return join([bowl, shank], "desk_pipe"), [stem, bit]
+
+
+def _desk_pencils(collection, edge, chart_top):
+    """Two pencils on the chart, hexagonal, sharpened.
+
+    Six-sided, which costs two facets over a cylinder and is the only thing that
+    tells a pencil from a piece of dowel at this size -- a hexagon catches a
+    different light on each of three visible faces, and the flats are why a
+    pencil on a sloping chart table has not rolled off it.
+
+    Not laid parallel. Two objects at exactly the same angle read as one object
+    duplicated, which is what they are, and the whole job of the pair is to look
+    like two things put down at different moments.
+
+    Returns `(bodies, points)`: the lacquered hexagon and the sharpened end,
+    apart, because the dark point is the single feature that says pencil and it
+    cannot say it in the same yellow as the barrel.
+    """
+    z = chart_top + 0.0038
+    specs = (
+        (params.DESK_PENCIL_STATION, edge - 0.038, 0.0),
+        (params.DESK_PENCIL_STATION - 0.026, edge - 0.072, 0.030),
+    )
+
+    bodies, points = [], []
+    for i, (station, x, skew) in enumerate(specs):
+        tail, nose = station + 0.088, station - 0.088
+        bodies.append(
+            _pipe(
+                f"desk_pencil_{i}",
+                collection,
+                [(x, _y(tail), z), (x + skew, _y(nose + 0.016), z)],
+                0.0038,
+                count=6,
+            )
+        )
+        # The sharpened end: the body's own section run down to a point.
+        tip_rings = [
+            _ring_across(nose + 0.016, x + skew, z, 0.0038, count=6),
+            _ring_across(nose + 0.004, x + skew, z, 0.0016, count=6),
+            _ring_across(nose, x + skew, z, 0.0004, count=6),
+        ]
+        tip = grid_to_mesh(
+            f"desk_pencil_tip_{i}", tip_rings, collection, close_rings=True
+        )
+        cap_loop(tip, list(reversed(tip_rings[-1])))
+        points.append(_finish(tip, sharp=40.0, bevel_width=None))
+
+    return bodies, points
+
+
+# --------------------------------------------------------------------------
+# The VHF set
+# --------------------------------------------------------------------------
+
+
+def _build_vhf(collection):
+    """The VHF on the after bulkhead, starboard of the way below.
+
+    A placeholder -- it becomes the exhibit that raises a passing ship -- and it
+    is built like the instruments on the main bulkhead rather than like a box
+    with a label on it, because a placeholder that does not read as the thing it
+    stands for teaches the visitor to ignore it.
+
+    Four things say VHF and nothing else does: a squared black set, a lit
+    display, a pair of round knobs at one end of the face, and a handset on a
+    clip beside it with a coiled cord hanging off it. The cord is the one that
+    carries furthest -- it is the only curve in the whole assembly, and a coil
+    of it against a flat panel is recognisable from across the cabin at a size
+    where the display is two pixels.
+
+    Where it goes is `params.VHF_*`, which explains itself: the panel starboard
+    of the steps is a 50 mm lintel over the quarter berth's entrance inboard,
+    and a clear 240 mm field outboard of x = 0.60. This sits in the field.
+    """
+    width, height, proud = params.VHF_SIZE
+    face_station = params.VHF_STATION            # the panel's own forward face
+    front = face_station - proud
+    x = params.VHF_X
+    z = params.VHF_HEIGHT
+
+    body = _box(
+        "vhf_body", collection,
+        front, face_station,
+        x - width / 2, x + width / 2,
+        z - height / 2, z + height / 2,
+        sharp=30.0, bevel_width=0.003, bevel_segments=2,
+    )
+
+    # The face, a plate set 10 mm inside the body's outline and standing 3 mm
+    # off its front -- so the body reads as a case with a fascia in it.
+    face = _box(
+        "vhf_face", collection,
+        front - 0.003, front,
+        x - width / 2 + 0.010, x + width / 2 - 0.010,
+        z - height / 2 + 0.010, z + height / 2 - 0.010,
+        sharp=30.0, bevel_width=0.0015,
+    )
+
+    # The display, over the inboard two-thirds of the face.
+    screen = _box(
+        "vhf_screen", collection,
+        front - 0.005, front - 0.003,
+        x - width / 2 + 0.018, x + width / 2 - 0.062,
+        z - 0.004, z + height / 2 - 0.018,
+        sharp=30.0, bevel_width=None,
+    )
+
+    # Volume and squelch, at the outboard end where a hand reaching from the
+    # bottom step finds them without the set having to be looked at.
+    knobs = []
+    for i, kx in enumerate((0.048, 0.018)):
+        knob_x = x + width / 2 - kx
+        rings = [
+            _ring_across(front - 0.003, knob_x, z - 0.020, 0.014),
+            _ring_across(front - 0.014, knob_x, z - 0.020, 0.014),
+            _ring_across(front - 0.017, knob_x, z - 0.020, 0.010),
+        ]
+        knob = grid_to_mesh(f"vhf_knob_{i}", rings, collection, close_rings=True)
+        cap_loop(knob, rings[-1])
+        knobs.append(_finish(knob, sharp=40.0, bevel_width=None))
+
+    handset, cord = _vhf_handset(collection, front, x + width / 2, z)
+
+    return {
+        "vhf": join([body, face] + knobs + [handset, cord], "vhf"),
+        "vhf_screen": screen,
+    }
+
+
+def _vhf_handset(collection, front, x_edge, z):
+    """The handset on its clip, and the coiled cord hanging from it.
+
+    The cord is a helix swept by `_pipe`, three and a half turns of it falling
+    from the handset's heel. It hangs below the foot of the bulkhead panel,
+    into the opening over the quarter berth, which looks like an oversight and
+    is not: that opening is where a real handset's cord hangs, because there is
+    nothing else under it, and a cord that stopped dead at the panel's edge
+    would be the thing that looked wrong.
+    """
+    x = x_edge + 0.038
+    body = _box(
+        "vhf_handset", collection,
+        front + 0.012, params.VHF_STATION,
+        x - 0.026, x + 0.026,
+        z - 0.066, z + 0.062,
+        sharp=30.0, bevel_width=0.004, bevel_segments=2,
+    )
+
+    turns, drop, radius = 3.5, 0.062, 0.017
+    steps = 22
+    path = []
+    for i in range(steps + 1):
+        t = i / steps
+        angle = 2 * pi * turns * t
+        path.append(
+            (
+                x + radius * sin(angle) * (0.35 + 0.65 * t),
+                _y(params.VHF_STATION - 0.020 - radius * (1 - cos(angle)) * 0.5),
+                z - 0.070 - drop * t,
+            )
+        )
+    cord = _pipe("vhf_cord", collection, path, 0.0035, count=6)
+
+    return body, cord
+
+
+# --------------------------------------------------------------------------
 # Fine detail -- the things a cabin this size actually has
 # --------------------------------------------------------------------------
 #
@@ -893,43 +1785,278 @@ def _burner(collection, station, x, z):
 # have -- see `blender/_handoff_interior.md` for what was left out and why.
 
 
+BOOK_COVER = 0.0025
+"""Thickness of a board -- front, back and spine, all the one piece of cloth-
+covered card that a case binding is."""
+
+BOOK_PAGE_INSET = 0.004
+"""How far the page block sits inside the boards, at the fore-edge and at head
+and tail. The overhang ("the square") is what a case binding has and a perfect-
+bound paperback does not, and at 4 mm it is the whole reason a book on this
+shelf reads as a book and not as a coloured brick: it puts a line of shadow
+between the cloth and the paper on three sides of every one of them."""
+
+# Each run is (side, first station, [(height, spine, cloth, lean), ...]).
+#
+# `cloth` indexes params.BOOK_CLOTHS; `lean` is the shear, in metres of tip per
+# metre of height, applied to a book that is not standing straight. Sizes are
+# a real shelf's: nothing here is taller than 210 mm, because the shelf has
+# 260 mm of headroom under the deckhead at its forward end and a book that
+# does not fit is a book nobody put there.
+_BOOK_RUNS = (
+    # Starboard, forward: the long run, seen from the forepeak doorway and
+    # across the saloon from the port settee.
+    (1, 3.290, (
+        (0.192, 0.028, 0, 0.00),
+        (0.205, 0.019, 2, 0.00),
+        (0.176, 0.034, 4, 0.00),
+        (0.198, 0.022, 1, 0.00),
+        (0.163, 0.026, 3, 0.09),   # tipped against its neighbour
+        (0.184, 0.031, 2, 0.00),
+        (0.171, 0.018, 0, 0.00),
+    )),
+    # Port, forward of the chart table: a shorter run, because the port shelf
+    # is 1.4 m against starboard's 1.9 and it stops at the joinery.
+    (-1, 3.420, (
+        (0.187, 0.024, 1, 0.00),
+        (0.166, 0.030, 4, 0.00),
+        (0.201, 0.020, 0, 0.00),
+        (0.178, 0.027, 3, 0.07),
+        (0.190, 0.023, 2, 0.00),
+    )),
+    # Starboard, aft: the group at the visitor's own shoulder when the camera
+    # arrives in the cabin. The two placeholders go at the after end of it --
+    # see `_BOOK_PLACEHOLDERS`.
+    (1, 4.640, (
+        (0.181, 0.029, 3, 0.00),
+        (0.196, 0.021, 0, 0.00),
+        (0.169, 0.025, 4, 0.00),
+    )),
+)
+
+_BOOK_PLACEHOLDERS = (
+    # (name, height, spine) -- the two exhibits, in the last cloth of the
+    # palette, gilt-banded, at the after end of the aft starboard run.
+    ("book_resume", 0.209, 0.036),
+    ("book_about", 0.199, 0.032),
+)
+
+
 def _build_books(collection, inner):
-    """A few books on the shelf, propped against the fiddle.
+    """The shelf's books: three runs of them, two of which are exhibits.
 
-    Not a shelf's worth, and only over one settee: a full run of books both
-    sides is more library than a 7.6 m cruiser carries, and the shelf exists to
-    be "ideal for smasaker" generally, not to be a bookcase. This is the one
-    thing on it substantial enough to need the fiddle at all.
+    This used to be four boxes over one settee, with a docstring arguing that a
+    full run both sides is more library than a 7.6 m cruiser carries. That
+    argument was about *quantity* and it is still right -- there are fifteen
+    books here, not a wall of them, and the port run stops well short of the
+    chart table. What it was quietly also doing was excusing four identical
+    brown blocks, and four identical brown blocks is not a small number of
+    books, it is a bad model of any number of them.
+
+    So each book is now built the way a book is made rather than the way a book
+    is shaped. Three pieces:
+
+      the case -- front board, spine and back board, one continuous U of
+      cloth-covered card, so the boards stand proud of what is between them;
+
+      the page block, inset from the case by `BOOK_PAGE_INSET` at the fore-edge
+      and at head and tail, in paper rather than cloth;
+
+      gilt, on the two placeholders only.
+
+    The U is what earns its keep. A solid box has one silhouette and one
+    material, and no amount of colour makes a row of them read as books; a case
+    with a page block inside it has a shadow line down three sides of every
+    book, and the eye reads those lines as *made objects* before it has decided
+    what they are. `_BOOK_RUNS` then does the rest -- six cloths, no two
+    neighbours the same, spines from 18 to 36 mm, and two books tipped over
+    against their neighbours, because a shelf where every book stands to
+    attention is a shelf nobody has ever taken a book off.
+
+    Returns one object per cloth colour, plus the paper and the gilt, so each
+    can carry its own material -- see `params.BOOK_CLOTHS`.
     """
-    sizes = ((0.185, 0.026), (0.205, 0.021), (0.165, 0.031), (0.195, 0.023))
-    side = 1  # starboard, over the settee that runs the shelf's full length
     z0 = params.SHELF_LEVEL + params.SHELF_THICKNESS
+    cases = {i: [] for i in range(len(params.BOOK_CLOTHS) - 1)}
+    placeholder_names = {name for (name, _, _) in _BOOK_PLACEHOLDERS}
+    parts, pages, gilt = {}, [], []
 
-    books = []
-    station = (params.BULKHEAD_AFT + SALOON_END) / 2 - 0.10
-    for i, (height, spine) in enumerate(sizes):
-        out = inner(station, z0)
-        x_in = out - params.SHELF_DEPTH + params.FIDDLE_THICKNESS + 0.008
-        x_out = min(x_in + 0.105, out - 0.015)
-        if x_out <= x_in:
+    for run_index, (side, first, spec) in enumerate(_BOOK_RUNS):
+        station = first
+        aft_limit = SHELF_END[side] - 0.030
+        placeholders = _BOOK_PLACEHOLDERS if run_index == 2 else ()
+
+        books = [(f"book_{run_index}_{i}", h, s, cloth, lean)
+                 for i, (h, s, cloth, lean) in enumerate(spec)]
+        # The placeholders take the last cloth in the palette, whatever it is,
+        # and `None` here means "not one of the pooled cloths" -- they are kept
+        # out as objects of their own.
+        books += [(name, h, s, None, 0.0) for (name, h, s) in placeholders]
+
+        # One pair of offsets for the whole run, taken across the run's own
+        # length and against its tallest book -- see `_book_bounds`.
+        last = min(first + sum(s + 0.0035 for (_, _, s, _, _) in books), aft_limit)
+        bounds = _book_bounds(inner, z0, max(h for (_, h, _, _, _) in books), first, last)
+        if bounds[1] <= bounds[0] + BOOK_COVER * 2:
             continue
-        books.append(
-            _box(
-                f"book_{i}",
-                collection,
-                station,
-                station + spine,
-                side * x_in,
-                side * x_out,
-                z0,
-                z0 + height,
-                sharp=15.0,
-                bevel_width=0.0015,
-            )
-        )
-        station += spine + 0.006
 
-    return join(books, "books")
+        for name, height, spine, cloth, lean in books:
+            if station + spine > aft_limit:
+                break
+            case, block = _book(
+                name, collection, side, station, spine, height, z0, lean, bounds
+            )
+            pages.append(block)
+            if name in placeholder_names:
+                # One object each. The pooled runs join by cloth because
+                # nothing ever needs to address a particular novel, but these
+                # two are exhibits: the app hangs a hotspot on `book_resume`
+                # and another on `book_about`, and it finds them by mesh name.
+                case.name = case.data.name = name
+                parts[name] = case
+                gilt += _book_gilt(
+                    name, collection, side, station, spine, height, z0, bounds
+                )
+            else:
+                cases[cloth].append(case)
+            station += spine + 0.0035
+
+    parts.update(
+        {f"books_{i}": join(objs, f"books_{i}") for i, objs in cases.items() if objs}
+    )
+    parts["book_pages"] = join(pages, "book_pages")
+    parts["book_gilt"] = join(gilt, "book_gilt")
+    return parts
+
+
+def _book_bounds(inner, z0, height, start, end):
+    """Where a run of books stands on the shelf: `(x_in, x_out)` as positive
+    half-offsets, spine inboard, the same pair for every book in the run.
+
+    One pair for the run, and not one per book. A book is a rigid object and a
+    row of them stands in a straight line whatever the shelf beneath does; cut
+    to the hull book by book, a run fans outboard going aft and reads as the
+    shelf being crooked. So the run gets a single offset, and the only question
+    is which station to take it at.
+
+    Both ends, and the tighter answer wins at each edge -- which is not the same
+    station for the two edges, because they are constrained from opposite
+    directions. The topsides move outboard going aft: 60 mm across the saloon,
+    which is half the depth of the shelf. So the fiddle the spines rest against
+    is furthest outboard at the after end of the run, and the hull the fore-edge
+    must stay inside is closest at the forward end. Take one station for both
+    and the run either floats clear of the fiddle or stands through the topsides
+    -- and the first version of this took `BULKHEAD_AFT` for every run on the
+    boat and did the first, floating the after run 70 mm off the shelf it was
+    supposed to be standing on.
+
+    The height matters for the same reason and in the other direction: the hull
+    widens as it rises here, so the narrowest it gets over a book's own height
+    is at the shelf, which is where the fore-edge is measured.
+    """
+    fiddle = max(
+        inner(station, z0) - params.SHELF_DEPTH + params.FIDDLE_THICKNESS
+        for station in (start, end)
+    )
+    x_in = fiddle + 0.006
+    reach = min(
+        min(inner(station, z0), inner(station, z0 + height))
+        for station in (start, end)
+    )
+    return x_in, min(x_in + 0.108, reach - 0.014)
+
+
+def _book(name, collection, side, station, spine, height, z0, lean, bounds):
+    """One case-bound book: the cloth case, and the page block inside it.
+
+    The case is a U in plan -- back board, spine, front board -- lofted between
+    two heights, so it is one closed surface and not three boxes that happen to
+    touch. `lean` shears both pieces by the same amount over the same height, a
+    shear rather than a rotation so the foot stays flat on the shelf: a book
+    tipped 5 degrees off its neighbour is standing on its bottom edge, not
+    balanced on a corner, and at this angle nothing distinguishes the two but
+    the arithmetic.
+    """
+    x_in, x_out = bounds
+    t = BOOK_COVER
+    a, b = station, station + spine
+    top = z0 + height
+
+    def sheared(s, z):
+        """A station, carried over by the lean at this height."""
+        return s + lean * (z - z0)
+
+    def case_ring(z):
+        # Walked as a closed loop: down the spine face, out along the after
+        # board, back in along its inside, across the gap, and out and back
+        # along the forward board.
+        outline = [
+            (a, x_in), (b, x_in), (b, x_out), (b - t, x_out),
+            (b - t, x_in + t), (a + t, x_in + t), (a + t, x_out), (a, x_out),
+        ]
+        return [(side * x, _y(sheared(s, z)), z) for (s, x) in outline]
+
+    rings = [case_ring(top), case_ring(z0)]
+    case = grid_to_mesh(f"{name}_case", rings, collection, close_rings=True)
+    cap_loop(case, rings[0])
+    cap_loop(case, list(reversed(rings[1])))
+    _finish(case, sharp=25.0, bevel_width=0.0008)
+
+    # The page block, inset from the case on the three edges a book's boards
+    # overhang: fore-edge, head and tail. Not at the spine, where the paper is
+    # glued to the case and there is nothing to overhang.
+    inset = BOOK_PAGE_INSET
+    p0, p1 = z0 + inset, top - inset
+    block_rings = [
+        [
+            (side * x, _y(sheared(s, z)), z)
+            for (s, x) in (
+                (a + t, x_in + t), (b - t, x_in + t),
+                (b - t, x_out - inset), (a + t, x_out - inset),
+            )
+        ]
+        for z in (p1, p0)
+    ]
+    block = grid_to_mesh(f"{name}_pages", block_rings, collection, close_rings=True)
+    cap_loop(block, block_rings[0])
+    cap_loop(block, list(reversed(block_rings[1])))
+    _finish(block, sharp=25.0, bevel_width=None)
+
+    return case, block
+
+
+def _book_gilt(name, collection, side, station, spine, height, z0, bounds):
+    """Two gilt bands across the spine of a placeholder book.
+
+    The one thing that can be done about a spine with no title on it. Every
+    texture in this model is world-scale and tiling (`textures.py` says why), so
+    there is no way to land lettering on a 32 mm spine and no honest way to
+    fake one -- a smeared repeat of an alphabet is worse than nothing.
+
+    What a bound book has instead, and what carries at the range the cabin stop
+    actually has on this shelf, is banding: two gilt rules across the spine with
+    the title between them. That reads as "this book is titled" from across the
+    cabin, which is all a placeholder has to do -- the exhibit's own label is
+    DOM, outside the canvas, where text belongs.
+    """
+    x_in = bounds[0]
+    proud = 0.0006
+
+    return [
+        _box(
+            f"{name}_gilt_{i}",
+            collection,
+            station + 0.004,
+            station + spine - 0.004,
+            side * (x_in - proud),
+            side * (x_in + 0.0015),
+            z0 + height * fraction,
+            z0 + height * fraction + 0.004,
+            sharp=25.0,
+            bevel_width=None,
+        )
+        for i, fraction in enumerate((0.66, 0.80))
+    ]
 
 
 def _build_grabrails(collection):
@@ -971,7 +2098,7 @@ def _build_grabrails(collection):
     return join(pieces, "grabrails")
 
 
-def _build_curtains(collection, inner):
+def _build_curtains(collection):
     """A curtain track at each saloon window, with the curtain itself gathered
     to the after end rather than drawn across.
 
@@ -979,23 +2106,31 @@ def _build_curtains(collection, inner):
     cabin, and the brochure's own photographs of boats this size that have them
     fitted keep them open -- a boat lying at anchor with the curtains drawn
     reads as shut up rather than lived in.
+
+    Hung off the cabin side, which is a surface `interior.hull_inner_function`
+    cannot answer for: the window is above the sheer, where there is no hull
+    left, only the deck moulding's band. `deck.cabin_side_x` is the lining's own
+    face and `deck.window_edges` the window's own top and bottom -- both asked
+    for rather than rebuilt here, which is how this went wrong the first time.
+    It measured both edges down from the sheer instead of down from the deck
+    edge and hung the whole assembly a band-height -- 206 mm -- below the window
+    it belongs to, on blank white topsides above the shelf.
     """
     import deck
 
-    sheer = interior.sheer_z
     pieces = []
 
     for w_index, (fwd, aft) in enumerate(params.WINDOWS):
         mid = (fwd + aft) / 2
-        top = sheer(mid) - params.WINDOW_MARGIN_TOP
-        bottom = sheer(mid) - deck.band_height(mid) + params.WINDOW_MARGIN_BOTTOM
+        top, bottom = deck.window_edges(mid)
         if bottom >= top - 0.030:
             continue
 
         for side in (-1, 1):
-            out = inner(mid, top)
-            x_in = out - 0.020
-            x_out = x_in - 0.010
+            # The track is screwed to the lining just under the deck edge; the
+            # curtain hangs inboard of it.
+            x_in = deck.cabin_side_x(mid, top)
+            x_out = x_in - 0.012
 
             pieces.append(
                 _box(
@@ -1188,7 +2323,11 @@ def _build_bilge_hatch(collection):
     its own edge and the pull are what read as a hatch instead of a smear.
     """
     start, end = 4.300, 4.600
-    half = params.SOLE_HALF_WIDTH - 0.030
+    # 480 x 300, over the keel bolts. Was the sole's own width less 30 mm, which
+    # was the same 480 while the walkway was 540 -- and became a 910 mm plate
+    # spanning the boat the moment the owner's brief widened it. A bilge hatch
+    # is sized by what is under it, not by what is either side of it.
+    half = 0.240
     z = params.SOLE_LEVEL
     proud = 0.004
     rim = 0.016

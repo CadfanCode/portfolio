@@ -33,7 +33,7 @@ Blender is installed as a Flatpak, which has two consequences worth knowing:
     sails.py          mainsail, genoa and the registration on it
     interior.py       the moulded inner hull and the deckhead over it
     joinery.py        bulkheads, galley, steps, table, berths
-    fitout.py         cushions, backrests, shelf, locker doors, sink, cooker
+    fitout.py         cushions, pillows, shelf and books, chart table, VHF
     textures.py       every texture image, generated in numpy at build time
     materials.py      the palette, and which geometry gets which material
     lib/curves.py     shape-preserving interpolation, section shapes
@@ -187,12 +187,26 @@ headroom at the galley -- which is checked in *both* directions, because the
 brochure sells standing headroom there as the best thing about the boat, and
 that only means anything if there is not standing headroom elsewhere.
 
-The fit-out -- cushions, backrests, the shelf, the locker doors, the sink and
-cooker -- is `fitout.py`, and it is to `interior.py` what `fittings.py` is to
-`deck.py`: nothing in it is structural and all of it is what makes the cabin read
-as somewhere someone sleeps rather than as a moulding with furniture in it. Three
-of the boat's five berths are in here and none of them looks like a berth until
-there is something on it.
+The fit-out -- cushions and the pillows on them, backrests, the shelf and the
+books on it, the chart table's furniture, the VHF -- is `fitout.py`, and it is to
+`interior.py` what `fittings.py` is to `deck.py`: nothing in it is structural and
+all of it is what makes the cabin read as somewhere someone sleeps rather than as
+a moulding with furniture in it. Three of the boat's five berths are in here and
+none of them looks like a berth until there is something on it.
+
+Four things in it are placeholders for portfolio exhibits rather than parts of
+the boat: the safe on the chart table, the VHF on the after bulkhead, and the
+two gilt-banded books at the after end of the starboard shelf. They are modelled
+as carefully as everything around them on purpose -- an exhibit that does not
+read as the object it stands for teaches a visitor to ignore it -- and they are
+findable from the app by mesh name (`desk_safe`, `vhf`, `books_5`), which is how
+an `Exhibit`'s hotspot will be hung on them.
+
+The pentry the brochure describes -- a sink and a two-burner cooker in this same
+worktop -- is no longer built. Owner's brief: the block is a chart table now. The
+builders are all still here and unwired (`fitout._build_galley_fittings` and the
+boolean in `joinery._build_galley`), because the pentry is what the block's own
+dimensions are sourced to and losing that would lose the citations with it.
 
 It goes through the clearance check below for exactly the reason the joinery
 does. The settee cushions were cut to the topsides at their top edge and stood

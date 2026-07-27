@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber'
 import { Suspense } from 'react'
 import { PortfolioWorld } from './scene/PortfolioWorld'
+import { SoundToggle } from './SoundToggle'
 import { ExhibitOverlay } from './scene/exhibits/ExhibitOverlay'
 import './App.css'
 
@@ -17,6 +18,10 @@ function App() {
         </Suspense>
       </Canvas>
       <ExhibitOverlay />
+      {/* Outside the Canvas, and outside the Suspense boundary with it: the
+          mute must be there while the boat is still loading, because the sound
+          is not waiting for the boat. */}
+      <SoundToggle />
     </>
   )
 }

@@ -23,6 +23,7 @@ path: it ends in the cabin, at arm's length from the joinery.
 """
 
 import bpy
+import numpy as np
 
 import deck
 import fittings
@@ -108,6 +109,35 @@ def _pbr(name, colour, roughness=0.4, metallic=0.0, coat=0.0, coat_roughness=0.0
     bsdf.inputs["Roughness"].default_value = roughness
     bsdf.inputs["Metallic"].default_value = metallic
     _coat(bsdf, coat, coat_roughness)
+    return material
+
+
+def _emissive(name, colour, strength=1.0, base=(0.02, 0.02, 0.02), roughness=0.5):
+    """A surface that gives off light rather than only taking it.
+
+    The one material kind this palette had no answer for, and the cabin now has
+    two things that need it: the shade of the desk lamp, and the VHF's display.
+
+    It is emission and not a light. `build.py` exports with
+    `export_lights=False` -- glTF's punctual lights are an extension, and the
+    app's own lighting rig is authored in `PortfolioWorld` where it can follow
+    the weather -- so nothing here can put a lamp in the scene. What emission
+    does is make the *source* look like one: a shade whose inside is brighter
+    than anything around it, which is what tells an eye that a lamp is switched
+    on. The pool of light under it is the app's job, and the two have to agree.
+
+    `Emission Strength` above 1 exports as `KHR_materials_emissive_strength`,
+    which three.js reads; below 1 it is folded into the emissive factor. Either
+    way it survives the trip, which a shader-node glow would not.
+    """
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    bsdf = material.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (*base, 1.0)
+    bsdf.inputs["Roughness"].default_value = roughness
+    bsdf.inputs["Metallic"].default_value = 0.0
+    bsdf.inputs["Emission Color"].default_value = (*colour, 1.0)
+    bsdf.inputs["Emission Strength"].default_value = strength
     return material
 
 
@@ -395,16 +425,38 @@ def create():
         "sailcloth", colour=sail_colour, roughness_value=0.66, normal=sail_normal, tile=1.1
     )
 
-    # Cushion fabric, the warmest thing on the boat. The brochure's interior
-    # photographs are teak, cream vinyl and brown cloth, and the cloth is what
-    # stops the other two reading as a bathroom. Soft is roughness and bump
-    # together: a matte surface whose highlight, such as it is, breaks up over
-    # a weave rather than running smooth.
+    # Cushion fabric, the warmest thing on the boat -- and now the only strong
+    # colour below deck.
+    #
+    # It used to be brown, sourced to the brochure's own interior photographs:
+    # teak, cream vinyl and brown cloth. That was faithful and it was also the
+    # whole problem. Teak is brown, the sole is brown, the joinery is brown, and
+    # a brown cushion on top of it left a cabin with one hue in it -- which is
+    # what the owner saw and asked to have fixed. Marine blue is the replacement
+    # and it is not an arbitrary one: it is the boat's own topside band
+    # (`palette["band"]`), the one colour the hull already carries, brought
+    # below. The cabin and the outside of the boat now agree about what colour
+    # this boat is.
+    #
+    # Patterned, not plain. A single flat blue over eight square metres of
+    # settee is a paint job; a woven stripe is what marine upholstery of the
+    # period actually is, and it is the cheapest possible thing to add -- one
+    # extra mask multiplied into the colour image. `stripes` at a duty of 0.16
+    # is a pinstripe: pairs of fine lighter lines in the ground, close enough
+    # together to read as texture at the far end of the cabin and as a stripe
+    # at arm's length, which is the range the camera path actually covers.
+    #
+    # Soft is roughness and bump together: a matte surface whose highlight, such
+    # as it is, breaks up over a weave rather than running smooth.
     cushion_weave = textures.woven_cloth((_STANDARD, _STANDARD), threads=52, seed=60)
+    cushion_stripe = textures.stripes((_STANDARD, _STANDARD), 6, duty=0.16, axis=1)
     cushion_colour = textures.colour_image(
-        "cushion_colour", (0.335, 0.245, 0.180), cushion_weave - 0.5, amount=0.10
+        "cushion_colour",
+        (0.088, 0.145, 0.245),
+        (cushion_weave - 0.5) + cushion_stripe * 1.15,
+        amount=0.14,
     )
-    cushion_height = (cushion_weave - 0.5) * 0.0018
+    cushion_height = (cushion_weave - 0.5) * 0.0018 + cushion_stripe * 0.0006
     cushion_normal = textures.make_image(
         "cushion_normal",
         textures.normal_from_height(cushion_height, strength=13.0),
@@ -419,6 +471,57 @@ def create():
     # is there and cannot resolve.
     palette["cushion"] = _textured(
         "cushion", colour=cushion_colour, roughness_value=0.86, normal=cushion_normal, tile=0.17
+    )
+
+    # The two pillow fabrics. Both borrow the cushion's own weave and its normal
+    # map, run at a smaller tile -- a scatter cushion is a smaller object than a
+    # settee and a thread on it should not be bigger -- with the pattern doing
+    # all the work of telling them apart.
+    #
+    # Borrowed rather than generated fresh, unlike `curtain`, which makes its
+    # own weave at its own thread count. The difference is what the two are: a
+    # curtain is a different cloth from a cushion and reads wrong sharing one, a
+    # scatter cushion is upholstery exactly like the settee it sits on. A second
+    # 512-pixel normal map for a surface indistinguishable from one already in
+    # the file is 800 KB of GLB for nothing, and normal maps are the one thing
+    # here that cannot be JPEG (see `textures.make_image`).
+    #
+    # Two fabrics, and not one, because the pillows go on in pairs and a pair of
+    # identical cushions is one cushion modelled twice. Two, and not six,
+    # because this is a 7.6 m boat and not a soft-furnishings catalogue.
+    pillow_weave = cushion_weave
+
+    # A Breton stripe: broad navy bands on off-white, which is the one pattern
+    # that is nautical without being a print of an anchor on a cushion.
+    breton = textures.stripes((_STANDARD, _STANDARD), 5, duty=0.42, axis=0)
+    stripe_rgba = np.empty((_STANDARD, _STANDARD, 4), dtype=np.float32)
+    ground = np.array([0.760, 0.735, 0.680])
+    navy = np.array([0.075, 0.125, 0.225])
+    stripe_rgb = ground + (navy - ground) * breton[..., None]
+    stripe_rgb *= (1.0 + 0.10 * (pillow_weave - 0.5))[..., None]
+    stripe_rgba[..., :3] = np.clip(stripe_rgb, 0.0, 1.0)
+    stripe_rgba[..., 3] = 1.0
+    palette["pillow_stripe"] = _textured(
+        "pillow_stripe",
+        colour=textures.make_image(
+            "pillow_stripe_colour", stripe_rgba, file_format="JPEG"
+        ),
+        roughness_value=0.88,
+        normal=cushion_normal,
+        tile=0.24,
+    )
+
+    # And a plain one to sit next to it: a warm sailcloth cream, which is the
+    # colour the deckhead already is, so the pair read as belonging to the boat
+    # rather than as two cushions from different rooms.
+    palette["pillow_plain"] = _textured(
+        "pillow_plain",
+        colour=textures.colour_image(
+            "pillow_plain_colour", (0.545, 0.480, 0.395), pillow_weave - 0.5, amount=0.11
+        ),
+        roughness_value=0.90,
+        normal=cushion_normal,
+        tile=0.14,
     )
 
     # Sailcover canvas: a coarser, plainer weave than the cushions -- acrylic
@@ -679,8 +782,131 @@ def create():
         tile=0.12,
     )
 
-    # Book cloth. Dark, matte, and warm enough not to read as a row of bricks.
-    palette["book_cloth"] = _pbr("book_cloth", (0.185, 0.135, 0.115), roughness=0.80)
+    # --- The shelf, and the two exhibits on it.
+
+    # Book cloth. One weave and one normal map, shared, with a colour image per
+    # binding -- `params.BOOK_CLOTHS` says why there are six and what each is
+    # for. The weave is the point: buckram is a coarse, sized linen and it is
+    # the only thing that separates a cloth binding from a painted block at the
+    # range the cabin stop has on this shelf. Small tile, because a book is a
+    # small object and a 200 mm weave on a 30 mm spine is a tablecloth.
+    book_weave = textures.woven_cloth((_SMALL, _SMALL), threads=34, seed=142)
+    book_normal = textures.make_image(
+        "book_normal",
+        textures.normal_from_height((book_weave - 0.5) * 0.0011, strength=16.0),
+        non_color=True,
+    )
+    for index, colour in enumerate(params.BOOK_CLOTHS):
+        palette[f"book_cloth_{index}"] = _textured(
+            f"book_cloth_{index}",
+            colour=textures.colour_image(
+                f"book_cloth_{index}_colour", colour, book_weave - 0.5, amount=0.09
+            ),
+            roughness_value=0.82,
+            normal=book_normal,
+            tile=0.035,
+        )
+
+    # The page block. Not white: paper on a boat goes cream in a season and
+    # foxed in a decade, and a page block is seen edge-on -- what shows is the
+    # stack of edges, which is why this carries a fine banding along one axis
+    # rather than being flat. Slightly rough, no coat: nothing about a cut page
+    # edge is shiny.
+    page_grain = textures.stripes((_SMALL, _SMALL), 150, duty=0.5, softness=1.0, axis=0)
+    palette["book_pages"] = _textured(
+        "book_pages",
+        colour=textures.colour_image(
+            "book_pages_colour", (0.735, 0.700, 0.605), page_grain - 0.5, amount=0.07
+        ),
+        roughness_value=0.72,
+        tile=0.030,
+    )
+
+    # --- The chart table.
+
+    # The chart itself: the one place in this model where a texture is the
+    # object rather than its finish. See `textures.chart_paper`.
+    palette["chart"] = _textured(
+        "chart",
+        colour=textures.make_image(
+            "chart_colour",
+            np.concatenate(
+                [
+                    textures.chart_paper((_STANDARD, _STANDARD), seed=311),
+                    np.ones((_STANDARD, _STANDARD, 1), dtype=np.float32),
+                ],
+                axis=2,
+            ).astype(np.float32),
+            file_format="JPEG",
+        ),
+        roughness_value=0.74,
+        tile=0.62,
+    )
+
+    # Green enamel, for the lamp shade. A banker's-lamp green, which is a
+    # deliberate anachronism on a Swedish production boat and the right one:
+    # it is the only saturated colour in the after end of the cabin, it is
+    # instantly readable as "desk", and a lamp the same colour as everything
+    # around it is a lamp nobody notices is there.
+    palette["enamel_green"] = _pbr(
+        "enamel_green", (0.055, 0.135, 0.085), roughness=0.22,
+        coat=0.5, coat_roughness=0.05,
+    )
+
+    # What the lamp is throwing. Warm, and bright enough to blow out against a
+    # cabin lit at daylight levels -- an emissive surface has to beat the
+    # ambient it sits in or it reads as pale paint. See `_emissive`.
+    palette["lamp_glow"] = _emissive(
+        "lamp_glow", (1.0, 0.845, 0.620), strength=7.0, base=(0.9, 0.85, 0.78)
+    )
+
+    # Briar, for the pipe. Not `teak`: teak is a plank material, tiled and
+    # grained at plank scale, and run over a 40 mm bowl it is a stripe. This is
+    # a close, swirling grain at a tile the size of the object, with the deep
+    # polish a smoked pipe has and nothing else in the cabin does.
+    briar_grain = textures.fbm((_SMALL, _SMALL), (7, 7), octaves=4, seed=143)
+    palette["briar"] = _textured(
+        "briar",
+        colour=textures.colour_image(
+            "briar_colour", (0.175, 0.088, 0.048), briar_grain - 0.5, amount=0.10
+        ),
+        roughness_value=0.24,
+        tile=0.05,
+        coat=0.4,
+        coat_roughness=0.10,
+    )
+
+    # Pencil lacquer. Yellow, because a pencil is, and because it is 8 mm of
+    # object that has to be found by eye on a chart.
+    palette["paint_yellow"] = _pbr(
+        "paint_yellow", (0.62, 0.44, 0.055), roughness=0.30,
+        coat=0.4, coat_roughness=0.08,
+    )
+
+    # The safe: a hard, dark, satin enamel over steel. Nearly black with a
+    # green in it, which is what small strongboxes of every era actually are
+    # and is also the only way to keep it from reading as a hole in the
+    # worktop -- pure black below deck is a silhouette, not an object.
+    palette["safe_paint"] = _textured(
+        "safe_paint",
+        colour_value=(0.052, 0.062, 0.058),
+        roughness_value=0.34,
+        normal=metal_normal,
+        tile=0.20,
+        coat=0.25,
+        coat_roughness=0.12,
+    )
+
+    # --- The VHF.
+
+    # Its display, lit. Cold against the desk lamp's warm, which is most of
+    # what makes an instrument read as electronic rather than as a painted
+    # panel, and dimmer than the lamp because a backlight is not a light
+    # source you look into.
+    palette["vhf_screen"] = _emissive(
+        "vhf_screen", (0.30, 0.72, 0.66), strength=1.3, base=(0.04, 0.09, 0.09),
+        roughness=0.18,
+    )
 
     return palette
 
@@ -720,22 +946,11 @@ def assign_split(obj, below, above, plane_z=0.0, axis="z"):
 
 
 def _bisect(obj, plane_z, axis):
-    """Cut the mesh along a plane, leaving both halves joined."""
-    import bmesh
+    """Cut the mesh along an axis-aligned plane, leaving both halves joined."""
+    from lib.mesh import bisect
 
     normal = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}[axis]
-    origin = tuple(plane_z * n for n in normal)
-
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    bmesh.ops.bisect_plane(
-        bm,
-        geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
-        plane_co=origin,
-        plane_no=normal,
-    )
-    bm.to_mesh(obj.data)
-    bm.free()
+    bisect(obj, tuple(plane_z * n for n in normal), normal)
 
 
 NONSLIP_EDGE_MARGIN = 0.090
@@ -894,6 +1109,11 @@ def apply(built, band_surface):
 
     assign(built.get("windows"), palette["glass"])
     assign(built.get("forehatch_pane"), palette["glass"])
+    # The window openings are lined in the cabin's own colour rather than the
+    # band's. They are seen from inside far more than from out -- from the water
+    # a reveal is 18 mm of edge behind a smoked pane -- and from inside they are
+    # continuous with the lining they are cut through.
+    assign(built.get("window_reveals"), palette["vinyl"])
     for name in ("anchorbox", "forehatch", "companionway", "cockpit_lids"):
         assign(built.get(name), palette["gelcoat"])
 
@@ -977,6 +1197,7 @@ def apply(built, band_surface):
 
     for name in (
         "bulkheads",
+        "aft_bulkhead",
         "galley",
         "quarter_berth",
         "steps",
@@ -987,7 +1208,6 @@ def apply(built, band_surface):
         assign(built.get(name), palette["teak"])
 
     assign(built.get("mast_post"), palette["alloy"])
-    assign(built.get("galley_fittings"), palette["chrome"])
 
     # The bulkhead brass: three objects rather than one, for the three materials
     # a glazed instrument is -- the brass case, the pale dial behind the glass,
@@ -997,8 +1217,22 @@ def apply(built, band_surface):
     assign(built.get("instrument_dials"), palette["plastic_white"])
     assign(built.get("instrument_glass"), palette["glass"])
 
+    # Every soft surface below deck is one material: settee and berth cushions,
+    # the saloon backrests, and the forepeak bumper that comes back joined to
+    # them. Owner's brief was that the blue should reach all of them including
+    # the bow, and it does so here by having been true all along -- there is one
+    # `cushion` and these are the two objects made of it, so recolouring the
+    # cabin was a change to a colour and not to a list.
     for name in ("cushions", "backrests"):
         assign(built.get(name), palette["cushion"])
+
+    # The pillows, in the two fabrics, and the cord round every one of their
+    # seams. The piping is `rope` and that is not a stand-in: upholstery cord
+    # is a laid three-strand exactly like a rope, at a fifth of the diameter,
+    # and `rope`'s whole texture is the over-and-under of that lay.
+    assign(built.get("pillows_stripe"), palette["pillow_stripe"])
+    assign(built.get("pillows_plain"), palette["pillow_plain"])
+    assign(built.get("pillow_piping"), palette["rope"])
 
     # --- The cabin's small stuff.
     #
@@ -1016,6 +1250,38 @@ def apply(built, band_surface):
         assign(built.get(name), palette["teak"])
 
     assign(built.get("cabin_lamp"), palette["chrome"])
-    assign(built.get("books"), palette["book_cloth"])
+
+    # --- The shelf. One object per binding, because glTF gives a mesh one
+    # material and a shelf of one-coloured books is what this used to be. The
+    # loop is over the palette's own list rather than over a count written
+    # here, so adding a seventh cloth is one line in `params.BOOK_CLOTHS`.
+    #
+    # All but the last: the last cloth belongs to the two placeholder books,
+    # which are objects of their own rather than a pool, so that the app can
+    # hang one exhibit on each by mesh name.
+    for index in range(len(params.BOOK_CLOTHS) - 1):
+        assign(built.get(f"books_{index}"), palette[f"book_cloth_{index}"])
+    for name in ("book_resume", "book_about"):
+        assign(built.get(name), palette[f"book_cloth_{len(params.BOOK_CLOTHS) - 1}"])
+    assign(built.get("book_pages"), palette["book_pages"])
+    assign(built.get("book_gilt"), palette["brass"])
+
+    # --- The chart table. Five objects and seven materials, which is the whole
+    # argument for taking the sink and the hob out: a worktop with a chart, a
+    # lamp, a pipe and a safe on it is worth more of both than a worktop with a
+    # stainless bowl in it, at the one stop the camera path ends at.
+    assign(built.get("desk_lamp"), palette["brass"])
+    assign(built.get("desk_lamp_shade"), palette["enamel_green"])
+    assign(built.get("desk_lamp_glow"), palette["lamp_glow"])
+    assign(built.get("desk_chart"), palette["chart"])
+    assign(built.get("desk_safe"), palette["safe_paint"])
+    assign(built.get("desk_safe_brass"), palette["brass"])
+    assign(built.get("desk_pipe"), palette["briar"])
+    assign(built.get("desk_pipe_stem"), palette["plastic_black"])
+    assign(built.get("desk_pencils"), palette["paint_yellow"])
+
+    # --- The VHF: the set, and its display lit behind the fascia.
+    assign(built.get("vhf"), palette["plastic_black"])
+    assign(built.get("vhf_screen"), palette["vhf_screen"])
 
     return palette

@@ -19,6 +19,7 @@ import { CameraRig } from './CameraRig'
 import { Effects } from './Effects'
 import { EnvSky } from './EnvSky'
 import { Ocean } from './Ocean'
+import { Soundscape } from './Soundscape'
 import { Weather } from './Weather'
 import { sampleConditions } from './conditions'
 import { Exhibits } from './exhibits/Exhibits'
@@ -175,6 +176,14 @@ export function PortfolioWorld() {
 
       <Weather />
 
+      {/* The sea, the wind, the rig and the gulls, synthesised rather than
+          played back — see `audio/soundscape.ts`. In the tree beside `Weather`
+          because it is the same weather: both read `sampleConditions` at the
+          frame's own time, so what you hear and what you see are one front.
+          Outside the boat frame, since it has no position — it is the world's
+          ambience, not a source on the hull. */}
+      <Soundscape />
+
       {/* The reflection cubemap. It bakes the gradient dome — a real horizon and
           a hot sun — so anything glossy on the boat reflects a sky that meets a
           sea, not a flat blob. 512 is baked once, so it costs a single render and
@@ -198,6 +207,24 @@ export function PortfolioWorld() {
             frame, so they ride with it. */}
         <pointLight position={[0, 1.0, 0.5]} intensity={2.6} distance={5} decay={2} color="#eef3ff" />
         <pointLight position={[0, 0.85, -2.1]} intensity={1.3} distance={3.5} decay={2} color="#e8eefc" />
+        {/* The desk lamp on the chart table. The GLB carries the fitting and an
+            emissive disc across the mouth of its shade — so it *looks* lit — but
+            `blender/build.py` exports with `export_lights=False`, so nothing in
+            the model can cast the pool of light under it. This is that pool.
+
+            Its position is the shade's own, converted once from the numbers that
+            place the lamp: `params.DESK_LAMP_X + 0.170` and `DESK_LAMP_STATION +
+            0.180` are where `fitout._desk_lamp` hangs the shade, and glTF's
+            y-up export maps Blender (x, y, z) to (x, z, -y). Warm and short-
+            range on purpose: it has to read as a lamp throwing light on a chart,
+            not as a second sun below deck, so it barely reaches the far settee. */}
+        <pointLight
+          position={[-0.88, 0.736, 0.9725]}
+          intensity={1.1}
+          distance={1.6}
+          decay={2}
+          color="#ffd9a0"
+        />
         <Cabin />
         <CabinHatch />
         <Exhibits />

@@ -24,6 +24,7 @@ import params
 from lib.curves import Curve
 from lib.mesh import (
     bevel,
+    bisect,
     cap_loop,
     face_towards,
     grid_to_mesh,
@@ -90,6 +91,7 @@ def build(collection):
         "forehatch": frame,
         "forehatch_pane": pane,
         "windows": _build_windows(collection, sheer, half_beam),
+        "window_reveals": _build_reveals(collection, sheer, half_beam),
     }
 
     # Nothing on a real deck moulding has a mathematically sharp edge -- a
@@ -143,7 +145,11 @@ def _crown(edge_x):
 
 
 BAND_POINTS = 3
-"""Points down the topside band, deck edge to rubrail."""
+"""Points down the topside band, deck edge to rubrail.
+
+Three because that is what the window openings need: a rung on the top edge of
+the opening, a rung on the bottom edge, and the rubrail. `band_ladder` places
+them and is the thing to change if this number ever does."""
 
 
 _CABIN_BAND = Curve(params.CABIN_BAND)
@@ -262,11 +268,36 @@ def _band_points(edge_x, edge_z, station):
     height = band_height(station)
     deck_x = max(0.0, edge_x - params.BAND_TUMBLE)
 
-    points = []
-    for i in range(1, BAND_POINTS + 1):
-        t = i / BAND_POINTS
-        points.append((_lerp(deck_x, edge_x, t), edge_z + height * (1 - t)))
-    return points
+    return [
+        (_lerp(deck_x, edge_x, t), edge_z + height * (1 - t))
+        for t in band_ladder(station)
+    ]
+
+
+def band_ladder(station):
+    """Where the band's points fall between the deck edge (0) and the rubrail (1).
+
+    The band's section is a straight line -- `_band_points` lerps x and z on the
+    same parameter -- so *where* along it the intermediate points sit changes
+    nothing whatever about the surface. This trades on that: the two inner rungs
+    are put on the window opening's top and bottom edges, which costs the shape
+    nothing and buys the loft an edge to stop at. The opening is then a row of
+    faces left out (see `band_aperture_skip`) rather than a boolean, which is
+    the only other way to get a hole in a generated skin and the one this file
+    has turned down twice already.
+
+    Clamped so the rungs stay in order and stay spread out. Aft of the cockpit
+    the band is a 95 mm coaming with no window anywhere near it, and the
+    window's margins asked of a band that shallow put both rungs in the bottom
+    third of it or swapped them over.
+    """
+    height = band_height(station)
+    if height <= 0.0:
+        return [i / BAND_POINTS for i in range(1, BAND_POINTS + 1)]
+
+    top = min((params.WINDOW_MARGIN_TOP + params.WINDOW_LAP_EDGES) / height, 0.40)
+    bottom = min((params.WINDOW_MARGIN_BOTTOM + params.WINDOW_LAP_EDGES) / height, 0.40)
+    return [top, 1.0 - bottom, 1.0]
 
 
 def deck_edge(edge_x, edge_z, station):
@@ -455,17 +486,34 @@ def forehatch_outline(inset=0.0):
 
 
 def underside_section(station, thickness):
-    """The deck moulding's underside at a station: the cabin's ceiling.
+    """The deck moulding's underside at a station: the cabin's ceiling above the
+    deck edge, and the cabin's side below it.
 
-    The forward deck section, dropped by the moulding's thickness. Built from
-    the same `_forward_section` the deck itself is, for the reason
+    The forward deck section, taken to the other side of the moulding. Built
+    from the same `_forward_section` the deck itself is, for the reason
     `height_function` exists for the rig: the interior has to meet the real
-    deck, and a ceiling given curves of its own drifts out of step with the
-    roof above it the moment either is re-authored.
+    deck, and a ceiling given curves of its own drifts out of step with the roof
+    above it the moment either is re-authored.
 
-    Dropped vertically rather than offset along the surface normal. The deck is
-    within a few degrees of horizontal everywhere the cabin is under it, so the
-    two differ by less than the thickness itself.
+    Down to the deck edge that means dropping it vertically. The deck is within
+    a few degrees of horizontal everywhere the cabin is under it, so a vertical
+    drop and a true offset along the normal differ by less than the thickness
+    itself.
+
+    The band is the opposite case and needs the opposite treatment. It is within
+    four degrees of *vertical*, so dropping it 22 mm in z moved it 1.5 mm
+    inboard -- and a lining 1.5 mm inside the topside it lines is not a lining,
+    it is a second copy of the same surface fighting the first for every pixel.
+    From the saloon that is what the windows were: a dark seam in a white wall,
+    with the band's own colour flickering through it. So the band is offset
+    inboard instead.
+
+    Offset by the *liner's* thickness rather than the deck's, which is the one
+    number here that is not the moulding's own. The two skins meet at the
+    rubrail, and `interior._liner_half` ends its last point exactly
+    `LINER_THICKNESS` inside the hull there. Taking the same figure lands the
+    cabin side on that point instead of 4 mm inside it, and the join between the
+    hull liner and the cabin side is a line rather than a ledge.
     """
     section = _forward_section(
         station,
@@ -474,7 +522,12 @@ def underside_section(station, thickness):
         Curve(params.COACHROOF_HALF_WIDTH),
         Curve(params.COACHROOF_HEIGHT),
     )
-    return [(x, y, z - thickness) for (x, y, z) in section]
+    ceiling = [(x, y, z - thickness) for (x, y, z) in section[:-BAND_POINTS]]
+    side = [
+        (max(0.0, x - params.LINER_THICKNESS), y, z)
+        for (x, y, z) in section[-BAND_POINTS:]
+    ]
+    return ceiling + side
 
 
 def _deck_surface(station, raw_z, edge_x, crown):
@@ -502,13 +555,20 @@ def _build_forward(collection, sheer, half_beam):
     roof_half = Curve(params.COACHROOF_HALF_WIDTH)
     roof_height = Curve(params.COACHROOF_HEIGHT)
 
-    stations = _stations(0.0, params.COACHROOF_END, 130)
+    stations = window_stations(_stations(0.0, params.COACHROOF_END, 130))
     rings = [
         _forward_section(s, sheer, half_beam, roof_half, roof_height)
         for s in stations
     ]
 
-    obj = grid_to_mesh("deck_forward", rings, collection)
+    # The windows are holes in this skin, not decals on it. Left out here rather
+    # than cut afterwards -- see `band_aperture_skip`.
+    obj = grid_to_mesh(
+        "deck_forward",
+        rings,
+        collection,
+        skip=band_aperture_skip(stations, len(rings[0])),
+    )
     mirror_x(obj)
 
     # The aft end is deliberately left open. It used to be capped here, and the
@@ -755,6 +815,26 @@ def cockpit_surface_function():
     return height
 
 
+def cockpit_offsets(station):
+    """The half-offsets the after moulding is actually lofted at, ascending.
+
+    Anything cut to the cockpit's section wants these rather than a spread of
+    its own. That section is not a curve: it steps 230 mm up at the seat nose
+    and another 380 up the well side, over 20 and 45 mm of half-offset, and both
+    steps are smoothstepped -- so they are S-shaped, and a chord across any part
+    of an S lies outside it somewhere. Sampled anywhere but at the moulding's
+    own offsets, a panel cut to this stands through it.
+
+    The band is dropped. It is the rubbing strake's three points, outside the
+    topsides and below the deck edge, and nothing under the cockpit is cut to
+    those -- `_face_boundary` drops them for its own version of this reason.
+    """
+    sheer = Curve(params.SHEER)
+    half_beam = Curve(params.HALF_BEAM)
+    section = _aft_section(station, sheer, half_beam)[:-BAND_POINTS]
+    return [abs(x) for (x, _, _) in section]
+
+
 def _aft_section(station, sheer, half_beam):
     """One transverse section: centreline on the cockpit sole, out across the
     seat, up the well side, then the side deck to the sheer."""
@@ -963,6 +1043,94 @@ def _footwell_presence(station):
 # --------------------------------------------------------------------------
 
 
+def window_edges(station):
+    """Top and bottom of the *pane* at a station, as heights: `(top, bottom)`.
+
+    One definition, read by the pane itself and by anything hung beside it. It
+    used to be two, and the second one was wrong: `fitout._build_curtains`
+    measured both edges down from the sheer rather than down from the deck edge,
+    which is the top of the band and 206 mm higher, and hung its track a whole
+    band-height below the window it belonged to.
+    """
+    raw_x, raw_z = _sheer_edge(Curve(params.SHEER), Curve(params.HALF_BEAM), station)
+    _, top_z = deck_edge(raw_x, raw_z, station)
+    return top_z - params.WINDOW_MARGIN_TOP, raw_z + params.WINDOW_MARGIN_BOTTOM
+
+
+def window_apertures():
+    """The openings the panes cover, as `(forward station, aft station)`.
+
+    One per window in `params.WINDOWS`, taken in from the pane's own outline by
+    the lap that bonds it. Only the ends are given here: the top and bottom
+    edges are not free to be anything, because they are `band_ladder`'s two
+    inner rungs. `aperture_edges` reads them back off it.
+    """
+    return [
+        (forward + params.WINDOW_LAP_ENDS, aft - params.WINDOW_LAP_ENDS)
+        for (forward, aft) in params.WINDOWS
+    ]
+
+
+def aperture_edges(station):
+    """Top and bottom of the *opening* at a station, as heights.
+
+    Read off `band_ladder` rather than off the margins directly, so the collar
+    that lines the opening cannot disagree by a fraction of a millimetre with
+    the faces that were left out to make it.
+    """
+    raw_x, raw_z = _sheer_edge(Curve(params.SHEER), Curve(params.HALF_BEAM), station)
+    _, top_z = deck_edge(raw_x, raw_z, station)
+    height = band_height(station)
+    ladder = band_ladder(station)
+    return top_z - height * ladder[0], top_z - height * ladder[1]
+
+
+def cabin_side_x(station, z):
+    """Half-beam of the cabin side's *inner* face at a height in the band.
+
+    The lining `underside_section` builds, asked for as a number rather than as
+    a section -- for anything fixed to the cabin side above the sheer, where
+    `interior.hull_inner_function` has run out of hull to answer with.
+    """
+    raw_x, raw_z = _sheer_edge(Curve(params.SHEER), Curve(params.HALF_BEAM), station)
+    surface = _band_surface_x(raw_x, raw_z, station, z)
+    return max(0.0, surface - params.LINER_THICKNESS)
+
+
+def window_stations(stations):
+    """A station list with the window openings' ends added to it.
+
+    An opening bounded by whole faces has to have a section on each end of it,
+    or the hole starts and stops at whatever station the even spread happened to
+    put nearest -- up to half a spacing out, and out by a different amount in
+    the deck and in the ceiling, which is the one place the two must agree.
+    Sorted in and de-duplicated, the same way `interior._liner_stations` closes
+    the end of a settee.
+    """
+    ends = [s for span in window_apertures() for s in span]
+    lo, hi = stations[0], stations[-1]
+    return sorted(set(stations) | {s for s in ends if lo <= s <= hi})
+
+
+def band_aperture_skip(stations, width):
+    """A `grid_to_mesh` skip that leaves the window openings out of a skin whose
+    sections end with `_band_points`.
+
+    Both skins either side of the opening take the same one: the deck's own
+    band, so you can see in, and the cabin lining behind it, so you can see out.
+    Give it the station list the rings were built from and the width of a ring.
+    """
+    row = width - BAND_POINTS  # between the ladder's two inner rungs
+
+    def skip(i, j):
+        if j != row:
+            return False
+        middle = (stations[i] + stations[i + 1]) / 2
+        return any(f <= middle <= a for (f, a) in window_apertures())
+
+    return skip
+
+
 def _build_windows(collection, sheer, half_beam):
     """The cabin windows, let into the topside band.
 
@@ -974,6 +1142,11 @@ def _build_windows(collection, sheer, half_beam):
     These are the single most recognisable thing about the boat, and the first
     version of this deck had none: the band they live in was read as a painted
     stripe rather than as structure.
+
+    The pane is the whole window seen from the water and half of it seen from
+    the saloon. The other half is the opening it is bonded over -- see
+    `window_apertures` and `_build_reveals` -- which is smaller than this, as a
+    bonded window's opening always is.
     """
     objs = []
 
@@ -986,17 +1159,12 @@ def _build_windows(collection, sheer, half_beam):
                 t = i / steps
                 station = _lerp(forward, aft, t)
                 raw_x, raw_z = _sheer_edge(sheer, half_beam, station)
-                _, top_z = deck_edge(raw_x, raw_z, station)
 
                 # Fill the band between its margins, so the window tapers with
                 # it rather than hanging below the rubrail forward.
-                full = max(
-                    0.0,
-                    band_height(station)
-                    - params.WINDOW_MARGIN_TOP
-                    - params.WINDOW_MARGIN_BOTTOM,
-                )
-                middle = top_z - params.WINDOW_MARGIN_TOP - full / 2
+                pane_top, pane_bottom = window_edges(station)
+                full = max(0.0, pane_top - pane_bottom)
+                middle = (pane_top + pane_bottom) / 2
 
                 # Rake the ends in, so the window is a lozenge, not a slot.
                 taper = min(1.0, min(t, 1 - t) / 0.11)
@@ -1024,6 +1192,58 @@ def _build_windows(collection, sheer, half_beam):
             objs.append(obj)
 
     return join(objs, "windows")
+
+
+def _build_reveals(collection, sheer, half_beam):
+    """The collar lining each window opening, outer skin to cabin side.
+
+    The opening itself is faces left out of two lofts: the deck's own band, and
+    the ceiling's band 18 mm behind it. That leaves two rims and nothing between
+    them, and nothing between them is a gap you can see daylight through from
+    the wrong angle. This joins them.
+
+    It also does the thing that actually makes a window read as a window, which
+    is not transparency -- it is depth. A pane flush with a wall is a decal; a
+    pane at the bottom of 18 mm of reveal throws a shadow along its top edge,
+    hides its own far end when you look along the boat, and slides against what
+    is behind it as you move. That parallax is the whole effect, and it costs
+    sixty faces.
+
+    Built as two loops rather than as four strips: the opening's rim walked once
+    at the outer skin and once at the lining, skinned between with `close_rings`
+    closing the collar back on itself. Nothing has to know which of the four
+    sides of the hole it is on, and the corners cannot come apart.
+    """
+    objs = []
+
+    for index, (forward, aft) in enumerate(window_apertures()):
+        steps = 12
+        stations = [_lerp(forward, aft, i / steps) for i in range(steps + 1)]
+
+        # Round the opening once, in order: aft along the top, then forward
+        # along the bottom. `close_rings` shuts it at the forward end, and the
+        # two single quads at the ends are the jambs.
+        rim = [(s, aperture_edges(s)[0]) for s in stations]
+        rim += [(s, aperture_edges(s)[1]) for s in reversed(stations)]
+
+        for side in (-1, 1):
+            outer, inner = [], []
+            for station, z in rim:
+                raw_x, raw_z = _sheer_edge(sheer, half_beam, station)
+                surface = _band_surface_x(raw_x, raw_z, station, z)
+                y = params.station_to_y(station)
+                outer.append((side * surface, y, z))
+                inner.append((side * (surface - params.LINER_THICKNESS), y, z))
+
+            name = f"window_reveal_{index}_{'p' if side < 0 else 's'}"
+            obj = grid_to_mesh(name, [outer, inner], collection, close_rings=True)
+            # Inward: the faces that show are the ones looking into the hole,
+            # which is the inside of this collar and not the outside of it.
+            recalc_normals(obj, inward=True)
+            shade_smooth(obj, sharp_above_degrees=25.0)
+            objs.append(obj)
+
+    return join(objs, "window_reveals")
 
 
 def _band_surface_x(raw_x, raw_z, station, z):
@@ -1089,6 +1309,17 @@ def _build_companionway(collection, fwd_ring, aft_ring):
     )
 
     obj = grid_to_mesh("companionway", [outer, inner], collection, close_rings=True)
+
+    # The face is not flat: `companionway_lean` shears it forward above the sill
+    # and leaves it upright below, so it is two planes meeting along z = sill.
+    # The fan knows nothing about that -- its quads run from the panel's bottom
+    # edge, down in the upright half, up to the doorway's jambs in the leaning
+    # one, and a quad with a bend through it is a quad with no normal worth
+    # having. Bisecting on the sill puts a real edge along the crease and leaves
+    # every face on one side of it or the other. It is the streaking either side
+    # of the way below, seen from inside the cabin.
+    bisect(obj, (0.0, 0.0, params.COMPANIONWAY_SILL), (0.0, 0.0, 1.0))
+
     face_towards(obj, (0.0, -1.0, 0.0))
     return obj
 

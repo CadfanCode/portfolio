@@ -381,7 +381,7 @@ WINDOW_MARGIN_BOTTOM = 0.030
 """The window fills the band between these margins, so it tapers with it --
 taller over the saloon, shorter forward. A fixed height would hang below the
 rubrail at the forward end, where the band is only 165 mm deep."""
-WINDOW_PROUD = 0.007
+WINDOW_PROUD = 0.008
 WINDOW_THICKNESS = 0.0065
 """Smoked 6.5 mm acrylic, bonded to the *outside* of the band and through-bolted
 -- brochure p2, "Sakerhetsrutorna": "Dom ligger hart fastlimmade pa utsidan av
@@ -389,7 +389,36 @@ skrovet och sakrade med ordentliga bultar."
 
 Proud, not inset. An inset panel with no opening cut behind it is simply hidden
 by the band in front of it, which is exactly what happened on the first
-attempt: the windows were built, and invisible."""
+attempt: the windows were built, and invisible.
+
+`WINDOW_PROUD` is the pane's outer face, so the 1.5 mm between it and the
+6.5 mm of acrylic is the bed of sealant the pane is bedded on. It used to be
+0.5 mm, which is not a bed, it is two surfaces in the same place: the band's
+outer face and the back of the pane in front of it, close enough that the depth
+buffer picked between them per pixel wherever the pane laps the band."""
+
+WINDOW_LAP_ENDS = 0.075
+WINDOW_LAP_EDGES = 0.024
+"""How far the pane laps onto the band around the hole it covers.
+
+A bonded window is a pane larger than its opening: the acrylic goes on the
+outside of a cut-out and the lap around it is what carries the bond. So the
+pane's outline -- `WINDOWS` and the two margins above -- is not the opening.
+The opening is that outline brought in by these, and it is the opening, not the
+pane, that you look through from inside the cabin.
+
+Different fore-and-aft than up-and-down because the pane is: 141 mm tall over
+the saloon against 900 mm long, so one figure for both either eats the height
+or leaves the ends barely bonded. 24 mm top and bottom leaves a 93 mm opening
+in a 141 mm pane; 75 mm at the ends takes the opening clear of the raked
+corners, where a lap that followed the rake would run to a point.
+
+Until these existed there was no opening at all. The band was an unbroken skin
+and the cabin lining behind it another, and the windows were an outside-only
+feature: from the saloon they were a dark seam in a white wall -- the two
+skins, 1.5 mm apart, fighting over the same pixels. See `deck.band_ladder`,
+which is what puts the opening's top and bottom edges where the loft can leave
+them out."""
 
 DECK_CAMBER = 0.065
 """Crown at the centreline, over the full beam. Sheds water and stiffens the
@@ -471,6 +500,20 @@ the gap from the teak surround's outer edge to the nearest edge of the shelf.
 They ride the same forward lean as the frame and the doorway -- see
 `fittings._build_cockpit_shelves`, which shears them onto the face the same way
 `deck._build_companionway_frame` shears the surround."""
+
+COCKPIT_SHELF_CLEARANCE = 0.002
+"""How far the shelf's back stands off the face it is fixed to.
+
+Riding the same shear as the face lands the shelf's flat edge exactly in the
+plane of the `companionway` panel -- which is not "flush", it is two surfaces
+claiming the same pixels, and neither wins consistently. What that looked like
+was the outline of a shelf printed through the wall, seen from inside the
+cabin, which is the one side of that panel a camera stop points at.
+
+Two millimetres puts the whole shelf on the cockpit side of the panel. It is a
+sixth of the thickness of the bond it stands for, invisible from the cockpit at
+two metres, and it is the difference between the panel occluding the shelf and
+the two of them arguing about it."""
 
 
 # --- Cockpit seating ------------------------------------------------------
@@ -1162,12 +1205,25 @@ which is not. That is exactly the distinction the brochure draws.
 
 Lowered by the 1975 revision ("lagre durkniva"), and a 1980 boat has it."""
 
-SOLE_HALF_WIDTH = 0.270
-"""Half-width of the walkway between the settee fronts. 540 mm clear.
+SOLE_HALF_WIDTH = 0.418
+"""Half-width of the walkway between the settee fronts. 836 mm clear.
 
-Constrained from below by the hull rather than chosen: at SOLE_LEVEL the hull
-is only 980 mm wide amidships, so a wider sole leaves the settees no depth to
-sit on and a narrower one wastes the beam the boat does have."""
+This is the number that decides how deep the settees are, because they run from
+here out to the hull and nothing else sets their depth -- so the walkway and the
+seats are the same argument from opposite ends, and every millimetre given to
+one is taken off the other.
+
+Twice revised, both times to the owner's brief. It was 270, which is what the
+hull leaves at sole level, and gave settees 500 mm deep at the forward bulkhead
+and 750 at the after end of the saloon -- berths, not seats, and they crowded
+the middle of the boat. 485 took a third off that. 418 puts 15 per cent of it
+back, which is where it now stands: 511 mm of seat at the middle of the saloon,
+351 at the forward bulkhead and 599 at the after end.
+
+The cost is still in the brochure's "tre i salongen". At 351 mm at the bulkhead
+the settees are seats rather than berths, and the boat sleeps two in the
+forepeak and one in the quarter berth. That is a deliberate trade and it is
+recorded here rather than quietly absorbed."""
 
 LINER_THICKNESS = 0.018
 """How far the moulded inner hull stands inboard of the hull skin where the two
@@ -1230,11 +1286,13 @@ put next to it -- a 290 mm seat is a step, and it left the saloon table
 standing 770 mm above the sole with nobody able to reach it. Seat height is one
 of the few dimensions on a boat that is set by people rather than by the boat.
 
-How deep the seat is has no number, because it is not free: the
-settee runs from the edge of the sole out to the hull, and the hull is 980 mm
-wide at this height amidships. Once SOLE_HALF_WIDTH has taken its share, about
-540 mm of seat is left, which is deep enough to sleep two across -- which is
-what the brochure's "tre i salongen" needs it to be."""
+How deep the seat is has no number, because it is not free: the settee runs from
+the edge of the sole out to the hull, so its depth is whatever SOLE_HALF_WIDTH
+leaves -- 511 mm at the middle of the saloon. See SOLE_HALF_WIDTH for what that
+costs and why it was worth it.
+
+The port settee stops at GALLEY_START rather than running the length of the
+saloon liner. See `interior.SETTEE_RUN_END`."""
 
 TABLE_TOP = SOLE_LEVEL + 0.680
 """Height of the saloon table, off the sole rather than off the seat: a table is
@@ -1243,6 +1301,21 @@ a table height whatever is drawn beside it.
 The owner's brief asked for the galley worktop to come up to the table -- so
 GALLEY_TOP below is defined from this number rather than carrying a second guess
 at "counter height", which is what put the two 190 mm apart in the first place."""
+
+TABLE_LEAF = 0.35
+TABLE_THICKNESS = 0.030
+"""Each drop leaf, as a fraction of the table's full width across the boat: 35
+per cent a side, leaving the 30 per cent in the middle fixed.
+
+The table is as wide as the walkway -- it is drawn from SOLE_HALF_WIDTH -- so
+with both leaves up it fills the saloon from settee front to settee front and
+nobody gets past it. That is what a saloon table is for and it is not how it
+spends most of its life. Hinged this way the leaves fold *longitudinally*, the
+fold lines running fore and aft, and what is left standing is a 290 mm plank on
+the centreline with the walkway open either side of it.
+
+Modelled folded down, which is the state the camera stop sees: the visitor
+arrives to a boat nobody is eating aboard."""
 
 SHELF_LEVEL = 0.560
 SHELF_DEPTH = 0.130
@@ -1304,27 +1377,166 @@ docstring in joinery.py -- so the doors are the only part of them that has to be
 built. Plain teak-faced ply, which is what they are."""
 
 SINK = (0.280, 0.240, 0.026)
-SINK_STATION = 4.850
+SINK_STATION = 4.670
 COOKER = (0.320, 0.250)
-COOKER_STATION = 5.160
+COOKER_STATION = 4.980
 """The pentry's two fittings, immediately to port as you come below: sink
 forward, two-burner cooker aft. That order is the brochure's -- "Till hoger pa
 banken har du det tva-lagiga koket", and *right*, from someone standing at the
 worktop facing outboard, is aft.
 
-Both moved forward with the worktop when its after end came in (see GALLEY_END):
-the cooker now lands at 5.160 with its after edge clear of where the cockpit seat
-falls to worktop level, and the sink ahead of it, the two nearly touching
-because the shortened run has no spare length between them.
+Both move with the worktop, 180 mm forward of where they were: the cooker used
+to sit at 5.160, which is COACHROOF_END, so half of it stood aft of the cabin
+with the bridgedeck over it and you could not see the after burner from inside
+the boat. It now lands at 4.980 with its whole length under the coachroof, and
+the sink ahead of it, the two nearly touching because the run has no spare
+length between them.
 
-The sink is a proper bowl now, and the cooker a gimballed two-burner with pan
-rails and control knobs, rather than the shallow dish and bare pan they were --
-the galley is the closest the camera comes to any joinery, and a tap standing
-over a dished box was as much as the first pass claimed. Both are still built
-proud of the worktop rather than let into it: the worktop is a lofted solid with
-no hole in it, so a recess cut into it renders nothing at all. A bowl standing a
-few millimetres proud with a hollow top reads as inset from any angle a person
-in the cabin actually has on it."""
+Neither is built any more. Owner's brief: the worktop is a chart table now, and
+a chart table with a hob in it is a galley with a map on it. The numbers stay
+because they are correct and cost nothing unbuilt -- restoring the pentry is two
+entries in `fitout.build`'s dict and one line in `joinery._build_galley` -- and
+because they are what fixed the block's own length: DESK_ITEMS below is laid out
+in the 640 mm run these two were sized to fit."""
+
+# The chart table. Same block of joinery -- see GALLEY_* below, which still
+# places it -- dressed as a desk rather than as a pentry.
+
+DESK_LAMP_STATION = 4.600
+DESK_LAMP_X = -1.050
+DESK_LAMP_HEIGHT = 0.310
+"""The desk lamp: where its base stands on the worktop, and how tall the whole
+fitting is from that base to the top of its shade.
+
+Outboard and forward, in the corner furthest from anyone sitting at the table,
+which is where a lamp goes on a desk of this size for the one reason that
+survives being on a boat: it is the only spot that is not somewhere you want to
+put your hands. From there its neck arches back inboard over the chart, so what
+is lit is the middle of the table and not the hull beside it.
+
+There is 530 mm between the worktop and the deckhead over it (measured, not
+fitted -- `interior.deckhead_function` at this station), so a 310 mm lamp
+clears by 220. It is the tallest thing that stands on this table and the only
+one worth checking that against."""
+
+DESK_CHART = (0.370, 0.255)
+DESK_CHART_STATION = 4.885
+"""The chart on the table, fore-and-aft by athwartships, and the station of its
+centre: a folded sheet lying along the inboard half of the worktop, under the
+lamp, with the safe in the corner outboard and abaft it.
+
+Folded, which is why it is not the 1.06 x 0.71 m a real Admiralty sheet is.
+Nobody has ever opened a full chart on a 7.6 m boat. It is folded to a quarter
+and then some, and what is showing is the corner you are working on.
+
+255 mm across is narrower than the 360 it began at, and that is the safe's
+doing: the safe now stands in the after outboard corner (see DESK_SAFE below),
+and a chart that reached its old width ran under it. Between the two, this is
+the one that gives -- a chart with a corner hidden under a safe is a chart that
+was there first, which is not what either object is supposed to say."""
+
+DESK_SAFE = (0.220, 0.200, 0.230)
+DESK_SAFE_INSET = 0.014
+"""The safe: length fore-and-aft, depth athwartships, height -- and how far it
+stands off each of the two surfaces it is tucked between.
+
+Where it goes is a corner and not a station. Owner's brief: into the angle where
+the after bulkhead meets the topsides, which is the one place on a 640 x 480 mm
+worktop where a 220 x 200 mm object is out of everybody's way. So its position
+is derived rather than fitted -- the after face off GALLEY_END, the outboard
+face off the hull's own offset at the stations it spans -- and it cannot come
+adrift from either wall if the block is ever re-proportioned. It stood in the
+forward inboard corner before, which is exactly where a hand and an elbow go.
+
+DESK_SAFE_INSET is the gap at both: 14 mm, which is a shadow line rather than a
+fit, because nothing on a boat is ever quite hard against anything and a box
+sharing a plane with a bulkhead z-fights against it.
+
+It is a placeholder -- it becomes the authentication exhibit -- and 230 mm tall
+because it is the one thing on this table that stands up, which is what makes it
+findable by eye from the cabin stop. Small enough to be a document safe, which is
+the only kind that would be aboard, and standing on the worktop rather than let
+into the locker under it for the plain reason that a safe you cannot see is not
+a placeholder for anything.
+
+The door faces inboard, at the person sitting at the table, and hinges on its
+*forward* edge so it opens away from the bulkhead behind it -- see
+`fitout._desk_safe`."""
+
+DESK_PIPE_STATION = 5.005
+DESK_PENCIL_STATION = 4.940
+"""A pipe and two pencils, at the inboard edge where a hand would put them
+down.
+
+They are 120 mm and 175 mm of object respectively and they cost almost nothing,
+and between them they do the job the rest of this table cannot: they are the
+only two things on it that were left somewhere rather than stowed. A desk with
+nothing but a lamp, a chart and a safe on it is a display of desk furniture."""
+
+VHF_SIZE = (0.180, 0.120, 0.058)
+VHF_STATION = 5.161
+VHF_X = 0.730
+VHF_HEIGHT = 0.460
+"""The VHF set on the after bulkhead, starboard of the way below: width
+athwartships, height, and how far it stands proud of the panel.
+
+VHF_STATION is the bulkhead's own forward face (COCKPIT_START +
+AFT_BULKHEAD_CLEARANCE) rather than a number of its own, so the set cannot come
+adrift from the panel it is screwed to.
+
+Where it goes is decided by the panel and not by taste. Starboard of the steps
+the after bulkhead is only 50 mm tall inboard of x = 0.58 -- that gap is the
+quarter berth's entrance, and it is why the panel looks like a lintel there. It
+squares up outboard of that: from x = 0.60 to x = 1.00 there is a clear field
+240 mm tall between the top step and the underside of the cockpit seat.
+VHF_X puts the set in the middle of it, with the handset on its clip to
+starboard and still 90 mm clear of where the panel starts climbing.
+
+That is also, on a real boat of this size, exactly where the VHF is: at the head
+of the quarter berth by the companionway, in reach from the bottom step and from
+the cockpit through the hatch. A placeholder -- it becomes the exhibit that
+raises a passing ship -- but not a placeholder in a made-up place."""
+
+BOOK_CLOTHS = (
+    (0.155, 0.115, 0.100),   # dark brown buckram, the plainest thing on a boat
+    (0.135, 0.195, 0.215),   # faded teal
+    (0.290, 0.115, 0.090),   # oxblood
+    (0.185, 0.215, 0.145),   # olive
+    (0.420, 0.360, 0.255),   # sun-bleached tan, a paperback gone pale
+    (0.115, 0.180, 0.310),   # marine blue, the two placeholders
+)
+"""The bindings, as base colours. Six, because a shelf of books is a row of
+different books and one cloth colour makes it a row of bricks -- which is what
+the shelf looked like when every book shared a single `book_cloth` material.
+
+Shared between `fitout`, which groups the books it builds by index into one
+object per cloth, and `materials`, which makes one material per entry. Neither
+can be given its own list: the grouping and the palette have to agree about how
+many there are, and about which is which.
+
+The last entry is not a colour choice like the other five. It is the two
+placeholder books -- the resume and the about -- which are the same marine blue
+as the settees on purpose: they are the one thing on this shelf a visitor is
+meant to pick out, and the colour of the cabin's upholstery is what the eye has
+already been taught to look at."""
+
+PILLOW_SIZE = (0.175, 0.145, 0.058)
+PILLOW_PIPING = 0.007
+"""A scatter cushion: half-length along its own long axis, half-height, and
+half-thickness through the middle. So 350 x 290 x 116 mm plumped.
+
+The height is what it is because of the shelf and not because of the cushion.
+There is 275 mm between the top of a settee cushion and the underside of the
+shelf over it, and a pillow tipped back against the backrest stands taller in z
+than it is thick -- so 290 mm is the largest one that fits in that gap leaning,
+and `fitout._settee_pillow` still clamps against the shelf rather than trusting
+the arithmetic here.
+
+PILLOW_PIPING is the radius of the corded seam running round its edge, which is
+what a made cushion has and a modelled one usually does not. It is 7 mm of tube
+and it is most of the difference between a pillow and a rounded box: the seam
+catches a line of light all the way round the silhouette, and the eye reads
+that line as sewn."""
 
 QUARTER_BERTH_START = 5.000
 QUARTER_BERTH_END = 6.950
@@ -1338,8 +1550,8 @@ for the space it needs."""
 
 # Galley, port, at the after end of the saloon.
 
-GALLEY_START = 4.700
-GALLEY_END = 5.340
+GALLEY_START = 4.520
+GALLEY_END = COCKPIT_START
 GALLEY_TOP = TABLE_TOP
 GALLEY_DEPTH = 0.480
 """The pentry. Port side, at the companionway, where the raised panel over the
@@ -1347,25 +1559,44 @@ way below gives the headroom the brochure sells: "Pentryt ar stort och
 ordentligt tilltaget ... gjort for att du utan problem ska klara matlagningen
 for 5-6 personer".
 
-It runs aft past the coachroof and under the side deck, which is what makes a
-worktop this long fit in a boat whose saloon is only 1900 mm long. Sink forward,
-two-burner hob aft -- "Till hoger pa banken har du det tva-lagiga koket", and
-right, from someone standing at it facing outboard, is aft.
+It runs under the side deck, which is what makes a worktop this long fit in a
+boat whose saloon is only 1900 mm long. Sink forward, two-burner hob aft --
+"Till hoger pa banken har du det tva-lagiga koket", and right, from someone
+standing at it facing outboard, is aft.
 
-The after end was 5.480 and had to come forward to 5.340. Raising GALLEY_TOP to
-the table's height (below) lifted the worktop to 490 mm above the sole, and the
-cockpit seat above it drops going aft -- the two crossed at about station 5.36,
-so the last 140 mm of worktop, and the hob standing on it, pushed up through the
-cockpit seat moulding and showed in the footwell. The worktop now stops where it
-still has the seat comfortably above it. The forward end went with it, 60 mm
-forward to 4.700, to keep room for both fittings once the run was shortened.
+The after end has walked forward twice. It was 5.480 and came to 5.340 when
+GALLEY_TOP was raised to the table's height: that lifted the worktop to 490 mm
+above the sole, and the cockpit seat above it drops going aft, so the last
+140 mm of worktop pushed up through the seat moulding and showed in the
+footwell. It is now COCKPIT_START, which is a further 180 mm forward and is the
+end of the cabin rather than a fitted number -- owner's brief, because the whole
+run stood too far aft to be *in* the boat: the hob was half under the bridgedeck
+and the after burner was invisible from inside. Tied to COCKPIT_START rather
+than given a number of its own, so the worktop stops where the cabin does and
+cannot drift back under the cockpit again.
+
+GALLEY_START went with it, keeping the 640 mm run the two fittings need. That
+shortens the port settee, which stops where the galley starts (see
+`interior.SETTEE_RUN_END`): 1420 mm, against 1900 to starboard. It is a seat
+that side now and not a berth, which the settee depth had already decided --
+see SOLE_HALF_WIDTH.
 
 GALLEY_TOP used to be 300 mm above the sole, a plain fitted guess and 190 mm
 short of the table -- so a visitor stepping from one to the other met a worktop
 at knee height next to a table at hip height, on the same boat. Owner's brief:
 raise it to match. Tied to TABLE_TOP rather than given its own number, so the
 two cannot drift apart again -- and raising it is what forced the shortening
-above, which is the price of the matched height, paid once and recorded here."""
+above, which is the price of the matched height, paid once and recorded here.
+
+The block is still all of the above and is no longer a pentry. Owner's brief:
+the sink and the cooker come out and the worktop becomes a chart table -- see
+the DESK_* numbers earlier in this file for what stands on it now. The names
+here do not change with it, and deliberately: GALLEY_START, GALLEY_DEPTH and the
+rest are where the *joinery* is, they are sourced to the brochure's description
+of the pentry, and `verify.py` measures the brochure's headroom claim at them.
+What was built on top of that block is a dressing decision; where the block is
+is not, and renaming the second because of the first would throw away every
+citation above."""
 
 # The way below.
 
@@ -1389,6 +1620,41 @@ Derived rather than fitted, because it is the single point where the
 accommodation and the cockpit meet. Given a number of its own it would drift
 away from the stairs the moment either moved, and the failure is silent -- a
 sill 40 mm out looks perfectly normal and is a trip hazard on a real boat."""
+
+TOP_TREAD_LEVEL = SOLE_LEVEL + STEP_RISE * STEP_TREADS
+"""Top of the top step, 380 mm above the sole. Named because the after bulkhead
+is cut to it and a number repeated in two places is a number that drifts."""
+
+# The after bulkhead: what closes the accommodation off under the cockpit.
+
+AFT_BULKHEAD_THICKNESS = 0.018
+AFT_BULKHEAD_CLEARANCE = 0.001
+"""Teak-faced ply across the after end of the cabin, port and starboard of the
+way below, filling between the sole and the underside of the cockpit moulding.
+
+Without it the accommodation simply stops at the last station of the liner and
+you stand in the cabin looking under the cockpit -- at the topsides on one side
+and at the bilge on the other. Both are things a real boat closes off, and this
+is what closes them: a bulkhead abaft the galley to port and abaft the
+companionway steps to starboard, which is where every boat this size puts one
+because it is where the cockpit's own moulding lands.
+
+It sits AFT_BULKHEAD_CLEARANCE abaft COCKPIT_START rather than on it. The galley
+worktop now ends at COCKPIT_START (see GALLEY_END) and the two would otherwise
+put a face each in the same plane, which is a millimetre of z-fighting on the
+one panel the cabin camera looks straight at."""
+
+AFT_BULKHEAD_FOOT = {-1: SOLE_LEVEL, 1: TOP_TREAD_LEVEL}
+"""How far down the after bulkhead reaches, by side: -1 port, +1 starboard.
+
+Port it goes to the sole, because there is nothing behind it but the space under
+the cockpit and the whole point of the panel is that you cannot see into it.
+
+Starboard it stops at the top step, because the quarter berth runs aft
+underneath and a bulkhead taken down to the berth flat would wall it off. What
+is left is a 170 mm opening over the berth -- which is what a stickkoj entrance
+is, and it lines up with the top tread so the panel reads as part of the
+staircase rather than as a hole above a bunk."""
 
 TREAD_THICKNESS = 0.024
 TREAD_NOSING = 0.022

@@ -15,10 +15,17 @@ with the sole width taken to zero and the settee front dropped flat. Between
 the two bulkheads one becomes the other over 380 mm, which is a moulding
 fairing from one shape into another, not a joint.
 
-What the liner cannot carry is anything asymmetric -- the galley to port, the
-quarter berth to starboard -- because it is built as a half section and
-mirrored. Those live in joinery.py, which is the right place for them anyway:
-on the real boat they are the parts that are not the liner.
+The galley to port and the quarter berth to starboard are not built here. They
+live in joinery.py, which is the right place for them: on the real boat they are
+the parts that are *not* the liner.
+
+The liner itself does have to be asymmetric in one respect, which is why its
+sections are built full width rather than as a half section mirrored across the
+centreline. The port settee stops where the galley starts -- see
+SETTEE_RUN_END -- and the sole runs out to the hull under the worktop instead.
+Mirrored, it could not: the settee ran on under the galley and out past it to
+the foot of the companionway steps, which put a 400 mm shelf of white moulding
+in the one place someone coming below has to put their feet.
 """
 
 import deck
@@ -30,16 +37,64 @@ from lib.mesh import bevel, cap_loop, grid_to_mesh, mirror_x, recalc_normals
 HULL_POINTS = 5
 """Points up the hull side of a liner section, from the seat top to the sheer."""
 
-LINER_STATIONS = 40
+BILGE_POINTS = 4
+"""Points up the hull between the outboard edge of the sole and the foot of the
+settee front, where the hull is narrower down there than the sole is wide.
+
+Over most of the saloon it is. At the after bulkhead the hull is 1540 mm wide at
+seat height and 630 at sole height, so a settee front standing 485 mm off the
+centreline has no sole under it -- it has hull, curving away below it into the
+bilge, and the liner has to follow that curve down to where the flat of the sole
+really stops. Four points do it to within the 2 mm the
+clearance check in verify.py allows; the chords between them fall inside the
+hull rather than outside it because the section is concave all the way up from
+the keel.
+
+Where the hull is wider than the sole -- aft, and anywhere the settee has run
+out -- these collapse onto the edge of the sole and cost nothing, the same
+trick every other feature in this section uses to fade."""
+
+LINER_STATIONS = 52
 DECKHEAD_STATIONS = 34
 
 LINER_START = 0.350
-LINER_END = params.COCKPIT_START
-"""Forward of 350 the hull is too fine to have anything moulded into it, and
-abaft the cockpit's forward end there is a cockpit well overhead rather than a
-cabin. Neither end is ever in shot; both are there so the surface closes."""
+LINER_END = params.QUARTER_BERTH_END
+"""Forward of 350 the hull is too fine to have anything moulded into it. Aft it
+runs to the end of the quarter berth, which is where the accommodation stops.
+
+It used to stop at the cockpit's forward end, on the argument that abaft that
+there is a cockpit well overhead rather than a cabin. True of the headroom and
+false of the moulding: the quarter berth's flat runs on under the bridgedeck for
+another 1.8 m and that flat *is* the liner. What the short version left was a
+hole -- the last 450 mm of the way below had bare topsides beside it, and once
+the port settee stopped covering them (see SETTEE_RUN_END) you could stand in
+the cabin and look through the boat. Blender draws backfaces and three.js does
+not, so what reads here as a blue wedge is open sky in the app."""
 
 DECKHEAD_START = 0.700
+
+SETTEE_RUN_END = {-1: params.GALLEY_START, 1: params.QUARTER_BERTH_START}
+"""Where the settee stops, aft, on each side: -1 port, +1 starboard.
+
+Port it stops at the galley, and this is the whole reason the liner is built
+full width. Aft of the worktop's forward face there is no settee on that side --
+the sole runs out to the hull and the galley stands on it -- so the space
+between the worktop and the companionway steps is floor, which is what someone
+coming below is expecting to find under their feet.
+
+Starboard it stops where the quarter berth starts, and for a duller reason: the
+berth is a block of its own with its top at settee height, so a settee running
+on underneath it puts two faces in the same plane for 1.9 m. The end face is
+inside the block rather than against its forward face, which is why the settee
+ends *at* QUARTER_BERTH_START and not a millimetre before it."""
+
+SETTEE_END_FACE = 0.004
+"""How long the loft is given to close the settee off at SETTEE_RUN_END.
+
+A lofted surface has no end faces -- it has stations -- so an end is two
+stations 4 mm apart, one with the settee in section and one without. Read as a
+vertical face at any distance anyone sees it from, and it costs one extra
+station rather than a separate object cut to the hull."""
 
 
 def build(collection):
@@ -156,22 +211,36 @@ def floor_level(station):
 
 
 def seat_level(station):
-    """Top of the settee, or of the forepeak berth where there is no settee."""
+    """Top of the settee, or of the forepeak berth where there is no settee.
+
+    Side-agnostic: it answers for the saloon, which is where anything laid on
+    the seat -- a cushion, a backrest -- is built. Where a settee has run out
+    altogether there is no seat to be on top of, and `settee_run` below is what
+    the liner's own section asks instead."""
     seat = _lerp(
         params.FOREPEAK_BERTH_LEVEL, params.SETTEE_LEVEL, saloon_presence(station)
     )
     return max(seat, floor_level(station))
 
 
+def settee_run(station, side):
+    """Whether there is still a settee at a station on a given side: 1 or 0.
+
+    Not faired, unlike `saloon_presence`. The forepeak changeover is a moulding
+    fairing from one shape into another over 380 mm and belongs inside a
+    compartment nobody sees; this one is where a settee stops, in full view of
+    the companionway, and a settee that ramps down into the sole over half a
+    metre is a wheelchair kerb rather than a piece of furniture."""
+    return 0.0 if station > SETTEE_RUN_END[side] else 1.0
+
+
 def _build_liner(collection, inner):
     """The moulded inner hull: sole, settee fronts and tops, forepeak berth."""
-    stations = _stations(LINER_START, LINER_END, LINER_STATIONS)
-    rings = [_liner_section(s, inner) for s in stations]
+    rings = [_liner_section(s, inner) for s in _liner_stations()]
 
     obj = grid_to_mesh("liner", rings, collection)
-    mirror_x(obj)
     recalc_normals(obj)
-    # The settee-front corners run the whole length of the saloon as a genuine
+    # The settee-front corners run the length of each settee as a genuine
     # right angle -- the one place on the liner that is not a fair loft -- and
     # are exactly the "knife edge" the owner's brief points at. Bevelled rather
     # than shaded: a real moulding cannot be pulled off one either.
@@ -179,31 +248,84 @@ def _build_liner(collection, inner):
     return obj
 
 
-def _liner_section(station, inner):
-    """One transverse half-section of the liner, centreline outboard.
+def _liner_stations():
+    """Where the liner is cut, forward to aft.
 
-    Three points describe the sole and the settee front and two more the seat
-    and the hull above it. In the forepeak the sole's half-width goes to zero
-    and the settee front loses its height, so the first three collapse onto the
-    centreline and what is left is a flat berth running out to the hull -- the
-    same section, with the saloon taken out of it.
+    An even spread, plus a pair at each end of a settee run to close it off.
+    Sorted and de-duplicated so those pairs can land anywhere without having to
+    know what the even spread is doing near them."""
+    stations = _stations(LINER_START, LINER_END, LINER_STATIONS)
+    for end in SETTEE_RUN_END.values():
+        stations += [end, end + SETTEE_END_FACE]
+    return sorted(s for s in set(stations) if LINER_START <= s <= LINER_END)
+
+
+def _liner_section(station, inner):
+    """One transverse section of the liner, port sheer to starboard sheer.
+
+    Full width rather than a half section mirrored, because the two sides are
+    not the same shape aft: see the module docstring. Built as two halves all
+    the same, walked outboard from the centreline, with the port one reversed
+    and negated in front of the starboard one -- so the section is still
+    described once and the point count is still fixed at every station.
+    """
+    port = _liner_half(station, inner, -1)
+    starboard = _liner_half(station, inner, 1)
+
+    # The centreline point belongs to both halves and is written once. Both
+    # halves put it at `floor_level`, which has no side, so the two agree.
+    points = [(-x, z) for (x, z) in reversed(port)] + starboard[1:]
+
+    y = params.station_to_y(station)
+    return [(x, y, z) for (x, z) in points]
+
+
+def _liner_half(station, inner, side):
+    """Half a section, as (half-offset, height) from the centreline outboard.
+
+    Walked in order: the sole out from the centreline, the turn of the bilge up
+    to the foot of the settee front, the front itself, the seat out to the hull,
+    and the topsides above it to the sheer. Features fade by collapsing points
+    rather than by dropping them, which is what keeps every ring the same
+    length:
+
+      - in the forepeak the sole's half-width goes to zero and the settee front
+        loses its height, so the first three collapse onto the centreline and
+        what is left is a flat berth running out to the hull;
+      - abaft SETTEE_RUN_END the same three collapse the other way, onto the
+        sole, and what is left is the sole itself running out to the hull.
     """
     floor_z = floor_level(station)
-    seat_z = seat_level(station)
-    floor_half = params.SOLE_HALF_WIDTH * saloon_presence(station)
     top_z = sheer_z(station)
+
+    run = settee_run(station, side)
+    seat_z = _lerp(floor_z, seat_level(station), run)
+    front_half = params.SOLE_HALF_WIDTH * saloon_presence(station) * run
+
+    # The flat of the sole stops at the settee front or at the hull, whichever
+    # comes first, and forward in the saloon it is the hull -- so the sole is
+    # narrower there than SOLE_HALF_WIDTH asks for and the front stands on the
+    # bilge instead. See BILGE_POINTS.
+    foot_z = _hull_reaches(inner, station, front_half, floor_z, seat_z)
 
     points = [
         (0.0, floor_z),  # centreline, on the sole
-        (floor_half, floor_z),  # inboard foot of the settee front
-        (floor_half, seat_z),  # top of it
+        (min(front_half, inner(station, floor_z)), floor_z),  # edge of the sole
     ]
 
+    # Up the turn of the bilge to the foot of the settee front. Collapses onto
+    # the point above wherever the hull is already wider than the sole.
+    for i in range(1, BILGE_POINTS + 1):
+        z = _lerp(floor_z, foot_z, i / BILGE_POINTS)
+        points.append((min(front_half, inner(station, z)), z))
+
+    points.append((front_half, seat_z))  # top of the settee front
+
     # The seat runs out to the hull, and its depth is whatever that leaves --
-    # about 540 mm amidships. Not a chosen number: the hull is 980 mm wide at
-    # sole level here, and once the walkway has its half of that, the rest is
-    # seat whether it is wanted or not.
-    seat_out = max(floor_half, inner(station, seat_z))
+    # 444 mm amidships. Not a chosen number: it is the hull's own half-beam at
+    # seat height, less the walkway's share of it, and SOLE_HALF_WIDTH is the
+    # only end of it anyone gets to pick.
+    seat_out = max(front_half, inner(station, seat_z))
     points.append((seat_out, seat_z))
 
     # Up the hull side to the sheer, where the deck moulding takes over.
@@ -211,18 +333,48 @@ def _liner_section(station, inner):
         z = _lerp(seat_z, top_z, i / HULL_POINTS)
         points.append((inner(station, z), z))
 
-    y = params.station_to_y(station)
-    return [(x, y, z) for (x, z) in points]
+    return points
+
+
+def _hull_reaches(inner, station, half, z0, z1, steps=64):
+    """The height at which the hull is `half` wide at a station, between two
+    heights -- `z0` if it is already that wide down there.
+
+    Scanned rather than solved, for the reason `joinery._floor` gives: the
+    section curve is monotonic in z but its exponents move station to station,
+    and a scan needs no assumptions about either. Its answer only has to be good
+    enough to place a point that is then clamped to the hull anyway.
+    """
+    for i in range(steps + 1):
+        z = _lerp(z0, z1, i / steps)
+        if inner(station, z) >= half:
+            return z
+    return z1
 
 
 def _build_deckhead(collection):
-    """The underside of the deck and coachroof -- the cabin's ceiling."""
-    stations = _stations(DECKHEAD_START, params.COACHROOF_END, DECKHEAD_STATIONS)
+    """The underside of the deck and coachroof -- the cabin's ceiling, and below
+    the deck edge the cabin's side.
+
+    The side is the half of this nobody thinks of as ceiling and the half the
+    saloon camera stop looks straight at: it is the wall the windows are in.
+    `deck.underside_section` builds it, and it takes the same window openings
+    the deck's own band does, off the same station list, so the two rims line up
+    and `deck._build_reveals` can join them.
+    """
+    stations = deck.window_stations(
+        _stations(DECKHEAD_START, params.COACHROOF_END, DECKHEAD_STATIONS)
+    )
     rings = [
         deck.underside_section(s, params.DECKHEAD_THICKNESS) for s in stations
     ]
 
-    obj = grid_to_mesh("deckhead", rings, collection)
+    obj = grid_to_mesh(
+        "deckhead",
+        rings,
+        collection,
+        skip=deck.band_aperture_skip(stations, len(rings[0])),
+    )
     mirror_x(obj)
     recalc_normals(obj, inward=True)
     bevel(obj, width=0.002, segments=1, smooth_above_degrees=32.0)

@@ -180,6 +180,126 @@ def speckle(shape, cells=(30, 30), seed=0, octaves=3):
     return (field - lo) / (hi - lo + 1e-9)
 
 
+def stripes(shape, count, duty=0.5, axis=1, softness=0.14):
+    """A tileable band pattern: `count` stripes across the image's columns
+    (`axis=1`) or its rows (`axis=0`), returned as a 0..1 mask.
+
+    The one thing a weave cannot do on its own. `woven_cloth` gives cloth its
+    *surface* -- the over-under a thread makes -- and says nothing about what
+    was woven into it, so every fabric built from it alone comes out plain. A
+    boat's upholstery is almost never plain: the settee fabric here is a marine
+    blue with a woven stripe in it, and the pillows on top of it are a Breton
+    stripe, which is this same mask at a coarser count and a harder duty.
+
+    `duty` is the fraction of one repeat the stripe itself occupies, so a
+    pinstripe (`0.18`) and a bold band (`0.5`) are the same call. `softness` is
+    how much of the stripe's own width goes to the edge ramp -- a woven stripe
+    has no knife edge, because the threads that make it interleave with the
+    ground for a thread or two either side. Both are fractions of the stripe,
+    not of the image, so the pattern's character survives a change of `count`.
+    """
+    h, w = shape
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    span = w if axis == 1 else h
+    position = xx if axis == 1 else yy
+
+    # Distance from the centre of the nearest stripe, in stripe-widths.
+    phase = (position / (span / count)) % 1.0
+    distance = np.abs(phase - 0.5) / max(duty / 2, 1e-6)
+
+    edge = max(softness, 1e-6)
+    t = np.clip((1.0 - distance) / edge, 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def chart_paper(shape, seed=0, land_level=0.60, graticule=8):
+    """A sea chart, as pixels: pale water, buff land, depth contours, a
+    graticule and a scatter of soundings. Returns an `(h, w, 3)` RGB array.
+
+    Every other generator here returns a single field that a flat base colour
+    is then tinted by (`colour_image`), because every other material in this
+    file *is* one colour with variation in it -- teak is teak, sailcloth is
+    sailcloth. A chart is not: it is four colours in a deliberate arrangement,
+    and the arrangement is the whole reason it reads as a chart rather than as
+    a piece of blue paper. So this one composites its own RGB.
+
+    The coastline is a threshold through `fbm` rather than a drawn shape. That
+    is the honest way round: an archipelago is what a contour of a rough height
+    field looks like, which is why this reads as a chart of somewhere at all --
+    and the same field, thresholded again at lower levels, gives the depth
+    contours offshore, correctly nested inside one another and parallel to the
+    coast they belong to. Drawing them separately is what would look wrong.
+
+    Sampled through a world-scale UV like everything else, so the chart on the
+    table is a window onto this at whatever tile size `materials.py` asks for,
+    not a fitted image of a whole sheet. That is a limitation of the projection
+    and it costs nothing here: a real chart on a table is folded to a quarter of
+    itself anyway, and no part of one is more "the chart" than another.
+    """
+    height = fbm(shape, (5, 5), octaves=5, seed=seed)
+    lo, hi = height.min(), height.max()
+    height = (height - lo) / (hi - lo + 1e-9)
+
+    water = np.array([0.815, 0.870, 0.885])
+    shallow = np.array([0.735, 0.815, 0.845])
+    land = np.array([0.880, 0.835, 0.720])
+    ink = np.array([0.235, 0.290, 0.330])
+
+    rgb = np.broadcast_to(water, shape + (3,)).copy()
+
+    # Shallow water: everything inside the outermost contour, laid down first so
+    # the contour lines below draw over its edge rather than under it.
+    inshore = np.clip((height - (land_level - 0.16)) / 0.16, 0.0, 1.0)
+    rgb += (shallow - water) * inshore[..., None]
+
+    # Depth contours, plus the coastline itself as the heaviest of them. Each is
+    # a thin band of the height field, found by how close `height` is to the
+    # level rather than by tracing -- `np.gradient` normalises the band to a
+    # constant *width in pixels* wherever the field is steep or slack, which is
+    # what stops the contours pooling into blots in the flat parts.
+    slope = np.hypot(*np.gradient(height)) + 1e-6
+    for level, weight in ((land_level, 0.85), (land_level - 0.07, 0.35),
+                          (land_level - 0.15, 0.30), (land_level - 0.26, 0.22)):
+        band = np.clip(1.0 - np.abs(height - level) / (slope * 1.1), 0.0, 1.0)
+        rgb += (ink - rgb) * (band * weight)[..., None]
+
+    # Land, over the contours that ran through it.
+    ashore = (height > land_level)[..., None]
+    rgb = np.where(ashore, land, rgb)
+
+    # The graticule: hairlines of latitude and longitude, over everything,
+    # because on a real chart they are printed over the land too.
+    h, w = shape
+    grid = np.maximum(
+        stripes(shape, graticule, duty=2.2 / (w / graticule), softness=0.9, axis=1),
+        stripes(shape, graticule, duty=2.2 / (h / graticule), softness=0.9, axis=0),
+    )
+    rgb += (ink - rgb) * (grid * 0.28)[..., None]
+
+    # Soundings: a scatter of small dark marks in the water, the numbers a chart
+    # is mostly made of. Far too small to be legible at any range the cabin
+    # camera has on the table, and that is the point -- what carries across the
+    # room is the *texture* of a printed field of them, and a mark is that
+    # texture at a twentieth of the cost of a glyph.
+    rng = np.random.default_rng(seed + 313)
+    marks = rng.random(shape) > 0.9985
+    marks &= height < land_level - 0.02
+    marks = np.clip(
+        marks.astype(np.float64)
+        + np.roll(marks, 1, axis=1) * 0.7
+        + np.roll(marks, 2, axis=1) * 0.4,
+        0.0,
+        1.0,
+    )
+    rgb += (ink - rgb) * (marks * 0.55)[..., None]
+
+    # Paper: a faint warm mottle over the lot, so the white is a sheet and not a
+    # background colour.
+    tone = fbm(shape, (9, 9), octaves=3, seed=seed + 71)
+    rgb *= (1.0 + 0.045 * tone)[..., None]
+    return np.clip(rgb, 0.0, 1.0)
+
+
 def diamond_nonslip(shape, pitch_px, margin=0.32):
     """A moulded diamond non-slip pattern: flat-topped studs on a diagonal
     grid, tapering to a groove between them.

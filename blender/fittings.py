@@ -272,7 +272,14 @@ def _build_cockpit_shelves(collection):
     inner_x = frame_outer + params.COCKPIT_SHELF_FROM_FRAME
 
     station = params.COCKPIT_START
-    y_face = _y(station)
+    # Stood off the face by `COCKPIT_SHELF_CLEARANCE`. Built on the face and
+    # sheared onto it by the same call the face itself uses, the shelf's flat
+    # back landed exactly in the plane of the `companionway` panel -- and two
+    # surfaces in one plane are not flush, they are a coin toss taken per pixel.
+    # What it looked like was the outline of a shelf printed through the wall,
+    # from inside the cabin, which is the side of that panel a camera stop
+    # points at.
+    y_face = _y(station) - params.COCKPIT_SHELF_CLEARANCE
     count = 16
 
     shelves = []
@@ -303,6 +310,20 @@ def _build_cockpit_shelves(collection):
             vertex.co.y += deck.companionway_lean(station, vertex.co.z)
 
         bevel(obj, width=0.004, segments=1)
+
+        # Then flatten the back onto the standoff plane, because a shelf glued
+        # to a wall has a flat back and the bevel above does not leave one. At
+        # the two corners where the arc meets the diameter three edges meet, and
+        # mitring them throws a vertex out along the bisector -- which at those
+        # corners points forward, a full bevel width proud of the face. That is
+        # twice `COCKPIT_SHELF_CLEARANCE` and straight through the panel: the
+        # standoff on its own moved the shelf back and left two spikes in the
+        # cabin. Clamped rather than made smaller, so the arris stays the size
+        # the rest of the boat's woodwork wears.
+        for vertex in obj.data.vertices:
+            face = _y(station) + deck.companionway_lean(station, vertex.co.z)
+            vertex.co.y = min(vertex.co.y, face - params.COCKPIT_SHELF_CLEARANCE)
+
         shelves.append(_finish(obj, sharp=35.0))
 
     return join(shelves, "cockpit_shelves")
