@@ -594,6 +594,7 @@ def interior_checks(by_name):
         for n in (
             "liner",
             "bulkheads",
+            "aft_bulkhead",
             "galley",
             "quarter_berth",
             "steps",
@@ -608,8 +609,34 @@ def interior_checks(by_name):
             "shelf",
             "locker_doors",
             "galley_fittings",
+            # The cabin's loose furniture. Everything here is placed by hand
+            # against a hull that curves in three directions, and every one of
+            # them is a fresh chance to make the settee cushions' mistake -- so
+            # the pillows, the books, the chart table's furniture and the VHF
+            # are all in the same net. Two of them were caught by it: the books
+            # went through the cabin side at their heads (see
+            # `fitout._book_bounds`) and the forepeak pillows went through the
+            # topsides at the head of the berth.
+            "pillows_stripe",
+            "pillows_plain",
+            "pillow_piping",
+            "book_pages",
+            "book_gilt",
+            "desk_lamp",
+            "desk_lamp_shade",
+            "desk_chart",
+            "desk_safe",
+            "desk_pipe",
+            "desk_pencils",
+            "vhf",
+            "book_resume",
+            "book_about",
         )
         if n in by_name
+    ] + [
+        by_name[f"books_{i}"]
+        for i in range(len(params.BOOK_CLOTHS) - 1)
+        if f"books_{i}" in by_name
     ]
     if not interior_objs:
         print("[verify] no interior found in the build")
@@ -740,9 +767,10 @@ def interior_checks(by_name):
         Check(
             "clear width between settees",
             params.SOLE_HALF_WIDTH * 2,
-            0.520,
+            0.836,
             0.080,
             "fitted",
+            note="owner's brief: a third off the settees, onto the walkway",
         )
     )
 

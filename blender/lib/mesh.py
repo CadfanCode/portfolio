@@ -52,6 +52,7 @@ def grid_to_mesh(
     *,
     close_rings: bool = False,
     weld_distance: float = 1e-4,
+    skip=None,
 ) -> bpy.types.Object:
     """Skin a sequence of equal-length rings into a quad mesh.
 
@@ -62,6 +63,16 @@ def grid_to_mesh(
     Degenerate rings are allowed and expected -- the bow station collapses to a
     single point. The weld pass at the end weeds out the zero-area faces that
     creates, turning the collapsed ring into a proper pole.
+
+    `skip(i, j)` leaves out the quad between rings `i` and `i + 1` spanning
+    points `j` and `j + 1`, which is how a lofted skin gets a hole in it. The
+    cabin windows are the case it exists for: an opening in a surface that is
+    otherwise generated, where the alternative is a boolean against a mesh with
+    no volume to subtract from. It works because a loft's parameterisation is
+    free -- put a row of points on each edge of the opening (see
+    `deck.band_ladder`) and a station on each end of it, and the hole is a row
+    of faces not written. Nothing is left loose: every vertex on the rim still
+    belongs to the faces on the other side of it.
     """
     if len(rings) < 2:
         raise ValueError(f"{name}: need at least two rings")
@@ -78,6 +89,8 @@ def grid_to_mesh(
         base = i * width
         nxt = base + width
         for j in range(span):
+            if skip is not None and skip(i, j):
+                continue
             k = (j + 1) % width
             faces.append((base + j, base + k, nxt + k, nxt + j))
 
@@ -163,8 +176,19 @@ def face_towards(obj: bpy.types.Object, direction: tuple) -> None:
     picks a direction, and which direction it picks is not something to rely on.
     That matters in the app rather than in Blender: three.js draws front faces
     only, so a panel that comes out facing the wrong way is a hole.
+
+    Faces that still disagree after that are dropped. `recalc_face_normals` can
+    only make a surface consistent where the surface is one: given a sheet that
+    laps over itself it orients each lap on its own terms, and the pair then
+    cannot both be right. A lap is not a thing a flat panel does -- it is the
+    fan in `deck._doorway_fan` folding back on itself where the coachroof's aft
+    face runs out of width along the side decks -- so what is dropped is a fold,
+    not a piece of panel. Left in, the folded faces are lit from behind and read
+    as dark wedges in the corners of the one panel the cabin camera looks at.
     """
     from mathutils import Vector
+
+    aim = Vector(direction)
 
     bm = bmesh.new()
     bm.from_mesh(obj.data)
@@ -174,9 +198,35 @@ def face_towards(obj: bpy.types.Object, direction: tuple) -> None:
 
     # Area-weighted, so a handful of slivers cannot outvote the panel.
     total = sum((f.normal * f.calc_area() for f in bm.faces), Vector())
-    if total.dot(Vector(direction)) < 0:
+    if total.dot(aim) < 0:
         bmesh.ops.reverse_faces(bm, faces=bm.faces)
+        bm.normal_update()
 
+    folded = [f for f in bm.faces if f.normal.dot(aim) < 0.0]
+    if folded:
+        bmesh.ops.delete(bm, geom=folded, context="FACES")
+
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
+def bisect(obj: bpy.types.Object, plane_co: tuple, plane_no: tuple) -> None:
+    """Cut the mesh along a plane, leaving both halves joined.
+
+    Two jobs, and they are the same job: putting a boundary where one is wanted.
+    `materials.assign_split` uses it to stop a face having to belong wholly to
+    one side of the waterline, and `deck._build_companionway` to put an edge
+    along a crease rather than let quads straddle it -- a flat-shaded quad with
+    a bend through the middle of it has no correct normal, and shows as a streak.
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.bisect_plane(
+        bm,
+        geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
+        plane_co=plane_co,
+        plane_no=plane_no,
+    )
     bm.to_mesh(obj.data)
     bm.free()
 

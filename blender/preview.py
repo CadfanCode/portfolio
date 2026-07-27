@@ -109,12 +109,48 @@ INTERIOR_VIEWS = {
     # say whether the stop is framed on anything.
     "saloon": ((0.0, _y(5.08), 0.82), {"at": (0.0, _y(2.20), 0.35)}, None, 0.72, 24),
     # Across the saloon into the galley, from where someone sitting on the
-    # starboard settee would be looking.
-    "galley": ((0.55, _y(4.05), 0.72), {"at": (-0.72, _y(5.15), 0.25)}, None, 0.8, 24),
+    # starboard settee would be looking. Aimed at the worktop rather than at
+    # the sole under it now that the worktop is the chart table: what is on it
+    # is the point of the view, and the old aim put the whole of it in the top
+    # quarter of frame.
+    "galley": ((0.55, _y(4.05), 0.76), {"at": (-0.80, _y(4.95), 0.50)}, None, 0.8, 24),
+    # Close on the chart table, from standing at its inboard edge. The one view
+    # that can judge the five objects on it against each other -- whether the
+    # lamp clears the deckhead, whether the safe stands where a hand would go,
+    # and whether the chart reads as paper. Everything here is between 8 mm and
+    # 230 mm, and every other interior camera is too far off to resolve any of
+    # it.
+    "desk": ((-0.34, _y(4.42), 0.88), {"at": (-0.90, _y(4.94), 0.52)}, None, 0.8, 35),
+    # The after starboard book run, from the middle of the saloon: the two
+    # placeholder bindings and the three beside them. Books are the smallest
+    # thing in the cabin that has to survive being looked at closely -- the
+    # case, the page block and the gilt are 2.5, 4 and 0.6 mm apart -- and no
+    # wider view can show whether any of that landed.
+    "bookshelf": ((0.10, _y(4.08), 0.70), {"at": (1.09, _y(4.73), 0.68)}, None, 0.7, 40),
+    # The VHF on the after bulkhead, starboard of the steps. Framed from where
+    # someone on the starboard settee turns to look at it, which is also the
+    # angle the cabin stop's free-look reaches it from -- and the only angle
+    # that shows the handset and its cord standing off the panel rather than
+    # flat against it.
+    "navstation": ((0.30, _y(4.30), 0.66), {"at": (0.76, _y(5.14), 0.45)}, None, 0.8, 35),
     # Through the doorway between the bulkheads into the forepeak. Off the
     # centreline, because the mast post is on it: framed straight down the boat
     # this view is a photograph of a post 150 mm from the lens.
     "forepeak": ((0.26, _y(4.30), 0.62), {"at": (0.0, _y(1.10), 0.16)}, None, 0.9, 24),
+    # The other half of the cabin stop: the same place, turned round. `saloon`
+    # looks forward and every other view here looks at a side, so the after end
+    # of the accommodation -- the way below, the after face of the cabin, and
+    # what is or is not closed off under the cockpit either side of it -- was
+    # the one part of the interior no camera pointed at. It is also the part a
+    # visitor arriving down the steps sees first.
+    "cabin-aft": ((0.0, _y(3.85), 0.95), {"at": (0.0, _y(5.40), 0.25)}, None, 0.8, 24),
+    # Straight across the saloon at a window, from the settee opposite. The only
+    # view that can answer the question the windows exist to answer -- whether
+    # they are openings or paint -- because every other interior camera takes
+    # the cabin side at a glancing angle, and a hole seen edge-on is a line.
+    # Three things to look for: the opening square behind its pane, daylight
+    # through it, and the reveal reading as a thickness rather than an outline.
+    "window": ((-0.30, _y(4.60), 0.62), {"at": (1.22, _y(4.66), 0.905)}, None, 0.75, 28),
 }
 
 
@@ -390,6 +426,13 @@ def _open_up(scene) -> None:
     # about the cabin. Three lamps, roughly where the brochure puts them:
     # "Tre lampor i taket, varav en i forpiken".
     scene.world.node_tree.nodes["Background"].inputs[1].default_value = 2.5
+
+    # And more samples than the exterior needs. Three soft-shadowed point lamps
+    # in a small room is the noisiest thing this file asks EEVEE to do, and at
+    # the default 64 the shadow terminator across the quarter berth comes out as
+    # a band of speckle -- which looks exactly like a modelling fault, and cost
+    # an afternoon of hunting for one before it was recognised as sampling noise.
+    scene.eevee.taa_render_samples = 256
 
     for station, energy in ((1.60, 12.0), (3.60, 18.0), (4.90, 18.0)):
         lamp = bpy.data.lights.new(f"cabin_{station:.1f}", type="POINT")

@@ -30,6 +30,7 @@ def build(collection):
 
     built = {
         "bulkheads": _build_bulkheads(collection, inner),
+        "aft_bulkhead": _build_aft_bulkhead(collection, inner),
         "galley": _build_galley(collection, inner),
         "quarter_berth": _build_quarter_berth(collection, inner),
         "steps": _build_steps(collection),
@@ -266,22 +267,107 @@ def _build_bulkheads(collection, inner):
     return obj
 
 
+def _build_aft_bulkhead(collection, inner):
+    """The after end of the accommodation, either side of the way below.
+
+    Cut the same way as the main bulkheads -- foot to the hull, head to whatever
+    is over it -- with one difference: what is over it is not the deckhead but
+    the cockpit's own moulding, which is a footwell 430 mm above the sole in the
+    middle and a seat 630 mm up outboard of it. So the head of this panel is a
+    step rather than a curve, and `deck.cockpit_surface_function` is asked for
+    it rather than a number being written down twice.
+
+    Taken 2 mm clear of that surface. The panel has one outline for both of its
+    faces and the cockpit sole is falling away aft, so a head cut exactly to the
+    moulding at the forward face stands through it at the after one -- 2 mm of
+    daylight in a joint that is under the cockpit sole, against a lip of panel
+    showing in the footwell.
+
+    Cut at the moulding's own offsets rather than at a spread of its own, for
+    the reason `deck.cockpit_offsets` gives. Sampled evenly the head chorded
+    across the well side and stood through the cockpit seat -- two teak
+    triangles either side of the companionway, which is where this was noticed,
+    and then a teak hairline along the seat's forward edge when the sampling was
+    merely made finer.
+
+    Where each side stops going down is the whole point of the piece and is in
+    params.AFT_BULKHEAD_FOOT: to the sole on the galley side, to the top step on
+    the quarter berth's.
+
+    Both halves run in to the centreline rather than stopping at the steps.
+    Behind the stairs is the one place nobody will ever look, and stopping there
+    left a 45 mm slot between the top tread and the underside of the bridgedeck
+    that you could see a metre and a half of bilge through.
+    """
+    import deck
+
+    cockpit = deck.cockpit_surface_function()
+
+    station_a = params.COCKPIT_START + params.AFT_BULKHEAD_CLEARANCE
+    station_b = station_a + params.AFT_BULKHEAD_THICKNESS
+    out = inner(station_a, interior.sheer_z(station_a))
+
+    # Cut at the moulding's own offsets -- see `deck.cockpit_offsets` -- as far
+    # out as the hull lets the panel go.
+    offsets = [x for x in deck.cockpit_offsets(station_a) if x < out]
+    offsets.append(out)
+
+    panels = []
+    for side in (-1, 1):
+        base = params.AFT_BULKHEAD_FOOT[side]
+
+        foot, head = [], []
+        for x in offsets:
+            # Above the sill the moulding leans forward (`deck.companionway_lean`),
+            # so the piece of it that is really over the panel's after face is a
+            # section from further aft than that face -- and the well is deeper
+            # there. Asked at the face's own station instead, the head came out
+            # 0.4 mm high and drew a teak hairline along the seat's forward edge.
+            lean = params.COMPANIONWAY_LEAN * max(
+                0.0, cockpit(station_b, x) - params.COMPANIONWAY_SILL
+            )
+            top = min(cockpit(station_a, x), cockpit(station_b + lean, x)) - 0.002
+            bottom = _floor(inner, station_a, x, base, top)
+            foot.append((x, min(bottom, top)))
+            head.append((x, top))
+
+        panels.append(
+            _panel(
+                f"aft_bulkhead_{side}",
+                collection,
+                foot + list(reversed(head)),
+                side,
+                station_a,
+                station_b,
+            )
+        )
+
+    obj = _join(panels, "aft_bulkhead")
+    bevel(obj, width=0.003, segments=2)
+    return obj
+
+
 def _build_galley(collection, inner):
-    """The pentry: worktop and lockers, port, at the after end of the saloon.
+    """The pentry block, port, at the after end of the saloon -- dressed as the
+    chart table.
 
-    One block, with the sink let into it. The two-burner hob beside the sink is
-    recessed too -- "Nedsankta ar ocksa dom tva stora matforvaringsboxarna" --
-    so from any distance the whole run reads as a single worktop with things let
-    into it, which is what this is.
+    One block: worktop over lockers, its inboard face flat and its outboard face
+    the hull. That much is the boat, and the numbers that place it are still the
+    brochure's (`params.GALLEY_START` and the rest, which say why).
 
-    The sink is the one thing here that is a real hole rather than a proud
-    fitting. A basin has to drop below the worktop, and while the worktop stayed
-    an unbroken solid its own top face hid the bowl -- the sink read as a chrome
-    rim on a shelf of wood. Cutting the worktop is the honest fix, and this is
-    the piece of joinery the camera comes closest to, so it is worth the one
-    boolean the model otherwise does without. The opening follows the bowl:
-    `fitout.galley_sink_opening` is the single source both this cut and the bowl
-    are built from.
+    What stands on it is not. Owner's brief: the sink and the two-burner hob are
+    gone and this is a chart table now -- lamp, chart, pipe, pencils and the
+    safe, all in `fitout._build_desk_fittings`. That change reaches back into
+    this function for one reason: the worktop used to be cut open over the sink,
+    because a basin has to drop below a surface and the surface's own top face
+    was standing between the eye and the bowl. With no bowl there is no hole,
+    and the top wants to be what a chart table's top is -- unbroken, from the
+    hull to the fiddle.
+
+    So the boolean is gone with it. `_oval_prism` and `_difference` below are
+    kept, and `fitout.galley_sink_opening` with them: they are correct, they are
+    the only cut this model makes, and restoring the pentry should not mean
+    writing them again.
     """
     out = inner(params.GALLEY_START, params.GALLEY_TOP)
 
@@ -297,18 +383,6 @@ def _build_galley(collection, inner):
         params.GALLEY_TOP,
     )
     bevel(obj, width=0.004, segments=2)
-
-    # Open the worktop over the sink. Bevelled first, so the chamfer runs the
-    # worktop's own edges and not the raw edges of the hole (which the bowl's
-    # flange covers anyway).
-    import fitout
-
-    station, x, rx, ry = fitout.galley_sink_opening(inner)
-    cutter = _oval_prism(
-        collection, station, x, rx, ry,
-        params.GALLEY_TOP - 0.090, params.GALLEY_TOP + 0.010,
-    )
-    _difference(obj, cutter)
     return obj
 
 
@@ -421,8 +495,7 @@ def _build_step_grabrail(collection):
     """
     from math import cos, pi, sin
 
-    top_tread = params.SOLE_LEVEL + params.STEP_RISE * params.STEP_TREADS
-    carcase_top = top_tread - params.TREAD_THICKNESS
+    carcase_top = params.TOP_TREAD_LEVEL - params.TREAD_THICKNESS
     carcase_reach = params.STEP_DEPTH - params.TREAD_NOSING
     face_station = params.COCKPIT_START - carcase_reach
     y = params.station_to_y(face_station) - 0.020  # standing proud of the riser
@@ -475,12 +548,21 @@ def _build_step_grabrail(collection):
 
 
 def _build_table(collection):
-    """The saloon table, on the centreline between the settees.
+    """The saloon table, on the centreline between the settees: a fixed centre
+    panel with a drop leaf hanging either side of it.
 
-    A slab. On the boat it is a drop-leaf with both leaves down when nobody is
-    eating, and up it is nearly the width of the saloon -- but the camera stop
-    is at the after end looking forward, where the difference between a folded
-    leaf and a thick edge is a few millimetres of silhouette.
+    It was one slab, as wide as the walkway, on the argument that the camera
+    stop is at the after end looking forward and the difference between a folded
+    leaf and a thick edge is a few millimetres of silhouette. That was true when
+    the walkway was 540 mm wide. It is not true now the owner's brief has taken
+    a third off the settees and given it to the sole: a table that wide, left
+    open, is a barricade across the one route through the boat.
+
+    So the leaves fold, and they are modelled folded -- hinged fore and aft
+    (params.TABLE_LEAF) so that dropping them opens a way past on both sides
+    rather than at one end. Three boxes, not one: a leaf hanging vertically is a
+    different box from the top it hangs off, and standing them apart is what
+    puts a shadow line down each side of the table instead of a chamfer.
     """
     length = 0.900
     # Hung on the mast post, with its forward edge 170 mm ahead of it -- so the
@@ -495,16 +577,43 @@ def _build_table(collection):
     # table height whatever is drawn beside it -- and, since the owner's brief,
     # the same number the galley worktop is built to (see params.GALLEY_TOP).
 
-    obj = _box(
-        "table",
-        collection,
-        mid - length / 2,
-        mid + length / 2,
-        -params.SOLE_HALF_WIDTH,
-        params.SOLE_HALF_WIDTH,
-        top - 0.030,
-        top,
-    )
+    thickness = params.TABLE_THICKNESS
+    width = params.SOLE_HALF_WIDTH * 2  # leaves up, it fills the walkway
+    centre_half = width * (1.0 - 2 * params.TABLE_LEAF) / 2
+    leaf = width * params.TABLE_LEAF
+
+    pieces = [
+        _box(
+            "table_top",
+            collection,
+            mid - length / 2,
+            mid + length / 2,
+            -centre_half,
+            centre_half,
+            top - thickness,
+            top,
+        )
+    ]
+
+    # Each leaf swung down about the hinge under the centre panel's edge, so it
+    # hangs from the underside of the top with its outboard face flush under
+    # that edge -- which is where a butt-hinged leaf ends up and why a folded
+    # table is no wider than its fixed centre.
+    for side in (-1, 1):
+        pieces.append(
+            _box(
+                f"table_leaf_{side}",
+                collection,
+                mid - length / 2,
+                mid + length / 2,
+                side * centre_half,
+                side * (centre_half - thickness),
+                top - thickness - leaf,
+                top - thickness,
+            )
+        )
+
+    obj = _join(pieces, "table")
     bevel(obj, width=0.004, segments=2)
     return obj
 
