@@ -1804,12 +1804,13 @@ between the cloth and the paper on three sides of every one of them."""
 # 260 mm of headroom under the deckhead at its forward end and a book that
 # does not fit is a book nobody put there.
 _BOOK_RUNS = (
-    # Starboard, forward: the long run, alongside the saloon table. The two
-    # placeholders go at the after end of it -- see `_BOOK_PLACEHOLDERS`.
+    # Starboard, forward: the long run, alongside the saloon table. The tail
+    # of named and ordinary books goes at the after end of it -- see
+    # `_BOOK_TAIL`.
     #
     # They were at the after end of the *third* run to begin with, at the
     # visitor's own shoulder as the camera arrives below, which is a good place
-    # for a thing you want noticed and the wrong place for these two. The app
+    # for a thing you want noticed and the wrong place for these. The app
     # walks the camera in to read them (`cameraFocus.ts`), and the move it plays
     # is a first-person side-step past the saloon table -- squeezing through the
     # 290 mm between the table's edge and the settee front, which is what a
@@ -1844,26 +1845,40 @@ _BOOK_RUNS = (
     )),
 )
 
-_BOOK_PLACEHOLDERS = (
-    # (name, height, spine) -- the two exhibits, in the last cloth of the
-    # palette, gilt-banded, at the after end of the forward starboard run.
-    ("book_resume", 0.209, 0.036),
-    ("book_about", 0.199, 0.032),
+_BOOK_TAIL = (
+    # (name, height, spine, cloth, lean) -- the after end of the forward
+    # starboard run, in the loop's own internal shape. `name` is a string for
+    # a book the app addresses by mesh name, in which case `cloth` is `None`
+    # and it takes the palette's reserved last cloth, gilt-banded, kept out of
+    # the pooled joins; `name` is `None` for an ordinary book, pooled by
+    # cloth like any other and given a real cloth index.
+    #
+    # Two ordinary books sit between `book_about` and `book_github` on
+    # purpose, so the third exhibit reads as found on the shelf rather than
+    # bolted on beside the other two. Both fillers stand upright: a tipped
+    # book at this end would lean against an exhibit book, and the app hangs
+    # a hit box and gilt lettering on those, so leaning geometry into them is
+    # a problem worth avoiding rather than debugging later.
+    ("book_resume", 0.209, 0.036, None, 0.00),
+    ("book_about",  0.199, 0.032, None, 0.00),
+    (None,          0.183, 0.027, 1,    0.00),
+    (None,          0.171, 0.021, 3,    0.00),
+    ("book_github", 0.204, 0.030, None, 0.00),
 )
 
 _PLACEHOLDER_RUN = 0
-"""Which of `_BOOK_RUNS` the two exhibits are added to. Named rather than
-written as a bare index in the loop, because it is the one thing in this file
-the app's camera work depends on: `src/scene/cameraFocus.ts` walks the viewer to
-this run and nowhere else."""
+"""Which of `_BOOK_RUNS` the tail of named and ordinary books is added to.
+Named rather than written as a bare index in the loop, because it is the one
+thing in this file the app's camera work depends on: `src/scene/cameraFocus.ts`
+walks the viewer to this run and nowhere else."""
 
 
 def _build_books(collection, inner):
-    """The shelf's books: three runs of them, two of which are exhibits.
+    """The shelf's books: three runs of them, three of which are exhibits.
 
     This used to be four boxes over one settee, with a docstring arguing that a
     full run both sides is more library than a 7.6 m cruiser carries. That
-    argument was about *quantity* and it is still right -- there are fifteen
+    argument was about *quantity* and it is still right -- there are twenty
     books here, not a wall of them, and the port run stops well short of the
     chart table. What it was quietly also doing was excusing four identical
     brown blocks, and four identical brown blocks is not a small number of
@@ -1878,7 +1893,7 @@ def _build_books(collection, inner):
       the page block, inset from the case by `BOOK_PAGE_INSET` at the fore-edge
       and at head and tail, in paper rather than cloth;
 
-      gilt, on the two placeholders only.
+      gilt, on the named exhibits only.
 
     The U is what earns its keep. A solid box has one silhouette and one
     material, and no amount of colour makes a row of them read as books; a case
@@ -1894,20 +1909,25 @@ def _build_books(collection, inner):
     """
     z0 = params.SHELF_LEVEL + params.SHELF_THICKNESS
     cases = {i: [] for i in range(len(params.BOOK_CLOTHS) - 1)}
-    placeholder_names = {name for (name, _, _) in _BOOK_PLACEHOLDERS}
+    placeholder_names = {name for (name, _, _, _, _) in _BOOK_TAIL if name}
     parts, pages, gilt = {}, [], []
 
     for run_index, (side, first, spec) in enumerate(_BOOK_RUNS):
         station = first
         aft_limit = SHELF_END[side] - 0.030
-        placeholders = _BOOK_PLACEHOLDERS if run_index == _PLACEHOLDER_RUN else ()
+        tail = _BOOK_TAIL if run_index == _PLACEHOLDER_RUN else ()
 
         books = [(f"book_{run_index}_{i}", h, s, cloth, lean)
                  for i, (h, s, cloth, lean) in enumerate(spec)]
-        # The placeholders take the last cloth in the palette, whatever it is,
-        # and `None` here means "not one of the pooled cloths" -- they are kept
-        # out as objects of their own.
-        books += [(name, h, s, None, 0.0) for (name, h, s) in placeholders]
+        # The named books in the tail take the last cloth in the palette,
+        # whatever it is, and `None` here means "not one of the pooled
+        # cloths" -- they are kept out as objects of their own. The ordinary
+        # ones in the tail are given a real cloth index and a pooled name
+        # that cannot collide with the spec loop's own naming above.
+        books += [
+            (name if name else f"book_{run_index}_t{i}", h, s, cloth, lean)
+            for i, (name, h, s, cloth, lean) in enumerate(tail)
+        ]
 
         for name, height, spine, cloth, lean in books:
             if station + spine > aft_limit:
@@ -1928,8 +1948,9 @@ def _build_books(collection, inner):
             if name in placeholder_names:
                 # One object each. The pooled runs join by cloth because
                 # nothing ever needs to address a particular novel, but these
-                # two are exhibits: the app hangs a hotspot on `book_resume`
-                # and another on `book_about`, and it finds them by mesh name.
+                # three are exhibits: the app hangs a hotspot on
+                # `book_resume`, `book_about` and `book_github`, and it finds
+                # them by mesh name.
                 case.name = case.data.name = name
                 parts[name] = case
                 gilt += _book_gilt(

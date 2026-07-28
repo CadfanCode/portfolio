@@ -13,12 +13,15 @@ import type {
 import { boatWorldInverse } from './water/boatPose'
 import { useSceneStore } from '../state/useSceneStore'
 import { Boat } from './Boat'
+import { BookSpines } from './BookSpines'
 import { Cabin } from './Cabin'
 import { CabinHatch } from './CabinHatch'
 import { CameraRig } from './CameraRig'
 import { Effects } from './Effects'
 import { EnvSky } from './EnvSky'
 import { FocusTargets } from './FocusTargets'
+import { IntroClouds } from './IntroClouds'
+import { IntroTitle } from './IntroTitle'
 import { Ocean } from './Ocean'
 import { Soundscape } from './Soundscape'
 import { Weather } from './Weather'
@@ -177,6 +180,17 @@ export function PortfolioWorld() {
 
       <Weather />
 
+      {/* The cloud deck the opening flight falls through — sibling of
+          `Weather` rather than inside either moving frame, since it tracks the
+          camera directly and has no position of its own to rock with. */}
+      <IntroClouds />
+
+      {/* The title card the flight punches through on the way down — same
+          sibling position as `IntroClouds` and the same reasoning: it tracks
+          the fixed shot rather than either moving frame, so it has no
+          position of its own to rock with. */}
+      <IntroTitle />
+
       {/* The sea, the wind and the rain, synthesised rather than played back —
           see `audio/soundscape.ts`. In the tree beside `Weather` because it is
           the same weather: both read `sampleConditions` at the frame's own
@@ -235,6 +249,9 @@ export function PortfolioWorld() {
         {/* Inside the boat frame with everything else aboard: the close-up
             targets are fixed to the joinery they sit over. */}
         <FocusTargets />
+        {/* The two lettered book spines, sharing the model's own frame so
+            their hit-testing needs no world-space maths (see BookSpines.tsx). */}
+        <BookSpines />
         <Exhibits />
       </group>
 

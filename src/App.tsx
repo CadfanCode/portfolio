@@ -2,6 +2,7 @@ import { Canvas } from '@react-three/fiber'
 import { Suspense } from 'react'
 import { PortfolioWorld } from './scene/PortfolioWorld'
 import { FocusExit } from './FocusExit'
+import { IntroVeil } from './IntroVeil'
 import { SoundToggle } from './SoundToggle'
 import { ExhibitOverlay } from './scene/exhibits/ExhibitOverlay'
 import './App.css'
@@ -27,6 +28,9 @@ function App() {
           graph is not waiting for the boat either — `main.tsx` warms it at
           boot. See `scene/audio/engine.ts`. */}
       <SoundToggle />
+      {/* Above the exhibit backdrop and the corner chrome — it has to hide the
+          blank canvas behind everything while the boat GLB is still loading. */}
+      <IntroVeil />
     </>
   )
 }

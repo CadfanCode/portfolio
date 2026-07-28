@@ -631,6 +631,7 @@ def interior_checks(by_name):
             "vhf",
             "book_resume",
             "book_about",
+            "book_github",
         )
         if n in by_name
     ] + [

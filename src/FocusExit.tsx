@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { CAMERA_FOCUS } from './scene/cameraFocus'
 import { useSceneStore } from './state/useSceneStore'
 import './FocusExit.css'
@@ -19,18 +19,28 @@ import './FocusExit.css'
  */
 export function FocusExit() {
   const focus = useSceneStore((s) => s.focus)
+  const activeExhibitId = useSceneStore((s) => s.activeExhibitId)
+  const closeExhibit = useSceneStore((s) => s.closeExhibit)
   const clearFocus = useSceneStore((s) => s.clearFocus)
+
+  // "Back" steps out one level at a time: an open exhibit closes first,
+  // leaving the close-up it lives inside still framed; only then does the
+  // same button walk the camera back out to the stop.
+  const goBack = useCallback(
+    () => (activeExhibitId ? closeExhibit() : clearFocus()),
+    [activeExhibitId, closeExhibit, clearFocus],
+  )
 
   // Above the early return, so hook order stays stable when nothing is open.
   useEffect(() => {
     if (!focus) return
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') clearFocus()
+      if (event.key === 'Escape') goBack()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [focus, clearFocus])
+  }, [focus, goBack])
 
   if (!focus) return null
 
@@ -41,7 +51,7 @@ export function FocusExit() {
     <button
       type="button"
       className="focus-exit"
-      onClick={clearFocus}
+      onClick={goBack}
       // Never disabled, and that is a correctness fix rather than a nicety. A
       // disabled button does not swallow the click — Chrome passes it through
       // to whatever is beneath, which here is the Canvas, so pressing back

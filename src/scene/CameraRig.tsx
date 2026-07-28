@@ -1,11 +1,23 @@
 import { CameraControls, CameraControlsImpl } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { CatmullRomCurve3, MathUtils, Vector3 } from 'three'
 import type { Vector3Tuple } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
 import { CAMERA_FOCUS, type FocusLeg } from './cameraFocus'
 import { CAMERA_STOPS, type CameraStop } from './cameraStops'
+import {
+  INTRO_DURATION,
+  INTRO_HOLD_DURATION,
+  INTRO_HOLD_SKIP_TIME,
+  INTRO_HOLD_START,
+  INTRO_HOLD_TARGET,
+  INTRO_PATH,
+  INTRO_SKIP_TIME,
+  INTRO_TILT_START,
+  introEase,
+} from './introFlight'
+import { clamp01, smoothstep01 } from './mathUtils'
 
 /**
  * Orbit radius used at first-person stops. Small enough that turning reads as a
@@ -19,6 +31,14 @@ const pivot = new Vector3()
 const aim = new Vector3()
 const scratchA = new Vector3()
 const scratchB = new Vector3()
+
+// The hold beat's own endpoints, hoisted once rather than rebuilt every frame.
+// `holdEyeEnd`/`holdAimEnd` are `INTRO_PATH[0]`'s own pose — the hold drifts
+// onto the flight's first waypoint so the handover at `h >= 1` is exact.
+const holdEyeStart = new Vector3(...INTRO_HOLD_START)
+const holdAimStart = new Vector3(...INTRO_HOLD_TARGET)
+const holdEyeEnd = new Vector3(...INTRO_PATH[0].position)
+const holdAimEnd = new Vector3(...INTRO_PATH[0].target)
 
 const TAU = Math.PI * 2
 
@@ -304,10 +324,49 @@ export function CameraRig() {
   const leaving = useSceneStore((s) => s.leaving)
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const arrive = useSceneStore((s) => s.arrive)
+  const intro = useSceneStore((s) => s.intro)
+  const beginIntro = useSceneStore((s) => s.beginIntro)
+  const beginFlight = useSceneStore((s) => s.beginFlight)
+  const endIntro = useSceneStore((s) => s.endIntro)
 
   const controls = useRef<CameraControlsImpl>(null)
   const hasMounted = useRef(false)
   const flight = useRef<Flight | null>(null)
+  /** Seconds into the hold beat, unaffected by a skip. */
+  const holdElapsed = useRef(0)
+  /**
+   * Set on a skip gesture that arrives during the hold: the progress fraction
+   * at that moment, and how long the fast-forward has been running. Same
+   * `{ from, elapsed }` shape as `introSkip` below — see there for the remap.
+   */
+  const holdSkip = useRef<{ from: number; elapsed: number } | null>(null)
+  /**
+   * Set the moment a skip gesture arrives during the hold, so the `'playing'`
+   * branch below knows one gesture was meant to skip the whole opening, not
+   * just the beat it landed in, and arms its own skip on the first frame it
+   * gets.
+   */
+  const skipFlight = useRef(false)
+  /** Seconds into the opening flight, unaffected by a skip. */
+  const introElapsed = useRef(0)
+  /**
+   * Set on the first skip gesture during the flight: the eased progress at
+   * that moment, and how long the fast-forward has been running. Null while
+   * un-skipped.
+   */
+  const introSkip = useRef<{ from: number; elapsed: number } | null>(null)
+
+  // Built once from the authored waypoints — one curve for the eye, one for
+  // the aim, sampled with a shared parameter every frame so the look never
+  // drifts out of sync with the fall (see introFlight.ts).
+  const introCurves = useMemo(() => {
+    const eyePoints = INTRO_PATH.map((wp) => new Vector3(...wp.position))
+    const aimPoints = INTRO_PATH.map((wp) => new Vector3(...wp.target))
+    return {
+      eye: new CatmullRomCurve3(eyePoints),
+      aim: new CatmullRomCurve3(aimPoints),
+    }
+  }, [])
 
   // Pan, dolly and zoom stay off for good — the viewer looks around, never flies.
   useEffect(() => {
@@ -322,6 +381,61 @@ export function CameraRig() {
     c.touches.three = ACTION.NONE
   }, [])
 
+  // Snap to the top of the opening flight before the first paint. A plain
+  // effect would let one frame render at the Canvas's own camera prop first,
+  // which flashes the ocean stop for a frame before the cut to altitude.
+  // Guarded on `intro === 'pending'` so StrictMode's mount-cleanup-remount in
+  // development can't restart the flight the second time through.
+  // `beginIntro` goes first because it is the thing that decides whether there
+  // is a flight at all: a visitor who has asked for reduced motion is sent
+  // straight to `'done'` and starts seated, and snapping to altitude before
+  // asking would put them a frame deep in cloud on their way there.
+  useLayoutEffect(() => {
+    const c = controls.current
+    if (!c || intro !== 'pending') return
+
+    beginIntro()
+    if (useSceneStore.getState().intro !== 'holding') return
+
+    releaseLimits(c)
+    c.setLookAt(...INTRO_HOLD_START, ...INTRO_HOLD_TARGET, false)
+  }, [intro, beginIntro])
+
+  // A pointerdown, keydown or touch anywhere fast-forwards the intro instead
+  // of cutting it off — see the useFrame branches below for the remaps. One
+  // gesture skips whichever beat it lands in *and* whatever is still ahead:
+  // arriving during the hold arms both `holdSkip` and `skipFlight`, so the
+  // 'playing' branch knows to arm its own `introSkip` the instant it starts
+  // rather than waiting for a second gesture. It is also the gesture
+  // `scene/audio/engine.ts` falls back to when the browser refused its opening
+  // request to start the context, so on a strict browser skipping the intro is
+  // what starts the soundscape as well.
+  useEffect(() => {
+    if (intro !== 'holding' && intro !== 'playing') return
+
+    const skip = () => {
+      if (intro === 'holding') {
+        if (holdSkip.current) return
+        const h = clamp01(holdElapsed.current / INTRO_HOLD_DURATION)
+        holdSkip.current = { from: h, elapsed: 0 }
+        skipFlight.current = true
+        return
+      }
+      if (introSkip.current) return
+      const t = Math.min(introElapsed.current / INTRO_DURATION, 1)
+      introSkip.current = { from: introEase(t), elapsed: 0 }
+    }
+
+    window.addEventListener('pointerdown', skip)
+    window.addEventListener('keydown', skip)
+    window.addEventListener('touchstart', skip)
+    return () => {
+      window.removeEventListener('pointerdown', skip)
+      window.removeEventListener('keydown', skip)
+      window.removeEventListener('touchstart', skip)
+    }
+  }, [intro])
+
   // Dragging is ignored while the camera is in flight, and switched off
   // entirely inside a close-up: a focus is a fixed framing of one object, and
   // being able to nudge it off that framing is the whole thing the owner asked
@@ -329,14 +443,22 @@ export function CameraRig() {
   // input on `enabled`.
   useEffect(() => {
     const c = controls.current
-    if (c) c.enabled = !isTransitioning && focus === null
-  }, [isTransitioning, focus])
+    if (c) c.enabled = intro === 'done' && !isTransitioning && focus === null
+  }, [intro, isTransitioning, focus])
 
   // Drive the move, then lock the look constraints on arrival. The first run
   // snaps, so we don't glide in from wherever the Canvas camera started.
   useEffect(() => {
     const c = controls.current
     if (!c) return
+
+    // The intro flight owns the camera until it lands. `hasMounted` is left
+    // untouched here on purpose: when `endIntro()` sets `scene` to `'cockpit'`,
+    // this effect runs for real with `animate` still false, snaps to a pose
+    // the camera is already sitting at (a no-op visually), calls `arrive()`,
+    // and applies the cockpit's look constraints. That is the handover from
+    // the scripted flight to ordinary free-look, not a bug.
+    if (intro !== 'done') return
 
     const stop = CAMERA_STOPS[scene]
     const view = focus ? CAMERA_FOCUS[focus] : null
@@ -462,12 +584,102 @@ export function CameraRig() {
     return () => {
       cancelled = true
     }
-  }, [scene, focus, leaving, arrive])
+  }, [scene, focus, leaving, arrive, intro])
 
   useFrame((_, delta) => {
-    const f = flight.current
     const c = controls.current
-    if (!f || !c) return
+    if (!c) return
+
+    if (intro === 'holding') {
+      // Un-skipped, the progress fraction comes straight off elapsed time.
+      // Skipped, it is remapped so the rest of the hold covers the remaining
+      // distance in `INTRO_HOLD_SKIP_TIME` seconds instead — same shape as
+      // the flight's own `introSkip` below.
+      let h: number
+      if (holdSkip.current) {
+        holdSkip.current.elapsed += delta
+        const skipT = Math.min(holdSkip.current.elapsed / INTRO_HOLD_SKIP_TIME, 1)
+        h = MathUtils.lerp(holdSkip.current.from, 1, smoothstep01(skipT))
+      } else {
+        holdElapsed.current += delta
+        h = clamp01(holdElapsed.current / INTRO_HOLD_DURATION)
+      }
+
+      // Quadratic ease-in on position: the camera barely creeps at first and
+      // is already sliding by the time the plummet takes over, rather than
+      // handing off from a dead stop.
+      eye.lerpVectors(holdEyeStart, holdEyeEnd, h * h)
+
+      // The aim holds dead still until the tilt begins, then smoothsteps down
+      // onto the flight's own first target so the handover at h>=1 is
+      // seamless. Read off `h` rather than the raw clock so a skip drags the
+      // tilt to completion along with everything else instead of leaving it
+      // stranded mid-tilt.
+      const holdSeconds = h * INTRO_HOLD_DURATION
+      const tilt = smoothstep01(
+        clamp01((holdSeconds - INTRO_TILT_START) / (INTRO_HOLD_DURATION - INTRO_TILT_START)),
+      )
+      aim.lerpVectors(holdAimStart, holdAimEnd, tilt)
+
+      c.setLookAt(eye.x, eye.y, eye.z, aim.x, aim.y, aim.z, false)
+
+      if (h >= 1) {
+        // Exact handover onto the flight's own first waypoint, so there is no
+        // seam between the hold's own lerp and the Catmull-Rom curve it drops
+        // onto below.
+        c.setLookAt(...INTRO_PATH[0].position, ...INTRO_PATH[0].target, false)
+        beginFlight()
+      }
+      return
+    }
+
+    if (intro === 'playing') {
+      introElapsed.current += delta
+
+      // A hold-skip fast-forwards the flight too — arm the flight's own skip
+      // on the first frame it runs, so a single gesture clears the whole
+      // opening rather than requiring a second one once the plummet starts.
+      if (skipFlight.current && !introSkip.current) {
+        introSkip.current = { from: 0, elapsed: 0 }
+      }
+
+      // Un-skipped, the eased fraction comes straight off elapsed time.
+      // Skipped, it is remapped so the rest of the flight covers the
+      // remaining distance in `INTRO_SKIP_TIME` seconds instead.
+      let e: number
+      if (introSkip.current) {
+        introSkip.current.elapsed += delta
+        const skipT = Math.min(introSkip.current.elapsed / INTRO_SKIP_TIME, 1)
+        e = MathUtils.lerp(introSkip.current.from, 1, smoothstep01(skipT))
+      } else {
+        const t = Math.min(introElapsed.current / INTRO_DURATION, 1)
+        e = introEase(t)
+      }
+
+      // Converting the eased value from arc-length space to curve-parameter
+      // space is what makes the ease control actual metres-per-second, and
+      // sampling both curves at the same `u` is what keeps the aim locked to
+      // the eye — getPointAt on one and getPoint on the other would desync
+      // them the moment the two curves' arc lengths differ.
+      // `distance` is typed as required but treated as falsy-optional at
+      // runtime (three.js falls back to `u * totalLength` for any falsy
+      // value) — 0 gets the same "use u as an arc-length fraction" behaviour
+      // as the `undefined` the runtime API actually accepts.
+      const u = introCurves.eye.getUtoTmapping(e, 0)
+      introCurves.eye.getPoint(u, eye)
+      introCurves.aim.getPoint(u, aim)
+      c.setLookAt(eye.x, eye.y, eye.z, aim.x, aim.y, aim.z, false)
+
+      if (e >= 1) {
+        const cockpit = CAMERA_STOPS.cockpit
+        c.setLookAt(...cockpit.position, ...cockpit.target, false)
+        endIntro()
+      }
+      return
+    }
+
+    const f = flight.current
+    if (!f) return
 
     f.elapsed += delta
     const progress = f.elapsed / f.duration
