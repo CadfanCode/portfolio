@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber'
 import { Suspense } from 'react'
 import { PortfolioWorld } from './scene/PortfolioWorld'
+import { FocusExit } from './FocusExit'
 import { SoundToggle } from './SoundToggle'
 import { ExhibitOverlay } from './scene/exhibits/ExhibitOverlay'
 import './App.css'
@@ -18,6 +19,9 @@ function App() {
         </Suspense>
       </Canvas>
       <ExhibitOverlay />
+      {/* The way out of a close-up. Only control on screen while one is open,
+          because the camera is locked in there. */}
+      <FocusExit />
       {/* Outside the Canvas, and outside the Suspense boundary with it: the
           mute must be there while the boat is still loading, because the sound
           is not waiting for the boat. */}

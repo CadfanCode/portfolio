@@ -1,0 +1,48 @@
+/* Top left. The mute lives bottom right, so the two corners the scene offers
+   are one each and neither ever covers the other. */
+.focus-exit {
+  position: fixed;
+  left: 20px;
+  top: 20px;
+  z-index: 5;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 8px 10px;
+
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-h);
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+
+  /* Same treatment as the mute: the scene behind is varnish, gelcoat or sky,
+     none of which is a reliable backdrop for a control. */
+  backdrop-filter: blur(8px);
+  transition:
+    border-color 0.3s,
+    opacity 0.3s;
+}
+
+.focus-exit:hover,
+.focus-exit:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.focus-exit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.focus-exit svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

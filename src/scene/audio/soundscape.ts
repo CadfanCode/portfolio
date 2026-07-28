@@ -5,8 +5,8 @@ import { makeNoise, noiseSource } from './noise'
 import type { Noise } from './noise'
 
 /**
- * The soundscape: sea, wind, rain, the rig, the sails and the gulls, generated
- * rather than played back.
+ * The soundscape: the sea, the wind, the rain and the gulls, generated rather
+ * than played back.
  *
  * ## Why there are no audio files
  *
@@ -21,31 +21,46 @@ import type { Noise } from './noise'
  *
  * It is driven by the same weather as the picture. `update` reads
  * `sampleConditions` and `windStrength` — the *same* calls that set the wave
- * amplitude, the heel, the fog and the sail shader's flutter. So the sound
- * cannot disagree with what is on screen: the sea gets loud because it is the
- * same number that made it rough, and the rigging starts to whine in a squall
- * because it is the number that is already thrashing the cloth. Cross-fading
- * recorded loops against the weather would approximate this and drift.
+ * amplitude, the heel and the fog. So the sound cannot disagree with what is on
+ * screen: the sea gets loud because it is the same number that made it rough,
+ * and the rigging starts to whine in a squall because it is the number that is
+ * already laying the boat over. Cross-fading recorded loops against the weather
+ * would approximate this and drift.
  *
  * And it is free. The boat is a 6.7 MB GLB. A usable set of seamless ambience
- * loops — sea, wind, rain, gulls — is several megabytes more, and they loop
- * audibly. This is a few hundred bytes of code and a couple of noise buffers
- * built at runtime.
+ * loops is several megabytes more, and they loop audibly.
  *
  * ## The voices
  *
- * Six continuous ones, each a filtered noise source with its own gain, plus the
- * gulls, which are scheduled one-shots. Nothing here is a sound effect triggered
- * by an event; they are all always running, and what changes is their level and
- * their filter. That is what makes the weather audible as weather rather than as
- * a series of cues.
+ *   swell     brown noise, low-passed — the bed under everything
+ *   wash      band-passed white, slowly gated — the general surface of the sea
+ *   breakers  one-shots: individual crests, scheduled at random intervals
+ *   wind      band-passed white, near-silent below a real breeze
+ *   rig       a narrow, high resonance that only speaks in a blow
+ *   rain      high-passed white
+ *   gulls     one-shots, in fair weather only
  *
- *   swell   brown noise, low-passed — the bed under everything
- *   wash    band-passed white, slowly gated — crests breaking, water on the hull
- *   wind    band-passed white, its band riding the gust
- *   rig     a narrow, high resonance that only speaks in a real blow
- *   sails   band-passed white, gated fast — cloth working
- *   rain    high-passed white
+ * ## Not sounding like a loop
+ *
+ * Four defences, because ambience that repeats is worse than no ambience — an
+ * ear locks onto a period in about two cycles and then cannot un-hear it.
+ *
+ *   1. The noise buffers are long (9 and 13 seconds) and crossfaded at the seam,
+ *      so there is no click to hang a period on. See `noise.ts`.
+ *   2. Their playback rates are *detuned by a slow LFO*, so even that period is
+ *      not constant — the buffer never lines up with itself twice.
+ *   3. Every continuous level rides the product of two oscillators at unrelated
+ *      rates, whose combined period is longer than anyone will sit here.
+ *   4. The two things an ear actually latches onto — a wave breaking, a gull —
+ *      are discrete one-shots at random intervals, built fresh each time with
+ *      random size, pan, filter and decay. Nothing about a breaker repeats.
+ *
+ * There used to be a sails voice here: band-passed noise gated at a couple of
+ * hertz to stand in for cloth working. It was removed at the owner's request
+ * and the diagnosis was exactly right — a fast, regular tremolo on a fixed
+ * noise band is a chugging, and what it sounded like was an engine idling below
+ * decks. The lesson is defence 4 above: cloth working is a sequence of
+ * *events*, and a periodic gate can never be one.
  *
  * ## Below decks
  *
@@ -55,20 +70,18 @@ import type { Noise } from './noise'
  * That contrast is most of what makes the companionway feel like a threshold.
  */
 
-/** Where each voice's own gain sits before the master. Tuned against each other
- *  rather than absolutely — the master is what sets how loud the scene is. */
+/** Where the whole bus sits before the limiter. */
 const MASTER = 0.55
 
 /** How much of each voice survives below decks, and how far the bus is filtered
- *  when it does. Sea and rain carry through a hull; wind, cloth and birds do
- *  not, which is the whole point of the contrast. */
-const BELOW = {
-  cutoff: 520,
-  sea: 0.62,
-  rain: 0.30,
-  air: 0.16,
-}
+ *  when it does. Sea and rain carry through a hull; wind and birds do not,
+ *  which is the whole point of the contrast. */
+const BELOW = { cutoff: 520, sea: 0.62, rain: 0.3, air: 0.16 }
 const ABOVE = { cutoff: 20000, sea: 1, rain: 1, air: 1 }
+
+/** Seconds between breaking crests, from a rough sea to a calm one. A glassy
+ *  day still has the odd wave turn over; a gale has one every second or two. */
+const BREAK_GAP = { rough: 1.1, calm: 9.0 }
 
 /** Seconds between gull cries, at their most and least likely. */
 const GULL_GAP = { min: 7, max: 34 }
@@ -79,6 +92,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t
  *  `conditions.ts` uses, and for the same reason: some things do not begin at
  *  all until the weather is genuinely up. */
 const ramp = (x: number, lo: number, hi: number) => clamp01((x - lo) / (hi - lo))
+const between = (a: number, b: number) => a + Math.random() * (b - a)
 
 export type Soundscape = {
   readonly context: AudioContext
@@ -98,8 +112,8 @@ type Voice = {
  * One continuous voice: a noise source through one filter into one gain.
  *
  * Every band in this file is a single biquad. Two would be more accurate about
- * the shape of real wind and would also be two allocations, two more nodes in
- * the graph, and a difference nobody hears under a boat's worth of other noise.
+ * the shape of real wind and would also be two more nodes in the graph for a
+ * difference nobody hears under a boat's worth of other noise.
  */
 function voice(
   ctx: AudioContext,
@@ -121,6 +135,28 @@ function voice(
   filter.connect(gain)
   gain.connect(dest)
   return { gain, filter, source }
+}
+
+/**
+ * A slow wobble on a source's playback rate.
+ *
+ * The single most effective thing in this file against the sense of a loop. A
+ * buffer played at a fixed rate repeats every N seconds forever, and no amount
+ * of filtering hides that from an ear that has heard it twice. Detuned by a
+ * fraction of a per cent on a period of half a minute, the "same" section of
+ * noise never arrives at the same speed twice and there is no period to find.
+ *
+ * Inaudible as pitch: this is noise, and 0.6% on noise is not a pitch change,
+ * it is a different noise.
+ */
+function drift(ctx: AudioContext, source: AudioBufferSourceNode, rate: number, depth: number) {
+  const lfo = ctx.createOscillator()
+  lfo.frequency.value = rate
+  const amount = ctx.createGain()
+  amount.gain.value = depth
+  lfo.connect(amount)
+  amount.connect(source.playbackRate)
+  lfo.start()
 }
 
 /**
@@ -159,38 +195,87 @@ function swell(ctx: AudioContext, target: AudioParam, rateA: number, rateB: numb
 }
 
 /**
+ * One wave turning over, somewhere around the boat.
+ *
+ * The voice that carries the whole soundscape, and the only one that is an
+ * event rather than a level. A sea is not a texture — it is a sequence of
+ * individual crests arriving at intervals that never repeat — and this is the
+ * difference between "the sound of the sea" and "a hiss that gets louder in
+ * bad weather".
+ *
+ * Each is built from scratch and thrown away: its own noise offset, pan,
+ * length, loudness and filter sweep, all randomised inside a range that `size`
+ * widens. The sweep is what makes it a wave rather than a whoosh — a crest
+ * breaks bright and hissing and then drains away dull, so the band starts high,
+ * opens wider as it peaks, and falls through the decay.
+ */
+function breaker(ctx: AudioContext, noise: Noise, dest: AudioNode, size: number) {
+  const now = ctx.currentTime + 0.02
+  const attack = between(0.12, 0.4) * lerp(1.4, 0.7, size)
+  const decay = between(0.9, 2.4) * lerp(0.8, 1.35, size)
+  const peak = between(0.5, 1) * size
+
+  const source = noiseSource(ctx, noise, between(0.88, 1.14))
+
+  const band = ctx.createBiquadFilter()
+  band.type = 'bandpass'
+  band.Q.value = between(0.5, 0.9)
+  const top = between(1300, 2600)
+  band.frequency.setValueAtTime(top, now)
+  band.frequency.exponentialRampToValueAtTime(top * 0.72, now + attack)
+  band.frequency.exponentialRampToValueAtTime(between(220, 420), now + attack + decay)
+
+  const env = ctx.createGain()
+  env.gain.setValueAtTime(0.0001, now)
+  env.gain.linearRampToValueAtTime(Math.max(0.0002, peak), now + attack)
+  env.gain.exponentialRampToValueAtTime(0.0001, now + attack + decay)
+
+  const panner = ctx.createStereoPanner()
+  panner.pan.value = between(-0.85, 0.85)
+
+  source.connect(band)
+  band.connect(env)
+  env.connect(panner)
+  panner.connect(dest)
+
+  const end = now + attack + decay + 0.05
+  source.stop(end)
+  source.onended = () => {
+    source.disconnect()
+    band.disconnect()
+    env.disconnect()
+    panner.disconnect()
+  }
+}
+
+/**
  * One gull, some distance off.
  *
  * A cry is three to five short notes, each a fast rise and a longer fall in
  * pitch, through a band-pass that stands in for the bird's own resonance. A
  * sawtooth rather than a sine because a gull is a rough, buzzy sound and the
  * harmonics are most of what makes it recognisable at all.
- *
- * Built and thrown away per cry rather than kept: it plays for under two
- * seconds, a handful of times a minute at most, and holding a permanent voice
- * for it would mean gating an oscillator that is silent 95% of the time.
  */
 function gullCry(ctx: AudioContext, dest: AudioNode, level: number): number {
   const panner = ctx.createStereoPanner()
-  panner.pan.value = Math.random() * 1.6 - 0.8
+  panner.pan.value = between(-0.8, 0.8)
   panner.connect(dest)
+
+  // Further off means quieter and duller — one number doing both, so a distant
+  // bird cannot come out muffled and loud.
+  const distance = between(0.35, 1)
 
   const band = ctx.createBiquadFilter()
   band.type = 'bandpass'
-  band.frequency.value = 1500 + Math.random() * 700
+  band.frequency.value = between(1500, 2200) * (0.75 + 0.25 * distance)
   band.Q.value = 1.3
   band.connect(panner)
 
   const notes = 3 + Math.floor(Math.random() * 3)
-  // Further off means quieter and duller — one number doing both, so a distant
-  // bird cannot come out muffled and loud.
-  const distance = 0.35 + Math.random() * 0.65
-  band.frequency.value *= 0.75 + 0.25 * distance
-
   let at = ctx.currentTime + 0.05
   for (let i = 0; i < notes; i++) {
-    const length = 0.15 + Math.random() * 0.1
-    const base = (760 + Math.random() * 240) * (1 - i * 0.06)
+    const length = between(0.15, 0.25)
+    const base = between(760, 1000) * (1 - i * 0.06)
 
     const osc = ctx.createOscillator()
     osc.type = 'sawtooth'
@@ -213,7 +298,7 @@ function gullCry(ctx: AudioContext, dest: AudioNode, level: number): number {
       env.disconnect()
     }
 
-    at += length + 0.09 + Math.random() * 0.08
+    at += length + between(0.09, 0.17)
   }
 
   const done = at + 0.3
@@ -228,16 +313,19 @@ function gullCry(ctx: AudioContext, dest: AudioNode, level: number): number {
 }
 
 export function createSoundscape(ctx: AudioContext): Soundscape {
-  const white = makeNoise(ctx, 4.5, 0)
-  const brown = makeNoise(ctx, 6.0, 1)
+  // Long buffers. See "Not sounding like a loop" above: this is the first of
+  // the four defences and the cheapest — a few megabytes of float that never
+  // leave memory, against a period an ear can find.
+  const white = makeNoise(ctx, 9, 0)
+  const brown = makeNoise(ctx, 13, 1)
 
   // --- The bus. Everything lands here, gets the hull's low-pass if the camera
   // is below decks, then the master level, then a limiter.
   //
-  // The limiter is not decoration: in a squall the sea, the wind, the rig, the
-  // rain and the cloth are all at their loudest at once, by construction —
-  // they are one weather. Without it their sum clips, and clipping is the one
-  // artefact that will not read as "rough weather" but as "broken website".
+  // The limiter is not decoration: in a squall the sea, the wind, the rig and
+  // the rain are all at their loudest at once, by construction — they are one
+  // weather. Without it their sum clips, and clipping is the one artefact that
+  // will not read as "rough weather" but as "broken website".
   const limiter = ctx.createDynamicsCompressor()
   limiter.threshold.value = -10
   limiter.knee.value = 6
@@ -256,34 +344,42 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
   hull.Q.value = 0.7
   hull.connect(master)
 
-  // --- The voices.
+  // --- The sea.
 
-  // The swell: brown noise with most of the top taken off. This is the floor of
-  // the whole scene and the only voice that is never silent — even a glassy day
-  // has water moving under the boat.
-  const sea = voice(ctx, brown, hull, 'lowpass', 220, 0.8, 1.0)
-  const seaSwell = swell(ctx, sea.gain.gain, 0.075, 0.041)
+  // The swell: brown noise with most of the top taken off. The floor of the
+  // whole scene and the only voice that is never silent — even a glassy day has
+  // water moving under the boat.
+  const sea = voice(ctx, brown, hull, 'lowpass', 220, 0.8, 1)
+  const seaSwell = swell(ctx, sea.gain.gain, 0.073, 0.041)
+  drift(ctx, sea.source, 0.029, 0.006)
 
-  // Crests breaking, and the wash running along the topsides. Gated slowly and
-  // irregularly, because waves arrive one at a time; the band sits where water
-  // actually hisses rather than where it rumbles.
+  // The general surface: the hiss of a sea that is up, and the wash running
+  // along the topsides. Under the breakers rather than instead of them.
   const wash = voice(ctx, white, hull, 'bandpass', 1250, 0.7, 0.93)
   const washSwell = swell(ctx, wash.gain.gain, 0.19, 0.083)
+  drift(ctx, wash.source, 0.037, 0.008)
 
-  // Wind. The band climbs and narrows with the gust, so a squall does not just
-  // get louder, it rises in pitch and tightens the way wind across a deck does.
+  // Individual crests. Their own bus so the whole sequence can be levelled at
+  // once and ducked below decks with everything else.
+  const breakers = ctx.createGain()
+  breakers.gain.value = 0
+  breakers.connect(hull)
+
+  // --- The weather over it.
+
+  // Wind. Near silent in light airs and the loudest thing here in a squall,
+  // which is the owner's brief and also simply true: you do not hear wind on a
+  // boat until it is blowing. The band climbs and narrows as it gets up, so a
+  // squall does not merely get louder, it rises and tightens the way wind
+  // across a deck does.
   const wind = voice(ctx, white, hull, 'bandpass', 420, 0.8, 1.07)
+  const windSwell = swell(ctx, wind.gain.gain, 0.31, 0.127)
+  drift(ctx, wind.source, 0.023, 0.01)
 
   // The rig: a narrow resonance up where standing rigging and halyards sing.
   // Silent until the wind is genuinely up — this is the sound of a boat being
   // pressed, and hearing it in a fair breeze would be a lie about the day.
   const rig = voice(ctx, white, hull, 'bandpass', 1900, 11, 1.13)
-
-  // Cloth working: the luff and the leech. Gated much faster than the sea, at a
-  // rate that rises with how hard the sails are being worked, so it goes from a
-  // slow breathing rustle to a hard flogging.
-  const sails = voice(ctx, white, hull, 'bandpass', 900, 1.1, 0.87)
-  const sailFlap = swell(ctx, sails.gain.gain, 1.7, 0.9)
 
   // Rain, on the deck and on the water. Nearly white — rain is the one thing
   // out here with real high-frequency content.
@@ -295,6 +391,7 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
   gulls.gain.value = 1
   gulls.connect(hull)
 
+  let nextBreak = ctx.currentTime + 1.5
   let nextGull = ctx.currentTime + 4
 
   /** Ease a param toward a value. `setTargetAtTime` rather than a ramp: it needs
@@ -310,36 +407,29 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
     const below = scene === 'cabin'
     const env = below ? BELOW : ABOVE
 
-    // The same two lines `Boat.tsx` computes to drive the sail shader, so the
-    // cloth is heard working exactly as hard as it is seen working.
-    const intensity = clamp01(0.6 * c.sea + 0.4 * c.wind)
-    const flutter = clamp01(0.1 + 0.45 * intensity + 0.4 * c.spray + 0.35 * ramp(c.wind, 0.6, 1))
-
-    // Wind, with the gust on top of the weather's steady figure. Squared,
-    // because loudness against wind speed is nothing like linear and a linear
-    // map leaves a calm too noisy and a squall not frightening enough.
+    // Wind, with the gust on top of the weather's steady figure, then held off
+    // until there is a breeze worth hearing. Squared after that, because
+    // loudness against wind speed is nothing like linear: a linear map leaves a
+    // fair day too noisy and a squall not frightening enough.
     const blow = clamp01(c.wind * (0.78 + 0.22 * gust))
+    const heard = ramp(blow, 0.3, 1)
 
-    ease(sea.gain.gain, lerp(0.09, 0.5, c.sea) * env.sea)
-    ease(sea.filter.frequency, lerp(150, 420, c.sea), 0.8)
+    ease(sea.gain.gain, lerp(0.1, 0.5, c.sea) * env.sea)
+    ease(sea.filter.frequency, lerp(150, 430, c.sea), 0.8)
     ease(seaSwell.gain, lerp(0.03, 0.14, c.sea))
 
-    ease(wash.gain.gain, (0.03 + 0.34 * c.foam + 0.16 * c.spray) * env.sea)
-    ease(washSwell.gain, 0.05 + 0.22 * c.foam)
+    ease(wash.gain.gain, (0.02 + 0.26 * c.foam + 0.14 * c.spray) * env.sea)
+    ease(washSwell.gain, 0.05 + 0.2 * c.foam)
 
-    ease(wind.gain.gain, (0.02 + 0.36 * blow * blow) * env.air)
-    ease(wind.filter.frequency, lerp(300, 980, blow), 0.5)
-    ease(wind.filter.Q, lerp(0.7, 3.2, blow), 0.5)
+    ease(breakers.gain, lerp(0.35, 1.05, c.sea) * env.sea)
 
-    ease(rig.gain.gain, 0.2 * ramp(blow, 0.66, 1) * env.air)
+    ease(wind.gain.gain, (0.01 + 0.46 * heard * heard) * env.air)
+    ease(wind.filter.frequency, lerp(300, 1020, blow), 0.5)
+    ease(wind.filter.Q, lerp(0.7, 3.4, blow), 0.5)
+    ease(windSwell.gain, 0.02 + 0.18 * heard)
+
+    ease(rig.gain.gain, 0.22 * ramp(blow, 0.66, 1) * env.air)
     ease(rig.filter.frequency, lerp(1700, 2450, blow), 0.5)
-
-    ease(sails.gain.gain, (0.02 + 0.2 * flutter) * env.air)
-    ease(sailFlap.gain, 0.02 + 0.2 * flutter)
-    // How fast the cloth is working, not how loud. A sail breathing in a calm
-    // and one flogging in a squall are the same band at the same level for the
-    // first half-second; the rate is what tells them apart.
-    ease(sails.filter.frequency, lerp(700, 1350, flutter), 0.5)
 
     ease(rain.gain.gain, 0.34 * c.rain * env.rain)
 
@@ -348,26 +438,38 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
     // gale behind it is the reason people mute portfolio sites.
     ease(master.gain, MASTER * (ducked ? 0.35 : 1), 0.4)
 
+    // --- Crests. The gap shortens and the size grows with the sea, and both
+    // are jittered every time, so no two arrive on the same beat. This is
+    // defence 4 and it is why the sea does not read as a texture.
+    if (ctx.currentTime > nextBreak) {
+      breaker(ctx, white, breakers, lerp(0.28, 1, c.sea) * between(0.55, 1))
+      const gap = lerp(BREAK_GAP.calm, BREAK_GAP.rough, c.sea)
+      nextBreak = ctx.currentTime + gap * between(0.45, 1.75)
+    }
+
     // --- Gulls. They keep off the water in a blow, so their rate falls away as
     // the weather gets up and they are gone entirely in a squall — which is
     // also what makes them worth having: the silence where they were is a
     // second, quieter signal that the weather has turned.
     const gullChance = clamp01(1 - ramp(c.sea, 0.3, 0.72)) * (below ? 0.25 : 1)
-    if (gullChance > 0.02 && ctx.currentTime > nextGull) {
-      const end = gullCry(ctx, gulls, 0.2 * gullChance * env.air)
-      nextGull = end + lerp(GULL_GAP.max, GULL_GAP.min, gullChance) * (0.6 + Math.random() * 0.8)
-    } else if (ctx.currentTime > nextGull) {
-      nextGull = ctx.currentTime + 6
+    if (ctx.currentTime > nextGull) {
+      if (gullChance > 0.02) {
+        const end = gullCry(ctx, gulls, 0.2 * gullChance * env.air)
+        nextGull = end + lerp(GULL_GAP.max, GULL_GAP.min, gullChance) * between(0.6, 1.4)
+      } else {
+        nextGull = ctx.currentTime + 6
+      }
     }
   }
 
   function dispose() {
-    for (const v of [sea, wash, wind, rig, sails, rain]) {
+    for (const v of [sea, wash, wind, rig, rain]) {
       v.source.stop()
       v.source.disconnect()
       v.filter.disconnect()
       v.gain.disconnect()
     }
+    breakers.disconnect()
     gulls.disconnect()
     hull.disconnect()
     master.disconnect()

@@ -15,7 +15,17 @@ export type CameraStop = {
   position: Vector3Tuple
   target: Vector3Tuple
   look: LookMode
-  /** Radians either side of the stop's resting heading. */
+  /**
+   * Radians either side of the stop's resting heading, or `Infinity` for a stop
+   * that turns all the way round.
+   *
+   * `Infinity` is not a special case in the code — `applyLookConstraints` adds
+   * and subtracts it from the resting heading and camera-controls reads the
+   * resulting ±Infinity as unbounded, which is exactly what it means. It is
+   * worth spelling as `Infinity` rather than as `deg(180)` because the two
+   * behave differently at the seam: a 180° range still has two ends, and
+   * dragging into one of them stops dead half a turn from where you started.
+   */
   azimuthRange: number
   /**
    * Absolute polar bounds in radians, measured from +Y. Gravity-referenced
@@ -71,7 +81,13 @@ export const CAMERA_STOPS: Record<SceneState, CameraStop> = {
     position: [11, 6, -9],
     target: [0, 4.2, -0.2],
     look: 'orbit',
-    azimuthRange: deg(110),
+    // All the way round, at the owner's request. It used to stop 110 degrees
+    // off the bow each way, which was a hedge against showing the transom --
+    // and the transom is finished: rail, tiller, outboard, boarding ladder.
+    // There is nothing back there this camera needs protecting from, and an
+    // orbit that cannot complete a circle is the one kind of camera a viewer
+    // notices, because they find the wall by pushing at it.
+    azimuthRange: Infinity,
     // Never past 90deg — that would put the camera under the waterline.
     polarRange: [deg(25), deg(88)],
   },
@@ -91,7 +107,13 @@ export const CAMERA_STOPS: Record<SceneState, CameraStop> = {
     position: [0.34, 1.62, 3.15],
     target: [0, 1.1, -1.5],
     look: 'firstPerson',
-    azimuthRange: deg(140),
+    // All the way round, at the owner's request, and this is the stop where it
+    // matters most: you are sitting in the boat, and a person sitting in a
+    // cockpit can look anywhere. The old 140-degree limit stopped you before
+    // the backstay, so the whole after end of the boat -- the thing you are
+    // literally sitting in front of -- could not be looked at from the one
+    // place you would look at it from.
+    azimuthRange: Infinity,
     polarRange: [deg(30), deg(150)],
   },
   /**
@@ -117,7 +139,14 @@ export const CAMERA_STOPS: Record<SceneState, CameraStop> = {
     position: [0, 1.05, 1.05],
     target: [0, 0.65, -1.3],
     look: 'firstPerson',
-    azimuthRange: deg(150),
+    // All the way round here too, and this one is a fix rather than a
+    // preference. The 150 degrees it had were "generous" and still 18 short of
+    // the VHF, which is on the after bulkhead behind your right shoulder — so
+    // the close-up view of it (`cameraFocus.ts`) existed, rendered, and could
+    // not be reached, because you could not turn far enough to click it. A stop
+    // whose look limits cannot reach something clickable at that stop is not a
+    // constraint, it is a dead object.
+    azimuthRange: Infinity,
     polarRange: [deg(35), deg(140)],
   },
 }

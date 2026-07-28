@@ -30,6 +30,11 @@ function ExhibitHotspot({ exhibit }: { exhibit: Exhibit }) {
 /** Renders the hotspot for every exhibit belonging to the current stop. */
 export function Exhibits() {
   const scene = useSceneStore((s) => s.scene)
+  const focus = useSceneStore((s) => s.focus)
+
+  // Hidden inside a close-up, for the reason `CabinHatch` is: the camera is
+  // locked on one object, so anything else clickable in the cabin is a trap.
+  if (focus) return null
 
   return (
     <>

@@ -18,6 +18,7 @@ import { CabinHatch } from './CabinHatch'
 import { CameraRig } from './CameraRig'
 import { Effects } from './Effects'
 import { EnvSky } from './EnvSky'
+import { FocusTargets } from './FocusTargets'
 import { Ocean } from './Ocean'
 import { Soundscape } from './Soundscape'
 import { Weather } from './Weather'
@@ -227,6 +228,9 @@ export function PortfolioWorld() {
         />
         <Cabin />
         <CabinHatch />
+        {/* Inside the boat frame with everything else aboard: the close-up
+            targets are fixed to the joinery they sit over. */}
+        <FocusTargets />
         <Exhibits />
       </group>
 

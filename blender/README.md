@@ -195,12 +195,17 @@ a moulding with furniture in it. Three of the boat's five berths are in here and
 none of them looks like a berth until there is something on it.
 
 Four things in it are placeholders for portfolio exhibits rather than parts of
-the boat: the safe on the chart table, the VHF on the after bulkhead, and the
-two gilt-banded books at the after end of the starboard shelf. They are modelled
-as carefully as everything around them on purpose -- an exhibit that does not
-read as the object it stands for teaches a visitor to ignore it -- and they are
-findable from the app by mesh name (`desk_safe`, `vhf`, `books_5`), which is how
-an `Exhibit`'s hotspot will be hung on them.
+the boat: the safe on the chart table, the VHF on the after bulkhead, and the two
+gilt-banded books at the after end of the *forward* starboard shelf, beside the
+saloon table. They are modelled as carefully as everything around them on purpose
+-- an exhibit that does not read as the object it stands for teaches a visitor to
+ignore it -- and each is a mesh of its own so the app can find it by name:
+`desk_safe`, `vhf`, `book_resume`, `book_about`.
+
+Where the two books are is not a free choice. `src/scene/cameraFocus.ts` walks
+the camera to them with a first-person side-step through the 290 mm between the
+saloon table and the settee front, which only exists as a move if the books are
+beside the table -- see `_BOOK_RUNS` and `_PLACEHOLDER_RUN` in `fitout.py`.
 
 The pentry the brochure describes -- a sink and a two-burner cooker in this same
 worktop -- is no longer built. Owner's brief: the block is a chart table now. The

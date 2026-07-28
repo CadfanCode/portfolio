@@ -16,8 +16,14 @@ import { Hotspot } from './Hotspot'
  */
 export function CabinHatch() {
   const scene = useSceneStore((s) => s.scene)
+  const focus = useSceneStore((s) => s.focus)
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const goTo = useSceneStore((s) => s.goTo)
+
+  // Nothing to navigate to from inside a close-up. The camera is locked on an
+  // object, and a marker for a hatch you cannot turn to look at would only be
+  // something to click by accident.
+  if (focus) return null
 
   if (scene === 'cockpit') {
     return (
