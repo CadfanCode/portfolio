@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Claude Code: the agent roster and arbiter config are shared, the local
+# permission grants are not -- `*.local` above does not match `*.local.json`.
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

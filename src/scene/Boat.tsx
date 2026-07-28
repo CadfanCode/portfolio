@@ -5,6 +5,7 @@ import { Mesh, Object3D, Vector3, Vector4 } from 'three'
 import type { Material, WebGLProgramParametersWithUniforms } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
 import { sampleConditions } from './conditions'
+import { clamp01, smoothstep } from './mathUtils'
 import { usePointerSelect } from './usePointerSelect'
 import { windStrength } from './wind'
 import modelUrl from '../assets/models/maxi77.glb?url'
@@ -357,12 +358,6 @@ function padR(caps: Capsule[]): number[] {
   const out: number[] = []
   for (let i = 0; i < 4; i++) out.push(caps[i] ? caps[i].R : 0)
   return out
-}
-
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x)
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = clamp01((x - a) / (b - a))
-  return t * t * (3 - 2 * t)
 }
 
 /**

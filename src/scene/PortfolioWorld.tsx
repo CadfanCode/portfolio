@@ -18,6 +18,7 @@ import { CabinHatch } from './CabinHatch'
 import { CameraRig } from './CameraRig'
 import { Effects } from './Effects'
 import { EnvSky } from './EnvSky'
+import { FocusTargets } from './FocusTargets'
 import { Ocean } from './Ocean'
 import { Soundscape } from './Soundscape'
 import { Weather } from './Weather'
@@ -176,12 +177,16 @@ export function PortfolioWorld() {
 
       <Weather />
 
-      {/* The sea, the wind, the rig and the gulls, synthesised rather than
-          played back — see `audio/soundscape.ts`. In the tree beside `Weather`
-          because it is the same weather: both read `sampleConditions` at the
-          frame's own time, so what you hear and what you see are one front.
-          Outside the boat frame, since it has no position — it is the world's
-          ambience, not a source on the hull. */}
+      {/* The sea, the wind and the rain, synthesised rather than played back —
+          see `audio/soundscape.ts`. In the tree beside `Weather` because it is
+          the same weather: both read `sampleConditions` at the frame's own
+          time, so what you hear and what you see are one front. Outside the
+          boat frame, since it has no position — it is the world's ambience, not
+          a source on the hull.
+
+          The graph itself is not built here; `audio/engine.ts` has it warm and
+          silent long before this mounts, so the sound does not queue behind the
+          GLB. This is only what drives it. */}
       <Soundscape />
 
       {/* The reflection cubemap. It bakes the gradient dome — a real horizon and
@@ -227,6 +232,9 @@ export function PortfolioWorld() {
         />
         <Cabin />
         <CabinHatch />
+        {/* Inside the boat frame with everything else aboard: the close-up
+            targets are fixed to the joinery they sit over. */}
+        <FocusTargets />
         <Exhibits />
       </group>
 

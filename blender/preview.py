@@ -121,12 +121,19 @@ INTERIOR_VIEWS = {
     # 230 mm, and every other interior camera is too far off to resolve any of
     # it.
     "desk": ((-0.34, _y(4.42), 0.88), {"at": (-0.90, _y(4.94), 0.52)}, None, 0.8, 35),
-    # The after starboard book run, from the middle of the saloon: the two
-    # placeholder bindings and the three beside them. Books are the smallest
-    # thing in the cabin that has to survive being looked at closely -- the
-    # case, the page block and the gilt are 2.5, 4 and 0.6 mm apart -- and no
-    # wider view can show whether any of that landed.
-    "bookshelf": ((0.10, _y(4.08), 0.70), {"at": (1.09, _y(4.73), 0.68)}, None, 0.7, 40),
+    # The forward starboard book run: the two placeholder bindings and the seven
+    # beside them. Books are the smallest thing in the cabin that has to survive
+    # being looked at closely -- the case, the page block and the gilt are 2.5,
+    # 4 and 0.6 mm apart -- and no wider view can show whether any of that
+    # landed.
+    #
+    # Deliberately the same framing the app walks the camera to
+    # (`src/scene/cameraFocus.ts`, the `books` focus), converted station for z,
+    # so this render is what a visitor actually ends up looking at rather than a
+    # separate opinion about it. It was aimed at the *after* run until the two
+    # placeholders moved forward to be beside the saloon table, and then it was
+    # a careful photograph of three ordinary books.
+    "bookshelf": ((0.62, _y(3.43), 0.70), {"at": (1.02, _y(3.43), 0.68)}, None, 0.7, 35),
     # The VHF on the after bulkhead, starboard of the steps. Framed from where
     # someone on the starboard settee turns to look at it, which is also the
     # angle the cabin stop's free-look reaches it from -- and the only angle

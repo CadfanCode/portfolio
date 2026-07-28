@@ -1804,8 +1804,18 @@ between the cloth and the paper on three sides of every one of them."""
 # 260 mm of headroom under the deckhead at its forward end and a book that
 # does not fit is a book nobody put there.
 _BOOK_RUNS = (
-    # Starboard, forward: the long run, seen from the forepeak doorway and
-    # across the saloon from the port settee.
+    # Starboard, forward: the long run, alongside the saloon table. The two
+    # placeholders go at the after end of it -- see `_BOOK_PLACEHOLDERS`.
+    #
+    # They were at the after end of the *third* run to begin with, at the
+    # visitor's own shoulder as the camera arrives below, which is a good place
+    # for a thing you want noticed and the wrong place for these two. The app
+    # walks the camera in to read them (`cameraFocus.ts`), and the move it plays
+    # is a first-person side-step past the saloon table -- squeezing through the
+    # 290 mm between the table's edge and the settee front, which is what a
+    # person actually does to get at this shelf. That move only exists if the
+    # books are beside the table. Aft of it there is nothing to squeeze past and
+    # the animation would be a mime.
     (1, 3.290, (
         (0.192, 0.028, 0, 0.00),
         (0.205, 0.019, 2, 0.00),
@@ -1824,9 +1834,9 @@ _BOOK_RUNS = (
         (0.178, 0.027, 3, 0.07),
         (0.190, 0.023, 2, 0.00),
     )),
-    # Starboard, aft: the group at the visitor's own shoulder when the camera
-    # arrives in the cabin. The two placeholders go at the after end of it --
-    # see `_BOOK_PLACEHOLDERS`.
+    # Starboard, aft: a short group at the visitor's own shoulder when the
+    # camera arrives in the cabin. Ordinary books -- what it is for is to stop
+    # the forward run reading as the one place on the boat anybody keeps any.
     (1, 4.640, (
         (0.181, 0.029, 3, 0.00),
         (0.196, 0.021, 0, 0.00),
@@ -1836,10 +1846,16 @@ _BOOK_RUNS = (
 
 _BOOK_PLACEHOLDERS = (
     # (name, height, spine) -- the two exhibits, in the last cloth of the
-    # palette, gilt-banded, at the after end of the aft starboard run.
+    # palette, gilt-banded, at the after end of the forward starboard run.
     ("book_resume", 0.209, 0.036),
     ("book_about", 0.199, 0.032),
 )
+
+_PLACEHOLDER_RUN = 0
+"""Which of `_BOOK_RUNS` the two exhibits are added to. Named rather than
+written as a bare index in the loop, because it is the one thing in this file
+the app's camera work depends on: `src/scene/cameraFocus.ts` walks the viewer to
+this run and nowhere else."""
 
 
 def _build_books(collection, inner):
@@ -1884,7 +1900,7 @@ def _build_books(collection, inner):
     for run_index, (side, first, spec) in enumerate(_BOOK_RUNS):
         station = first
         aft_limit = SHELF_END[side] - 0.030
-        placeholders = _BOOK_PLACEHOLDERS if run_index == 2 else ()
+        placeholders = _BOOK_PLACEHOLDERS if run_index == _PLACEHOLDER_RUN else ()
 
         books = [(f"book_{run_index}_{i}", h, s, cloth, lean)
                  for i, (h, s, cloth, lean) in enumerate(spec)]
@@ -1893,16 +1909,18 @@ def _build_books(collection, inner):
         # out as objects of their own.
         books += [(name, h, s, None, 0.0) for (name, h, s) in placeholders]
 
-        # One pair of offsets for the whole run, taken across the run's own
-        # length and against its tallest book -- see `_book_bounds`.
-        last = min(first + sum(s + 0.0035 for (_, _, s, _, _) in books), aft_limit)
-        bounds = _book_bounds(inner, z0, max(h for (_, h, _, _, _) in books), first, last)
-        if bounds[1] <= bounds[0] + BOOK_COVER * 2:
-            continue
-
         for name, height, spine, cloth, lean in books:
             if station + spine > aft_limit:
                 break
+
+            # This book's own offsets, at its own stations -- see `_book_bounds`
+            # for the two versions of this that took them per run and per boat,
+            # and what each of those cost.
+            bounds = _book_bounds(inner, z0, height, station, station + spine)
+            if bounds[1] <= bounds[0] + BOOK_COVER * 2:
+                station += spine + 0.0035
+                continue
+
             case, block = _book(
                 name, collection, side, station, spine, height, z0, lean, bounds
             )
@@ -1930,29 +1948,36 @@ def _build_books(collection, inner):
 
 
 def _book_bounds(inner, z0, height, start, end):
-    """Where a run of books stands on the shelf: `(x_in, x_out)` as positive
-    half-offsets, spine inboard, the same pair for every book in the run.
+    """Where one book stands on the shelf: `(x_in, x_out)` as positive
+    half-offsets, spine inboard, taken at that book's own two stations.
 
-    One pair for the run, and not one per book. A book is a rigid object and a
-    row of them stands in a straight line whatever the shelf beneath does; cut
-    to the hull book by book, a run fans outboard going aft and reads as the
-    shelf being crooked. So the run gets a single offset, and the only question
-    is which station to take it at.
+    Per book. That is the third answer this has had, and the other two are worth
+    recording because they fail in opposite directions and the second one looked
+    right in every render taken of it.
 
-    Both ends, and the tighter answer wins at each edge -- which is not the same
-    station for the two edges, because they are constrained from opposite
-    directions. The topsides move outboard going aft: 60 mm across the saloon,
-    which is half the depth of the shelf. So the fiddle the spines rest against
-    is furthest outboard at the after end of the run, and the hull the fore-edge
-    must stay inside is closest at the forward end. Take one station for both
-    and the run either floats clear of the fiddle or stands through the topsides
-    -- and the first version of this took `BULKHEAD_AFT` for every run on the
-    boat and did the first, floating the after run 70 mm off the shelf it was
-    supposed to be standing on.
+    Taken at one fixed station for the whole boat, books stood 70 mm inboard of
+    the fiddle at the after end of the shelf -- floating in mid-air over the
+    backrest, which is what the first bookshelf render showed.
 
-    The height matters for the same reason and in the other direction: the hull
-    widens as it rises here, so the narrowest it gets over a book's own height
-    is at the shelf, which is where the fore-edge is measured.
+    Taken once per *run*, they sit on the shelf and lose their depth. The
+    topsides move outboard fast along the saloon -- 44 mm over the 274 mm of the
+    forward run -- and one offset for a whole run has to clear the fiddle at the
+    run's widest station *and* stay inside the hull at its narrowest, so the run
+    pays that 44 mm at both edges. The forward books came out 50 mm deep. They
+    read as books across the cabin and as cereal packets at the range the app's
+    camera now flies in to (`src/scene/cameraFocus.ts`), which is what found it.
+
+    Per book they are their full 108 mm and every one sits against the fiddle.
+    The row is then not quite straight -- it steps outboard about 6 mm a book --
+    and that is not a defect, it is the shelf. A book on a fiddled shelf leans
+    against the fiddle, the fiddle follows the topsides, so the row follows the
+    topsides. What must not happen is books *rotating* to the hull, which would
+    be a fan; nothing here rotates, they only sit where the shelf has got to.
+
+    Both heights are still asked for. The hull widens as it rises through the
+    shelf, so the narrowest it gets over a book's own height is at its foot, and
+    that is what the fore-edge has to clear -- otherwise a 200 mm book stands
+    inside the topsides at the shelf and through them at its head.
     """
     fiddle = max(
         inner(station, z0) - params.SHELF_DEPTH + params.FIDDLE_THICKNESS

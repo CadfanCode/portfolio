@@ -10,9 +10,10 @@ import {
   Vignette,
 } from '@react-three/postprocessing'
 import { BlendFunction, ToneMappingMode } from 'postprocessing'
-import type { ReactElement } from 'react'
-import { Vector2 } from 'three'
+import { useMemo, type ReactElement } from 'react'
+import { Vector2, Vector3 } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
+import { CAMERA_FOCUS } from './cameraFocus'
 
 // Chromatic aberration is a fixed screen-space offset; a Vector2 built once and
 // reused avoids handing the effect a fresh object every render.
@@ -51,7 +52,16 @@ const CA_OFFSET = new Vector2(0.0005, 0.0005)
  */
 export function Effects() {
   const scene = useSceneStore((s) => s.scene)
+  const focus = useSceneStore((s) => s.focus)
   const inCabin = scene === 'cabin'
+
+  // What the lens is focused on while a close-up is open, if one is. The
+  // registry entries are module constants, so this is stable for as long as the
+  // close-up is.
+  const subject = useMemo(() => {
+    const view = focus ? CAMERA_FOCUS[focus] : null
+    return view ? new Vector3(...view.bounds.centre) : null
+  }, [focus])
 
   // Built as an array so the depth-of-field pass can be dropped entirely off the
   // ocean and cockpit — a missing pass, not a disabled one, so it costs nothing
@@ -81,13 +91,33 @@ export function Effects() {
     // stop that reads better shallow. Everywhere else the subject is the whole
     // boat and everything should stay sharp, so DOF is off. Distances are in
     // metres from the lens: the saloon table sits ~1.6 m ahead.
+    //
+    // In a close-up the lens focuses on the object instead, and it has to. The
+    // plane above is fixed at 1.6 m because that is where the saloon is from
+    // the stop — but a close-up is 0.3 m off a book spine, which is 1.3 m
+    // inside the near blur and the reason the books were soft. `target` is the
+    // effect's own auto-focus: it measures the camera to that point every frame
+    // and focuses there, so the object is sharp on approach as well as at rest.
+    // The range widens and the bokeh comes down to go with it — at this
+    // distance the whole object has to be inside the sharp band, not just the
+    // face of it, and 2.4 of bokeh on a background 200 mm behind a book is a
+    // smear rather than a depth cue.
     inCabin ? (
-      <DepthOfField
-        key="dof"
-        worldFocusDistance={1.6}
-        worldFocusRange={2.2}
-        bokehScale={2.4}
-      />
+      subject ? (
+        <DepthOfField
+          key="dof-close"
+          target={subject}
+          worldFocusRange={1.4}
+          bokehScale={1.6}
+        />
+      ) : (
+        <DepthOfField
+          key="dof"
+          worldFocusDistance={1.6}
+          worldFocusRange={2.2}
+          bokehScale={2.4}
+        />
+      )
     ) : null,
     <ChromaticAberration
       key="ca"
