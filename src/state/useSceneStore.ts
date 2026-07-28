@@ -1,7 +1,18 @@
 import { create } from 'zustand'
+import { prefersReducedMotion } from '../scene/introFlight'
 
 /** A stop on the authored camera path. */
 export type SceneState = 'ocean' | 'cockpit' | 'cabin'
+
+/**
+ * Where the opening flight is. `'pending'` until `CameraRig` mounts (after the
+ * GLB resolves out of Suspense). `'holding'` is the new film-titles beat: the
+ * camera hangs near-level in the cloud tops while the title card fades in,
+ * holds, and fades out. `'playing'` is the authored plummet down to the
+ * cockpit (`INTRO_PATH`, unchanged). `'done'` forever after — there is no
+ * going back to `'pending'` or `'holding'`, or replaying either.
+ */
+export type IntroPhase = 'pending' | 'holding' | 'playing' | 'done'
 
 /**
  * Which stops are reachable from which. The path is locked, so this map is the
@@ -48,6 +59,8 @@ type SceneStore = {
    * one build nobody ships. The store is outside React and is invoked once.
    */
   leaving: string | null
+  /** Phase of the opening flight. See `IntroPhase`. */
+  intro: IntroPhase
 
   /** Begin a move. No-ops if mid-flight or if the route doesn't allow it. */
   goTo: (next: SceneState) => void
@@ -59,6 +72,35 @@ type SceneStore = {
   focusOn: (id: string) => void
   /** Fly back to the stop the focus belongs to. */
   clearFocus: () => void
+  /**
+   * Called by `CameraRig` on mount, once the boat has loaded out of Suspense.
+   * No-op unless `intro` is still `'pending'` — mount effects run twice under
+   * React StrictMode, and the second run must not restart a flight already
+   * under way. Moves to `'holding'`, not `'playing'` — the title card gets to
+   * read before the camera commits to the plummet.
+   *
+   * `scene` stays `'ocean'` for the whole flight rather than jumping straight
+   * to `'cockpit'`: `PortfolioWorld` only couples the boat to the sea once
+   * `scene !== 'ocean'`, and leaving it at `'ocean'` is what lets the hull
+   * rock in world space while the camera falls past it. `endIntro` is what
+   * finally moves `scene` on.
+   */
+  beginIntro: () => void
+  /**
+   * Called by `CameraRig` when the hold beat lands — the camera has finished
+   * drifting onto `INTRO_PATH[0]` and the tilt has handed the aim over to it.
+   * No-op unless `intro` is still `'holding'`, so a stray second call (there
+   * shouldn't be one, but nothing else enforces it) can't restart the flight
+   * mid-plummet.
+   */
+  beginFlight: () => void
+  /**
+   * Called by `CameraRig` when the authored flight lands. Moves `scene` to
+   * `'cockpit'` with `from: 'ocean'` so the rig's normal stop-arrival effect
+   * runs once more, non-animated, and applies the cockpit's look constraints
+   * — the handover from scripted flight to free-look happens there, not here.
+   */
+  endIntro: () => void
 }
 
 export const useSceneStore = create<SceneStore>((set, get) => ({
@@ -68,6 +110,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   activeExhibitId: null,
   focus: null,
   leaving: null,
+  intro: 'pending',
 
   goTo: (next) => {
     const { scene, isTransitioning } = get()
@@ -97,8 +140,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
   arrive: () => set({ from: null, isTransitioning: false }),
 
   openExhibit: (id) => {
-    const { isTransitioning, focus } = get()
-    if (isTransitioning || focus) return
+    const { isTransitioning } = get()
+    if (isTransitioning) return
     set({ activeExhibitId: id })
   },
 
@@ -119,5 +162,31 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     // means the press does nothing, which reads as a broken button. The rig
     // cancels whatever leg is in flight and walks out from wherever it got to.
     set({ focus: null, leaving: focus, isTransitioning: true })
+  },
+
+  beginIntro: () => {
+    if (get().intro !== 'pending') return
+    if (prefersReducedMotion()) {
+      set({ intro: 'done', scene: 'cockpit', from: null, isTransitioning: false })
+      return
+    }
+    set({ intro: 'holding' })
+  },
+
+  beginFlight: () => {
+    if (get().intro !== 'holding') return
+    set({ intro: 'playing' })
+  },
+
+  endIntro: () => {
+    if (get().intro !== 'playing') return
+    set({
+      intro: 'done',
+      scene: 'cockpit',
+      from: 'ocean',
+      isTransitioning: false,
+      focus: null,
+      activeExhibitId: null,
+    })
   },
 }))

@@ -142,16 +142,24 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     id: 'books',
     label: 'The books on the shelf',
     scene: 'cabin',
-    bounds: { centre: [1.0, 0.68, -0.38], size: [0.18, 0.3, 0.34] },
+    bounds: { centre: [1.0, 0.68, -0.336], size: [0.18, 0.3, 0.4] },
     path: [
       { position: [0.02, 0.93, 0.86], target: [0.1, 0.62, -0.9] },
       { position: [0.16, 0.97, 0.28], target: [0.55, 0.66, -0.75] },
       { position: [0.33, 0.92, -0.1], target: [0.95, 0.68, -0.55] },
       { position: [0.5, 0.95, -0.3], target: [1.0, 0.7, -0.4] },
-      // Square on the middle of the run, not on the two placeholders at its
-      // after end -- framed on those, the other seven books ran off the left of
+      // Square on the middle of the run, not on the named books at its after
+      // end -- framed on those, the other seven books ran off the left of
       // the picture and half the frame was bare liner.
-      { position: [0.7, 0.7, -0.38], target: [1.02, 0.68, -0.38] },
+      //
+      // The middle moved when `book_github` was added. Its two spacer books
+      // and its own spine put another 88 mm on the after end of the run
+      // (`blender/fitout.py`'s `_BOOK_TAIL`), taking the centre from -0.380 to
+      // -0.336, and the camera back 40 mm so the longer run still fits across
+      // the frame on a 4:3 window rather than only on a wide one. Measured off
+      // the built model, not guessed: the run spans z -0.518 to -0.155, and at
+      // 0.31 m off the spines a 4:3 frame is 0.38 m across at that distance.
+      { position: [0.66, 0.7, -0.336], target: [1.02, 0.68, -0.336] },
     ],
   },
 

@@ -71,25 +71,40 @@ export function getSoundscape(): Soundscape | null {
   instance = createSoundscape(ctx)
   useAudioStore.getState().setBlocked(ctx.state !== 'running')
 
-  // Autoplay policy: nothing sounds until the page has been interacted with.
-  // Any gesture will do, and the first one here is the click that comes aboard,
-  // so this almost never costs the visitor a separate action. Listening from
-  // boot rather than from mount means a visitor who clicks *while the boat is
-  // still loading* has already paid for the gesture by the time it arrives.
+  // Autoplay policy. The scene is meant to arrive already making its own noise,
+  // so the first thing we do is simply ask — `tryStart` below runs immediately,
+  // and on a browser that will allow it (Chrome where the site has enough media
+  // engagement, Firefox where autoplay has been permitted for the origin, or
+  // any reload where the tab already had sound) the sea is up before the visitor
+  // has touched anything.
+  //
+  // Where the browser refuses, `resume()` leaves the context suspended rather
+  // than throwing, and the gesture listeners are the fallback: any pointer, key
+  // or touch will do, and the first one is usually the click that comes aboard,
+  // so it almost never costs the visitor a separate action. Listening from boot
+  // rather than from mount means a visitor who clicks *while the boat is still
+  // loading* has already paid for the gesture by the time it arrives.
   const events = ['pointerdown', 'keydown', 'touchstart'] as const
-  const unlock = () => {
+  const tryStart = () => {
     if (!useAudioStore.getState().enabled) return
-    void ctx.resume().then(() => {
-      useAudioStore.getState().setBlocked(ctx.state !== 'running')
-      // Once the context has actually started, the policy is satisfied for
-      // good and these have nothing left to do but allocate a promise on every
-      // click for the rest of the session.
-      if (ctx.state === 'running') {
-        for (const event of events) window.removeEventListener(event, unlock)
-      }
-    })
+    void ctx
+      .resume()
+      .then(() => {
+        const running = ctx.state === 'running'
+        useAudioStore.getState().setBlocked(!running)
+        // Once the context has actually started, the policy is satisfied for
+        // good and these have nothing left to do but allocate a promise on every
+        // click for the rest of the session.
+        if (running) {
+          for (const event of events) window.removeEventListener(event, tryStart)
+        }
+      })
+      // A rejected resume is the policy saying no, not a fault. Stay blocked and
+      // wait for the gesture.
+      .catch(() => useAudioStore.getState().setBlocked(true))
   }
-  for (const event of events) window.addEventListener(event, unlock, { passive: true })
+  for (const event of events) window.addEventListener(event, tryStart, { passive: true })
+  tryStart()
 
   // A scene nobody is looking at should not be a scene anybody can hear.
   document.addEventListener('visibilitychange', () => {

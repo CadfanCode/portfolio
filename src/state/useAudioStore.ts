@@ -26,11 +26,12 @@ type AudioStore = {
 }
 
 export const useAudioStore = create<AudioStore>((set) => ({
-  // On by default. The first thing anyone does here is click the boat to come
-  // aboard, and browsers will not let a note out before that click anyway — so
-  // this is gesture-gated whatever it says, and a silent sailing scene that
-  // needs to be switched on is a worse first impression than one that starts.
-  // Flip this to `false` for opt-in.
+  // On by default. `engine.ts` asks the browser to start the context the moment
+  // the graph is warm, so on a permissive browser this is what makes the scene
+  // arrive already sounding; on a strict one the first gesture — usually the
+  // click that comes aboard — starts it instead. Either way a silent sailing
+  // scene that needs to be switched on is a worse first impression than one
+  // that starts. Flip this to `false` for opt-in.
   enabled: true,
   blocked: true,
 
