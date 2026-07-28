@@ -1,12 +1,13 @@
 import type { SceneState } from '../../state/useSceneStore'
 import { sampleConditions } from '../conditions'
+import { clamp01, lerp, ramp } from '../mathUtils'
 import { windStrength } from '../wind'
 import { makeNoise, noiseSource } from './noise'
 import type { Noise } from './noise'
 
 /**
- * The soundscape: the sea, the wind, the rain and the gulls, generated rather
- * than played back.
+ * The soundscape: the sea, the wind and the rain, generated rather than played
+ * back.
  *
  * ## Why there are no audio files
  *
@@ -33,16 +34,18 @@ import type { Noise } from './noise'
  * ## The voices
  *
  *   swell     brown noise, low-passed — the bed under everything
- *   wash      band-passed white, slowly gated — the general surface of the sea
- *   breakers  one-shots: individual crests, scheduled at random intervals
+ *   wash      band-passed white, rising and falling in sets — the sea's surface
  *   wind      band-passed white, near-silent below a real breeze
  *   rig       a narrow, high resonance that only speaks in a blow
  *   rain      high-passed white
- *   gulls     one-shots, in fair weather only
+ *
+ * Every one of them is a *level*, continuous and weather-driven. There are no
+ * one-shots left in this file — see "What came out" below, which is the reason
+ * the anti-loop section has the shape it does.
  *
  * ## Not sounding like a loop
  *
- * Four defences, because ambience that repeats is worse than no ambience — an
+ * Three defences, because ambience that repeats is worse than no ambience — an
  * ear locks onto a period in about two cycles and then cannot un-hear it.
  *
  *   1. The noise buffers are long (9 and 13 seconds) and crossfaded at the seam,
@@ -50,49 +53,49 @@ import type { Noise } from './noise'
  *   2. Their playback rates are *detuned by a slow LFO*, so even that period is
  *      not constant — the buffer never lines up with itself twice.
  *   3. Every continuous level rides the product of two oscillators at unrelated
- *      rates, whose combined period is longer than anyone will sit here.
- *   4. The two things an ear actually latches onto — a wave breaking, a gull —
- *      are discrete one-shots at random intervals, built fresh each time with
- *      random size, pan, filter and decay. Nothing about a breaker repeats.
+ *      rates, whose combined period is longer than anyone will sit here. The
+ *      sea's surface gets two such pairs rather than one — a faster breath and
+ *      a very slow one — so it arrives in sets, the way a real sea does, and
+ *      the two envelopes never line up twice.
  *
- * There used to be a sails voice here: band-passed noise gated at a couple of
- * hertz to stand in for cloth working. It was removed at the owner's request
- * and the diagnosis was exactly right — a fast, regular tremolo on a fixed
- * noise band is a chugging, and what it sounded like was an engine idling below
- * decks. The lesson is defence 4 above: cloth working is a sequence of
- * *events*, and a periodic gate can never be one.
+ * ## What came out
+ *
+ * Three voices have been cut from this file at the owner's request, and they
+ * are worth recording because they failed for one reason between them: an ear
+ * forgives a texture and does not forgive a rhythm.
+ *
+ *   sails     band-passed noise gated at a couple of hertz, for cloth working.
+ *             A fast, regular tremolo on a fixed noise band is a chugging, and
+ *             what it sounded like was an engine idling below decks.
+ *   breakers  one-shot crests: a filter sweep and a decay, panned at random,
+ *             scheduled more often as the sea got up. Individually convincing,
+ *             but from a camera sitting on the boat they read as the sea
+ *             hitting the hull — a knocking, at a rate the ear starts counting.
+ *   gulls     one-shot cries, in fair weather only. The single most literal
+ *             thing in the scene, and the first thing to sound like a sample
+ *             library rather than a place.
+ *
+ * What replaces them is not another event source but *more movement in the
+ * levels* — defence 3 above. The sea is carried by the wash's two swell pairs
+ * swinging its gain across most of its range, so the surface still rises and
+ * falls and still tracks the weather; it just never strikes anything.
  *
  * ## Below decks
  *
  * Coming below drops a low-pass across the whole bus and pulls the airborne
  * voices down hard. A cabin is a GRP box: what reaches you through it is the
- * hull rumbling and the water against the topsides, not the wind or the gulls.
- * That contrast is most of what makes the companionway feel like a threshold.
+ * hull rumbling and the water along the topsides, not the wind. That contrast
+ * is most of what makes the companionway feel like a threshold.
  */
 
 /** Where the whole bus sits before the limiter. */
 const MASTER = 0.55
 
 /** How much of each voice survives below decks, and how far the bus is filtered
- *  when it does. Sea and rain carry through a hull; wind and birds do not,
- *  which is the whole point of the contrast. */
+ *  when it does. Sea and rain carry through a hull; wind does not, which is the
+ *  whole point of the contrast. */
 const BELOW = { cutoff: 520, sea: 0.62, rain: 0.3, air: 0.16 }
 const ABOVE = { cutoff: 20000, sea: 1, rain: 1, air: 1 }
-
-/** Seconds between breaking crests, from a rough sea to a calm one. A glassy
- *  day still has the odd wave turn over; a gale has one every second or two. */
-const BREAK_GAP = { rough: 1.1, calm: 9.0 }
-
-/** Seconds between gull cries, at their most and least likely. */
-const GULL_GAP = { min: 7, max: 34 }
-
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x)
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-/** Ramp that stays at 0 until `lo`, reaching 1 at `hi` — the same shape
- *  `conditions.ts` uses, and for the same reason: some things do not begin at
- *  all until the weather is genuinely up. */
-const ramp = (x: number, lo: number, hi: number) => clamp01((x - lo) / (hi - lo))
-const between = (a: number, b: number) => a + Math.random() * (b - a)
 
 export type Soundscape = {
   readonly context: AudioContext
@@ -194,127 +197,9 @@ function swell(ctx: AudioContext, target: AudioParam, rateA: number, rateB: numb
   return depth
 }
 
-/**
- * One wave turning over, somewhere around the boat.
- *
- * The voice that carries the whole soundscape, and the only one that is an
- * event rather than a level. A sea is not a texture — it is a sequence of
- * individual crests arriving at intervals that never repeat — and this is the
- * difference between "the sound of the sea" and "a hiss that gets louder in
- * bad weather".
- *
- * Each is built from scratch and thrown away: its own noise offset, pan,
- * length, loudness and filter sweep, all randomised inside a range that `size`
- * widens. The sweep is what makes it a wave rather than a whoosh — a crest
- * breaks bright and hissing and then drains away dull, so the band starts high,
- * opens wider as it peaks, and falls through the decay.
- */
-function breaker(ctx: AudioContext, noise: Noise, dest: AudioNode, size: number) {
-  const now = ctx.currentTime + 0.02
-  const attack = between(0.12, 0.4) * lerp(1.4, 0.7, size)
-  const decay = between(0.9, 2.4) * lerp(0.8, 1.35, size)
-  const peak = between(0.5, 1) * size
-
-  const source = noiseSource(ctx, noise, between(0.88, 1.14))
-
-  const band = ctx.createBiquadFilter()
-  band.type = 'bandpass'
-  band.Q.value = between(0.5, 0.9)
-  const top = between(1300, 2600)
-  band.frequency.setValueAtTime(top, now)
-  band.frequency.exponentialRampToValueAtTime(top * 0.72, now + attack)
-  band.frequency.exponentialRampToValueAtTime(between(220, 420), now + attack + decay)
-
-  const env = ctx.createGain()
-  env.gain.setValueAtTime(0.0001, now)
-  env.gain.linearRampToValueAtTime(Math.max(0.0002, peak), now + attack)
-  env.gain.exponentialRampToValueAtTime(0.0001, now + attack + decay)
-
-  const panner = ctx.createStereoPanner()
-  panner.pan.value = between(-0.85, 0.85)
-
-  source.connect(band)
-  band.connect(env)
-  env.connect(panner)
-  panner.connect(dest)
-
-  const end = now + attack + decay + 0.05
-  source.stop(end)
-  source.onended = () => {
-    source.disconnect()
-    band.disconnect()
-    env.disconnect()
-    panner.disconnect()
-  }
-}
-
-/**
- * One gull, some distance off.
- *
- * A cry is three to five short notes, each a fast rise and a longer fall in
- * pitch, through a band-pass that stands in for the bird's own resonance. A
- * sawtooth rather than a sine because a gull is a rough, buzzy sound and the
- * harmonics are most of what makes it recognisable at all.
- */
-function gullCry(ctx: AudioContext, dest: AudioNode, level: number): number {
-  const panner = ctx.createStereoPanner()
-  panner.pan.value = between(-0.8, 0.8)
-  panner.connect(dest)
-
-  // Further off means quieter and duller — one number doing both, so a distant
-  // bird cannot come out muffled and loud.
-  const distance = between(0.35, 1)
-
-  const band = ctx.createBiquadFilter()
-  band.type = 'bandpass'
-  band.frequency.value = between(1500, 2200) * (0.75 + 0.25 * distance)
-  band.Q.value = 1.3
-  band.connect(panner)
-
-  const notes = 3 + Math.floor(Math.random() * 3)
-  let at = ctx.currentTime + 0.05
-  for (let i = 0; i < notes; i++) {
-    const length = between(0.15, 0.25)
-    const base = between(760, 1000) * (1 - i * 0.06)
-
-    const osc = ctx.createOscillator()
-    osc.type = 'sawtooth'
-    osc.frequency.setValueAtTime(base * 0.68, at)
-    osc.frequency.exponentialRampToValueAtTime(base * 1.45, at + length * 0.2)
-    osc.frequency.exponentialRampToValueAtTime(base * 0.72, at + length)
-
-    const env = ctx.createGain()
-    const peak = Math.max(0.0002, level * distance * (i === 0 ? 1 : 0.82))
-    env.gain.setValueAtTime(0.0001, at)
-    env.gain.exponentialRampToValueAtTime(peak, at + 0.03)
-    env.gain.exponentialRampToValueAtTime(0.0001, at + length)
-
-    osc.connect(env)
-    env.connect(band)
-    osc.start(at)
-    osc.stop(at + length + 0.05)
-    osc.onended = () => {
-      osc.disconnect()
-      env.disconnect()
-    }
-
-    at += length + between(0.09, 0.17)
-  }
-
-  const done = at + 0.3
-  window.setTimeout(
-    () => {
-      band.disconnect()
-      panner.disconnect()
-    },
-    (done - ctx.currentTime) * 1000,
-  )
-  return done
-}
-
 export function createSoundscape(ctx: AudioContext): Soundscape {
   // Long buffers. See "Not sounding like a loop" above: this is the first of
-  // the four defences and the cheapest — a few megabytes of float that never
+  // the three defences and the cheapest — a few megabytes of float that never
   // leave memory, against a period an ear can find.
   const white = makeNoise(ctx, 9, 0)
   const brown = makeNoise(ctx, 13, 1)
@@ -353,17 +238,21 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
   const seaSwell = swell(ctx, sea.gain.gain, 0.073, 0.041)
   drift(ctx, sea.source, 0.029, 0.006)
 
-  // The general surface: the hiss of a sea that is up, and the wash running
-  // along the topsides. Under the breakers rather than instead of them.
+  // The general surface: the hiss of a sea that is up, and the water running
+  // along the topsides. With the crests gone this is the sea's whole voice
+  // above the swell, so it gets two swell pairs instead of one.
+  //
+  // `washBreath` is the near rate the old wash already had — the surface
+  // working, seconds at a time. `washSets` is an order of magnitude slower, and
+  // is the one doing the work the breakers used to: periods of about half a
+  // minute and a minute and a half, multiplied, so the sea builds and eases off
+  // in sets that never fall on the same beat twice. Both land on the same gain
+  // and add, and between them they swing it across most of its range — which is
+  // what keeps a level from reading as a texture now that nothing strikes.
   const wash = voice(ctx, white, hull, 'bandpass', 1250, 0.7, 0.93)
-  const washSwell = swell(ctx, wash.gain.gain, 0.19, 0.083)
+  const washBreath = swell(ctx, wash.gain.gain, 0.19, 0.083)
+  const washSets = swell(ctx, wash.gain.gain, 0.037, 0.011)
   drift(ctx, wash.source, 0.037, 0.008)
-
-  // Individual crests. Their own bus so the whole sequence can be levelled at
-  // once and ducked below decks with everything else.
-  const breakers = ctx.createGain()
-  breakers.gain.value = 0
-  breakers.connect(hull)
 
   // --- The weather over it.
 
@@ -385,20 +274,24 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
   // out here with real high-frequency content.
   const rain = voice(ctx, white, hull, 'highpass', 1400, 0.6, 1.02)
 
-  // Gulls go in ahead of the hull filter like everything else, so they muffle
-  // properly when the camera goes below.
-  const gulls = ctx.createGain()
-  gulls.gain.value = 1
-  gulls.connect(hull)
-
-  let nextBreak = ctx.currentTime + 1.5
-  let nextGull = ctx.currentTime + 4
+  // Every voice is built at a gain of 0, so the graph can be constructed long
+  // before anyone is meant to hear it and sits there silent until the first
+  // `update`. That is what lets `engine.ts` build the whole thing during page
+  // load without the scene making a sound before it is on screen.
+  let primed = false
 
   /** Ease a param toward a value. `setTargetAtTime` rather than a ramp: it needs
    *  no end time, so successive updates simply re-aim it and nothing has to be
-   *  cancelled or scheduled against a frame rate that varies. */
+   *  cancelled or scheduled against a frame rate that varies.
+   *
+   *  The exception is the very first call. Easing from the constructed zero
+   *  would fade the whole soundscape up over about a second *after* the world
+   *  appears, which is heard as the sound arriving late — the thing this was
+   *  built to avoid. So the first update snaps: by the time the boat is on
+   *  screen the sea is already at the level that weather calls for. */
   const ease = (param: AudioParam, value: number, seconds = 0.35) => {
-    param.setTargetAtTime(value, ctx.currentTime, seconds)
+    if (primed) param.setTargetAtTime(value, ctx.currentTime, seconds)
+    else param.setValueAtTime(value, ctx.currentTime)
   }
 
   function update(time: number, scene: SceneState, ducked: boolean) {
@@ -414,14 +307,21 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
     const blow = clamp01(c.wind * (0.78 + 0.22 * gust))
     const heard = ramp(blow, 0.3, 1)
 
-    ease(sea.gain.gain, lerp(0.1, 0.5, c.sea) * env.sea)
+    // The swell and the surface both carry more than they used to: the crests
+    // were the loudest thing in the sea and taking them out left a hole, so the
+    // two remaining voices are levelled up to fill it rather than leaving the
+    // sea quieter than the wind over it.
+    ease(sea.gain.gain, lerp(0.16, 0.66, c.sea) * env.sea)
     ease(sea.filter.frequency, lerp(150, 430, c.sea), 0.8)
-    ease(seaSwell.gain, lerp(0.03, 0.14, c.sea))
+    ease(seaSwell.gain, lerp(0.05, 0.2, c.sea))
 
-    ease(wash.gain.gain, (0.02 + 0.26 * c.foam + 0.14 * c.spray) * env.sea)
-    ease(washSwell.gain, 0.05 + 0.2 * c.foam)
-
-    ease(breakers.gain, lerp(0.35, 1.05, c.sea) * env.sea)
+    // Driven by `foam` alone. `spray` is the sea *against the hull* — the same
+    // number that draws the splash at the bow — and keying the wash to it is
+    // what made the surface swell every time the boat took a wave. What is left
+    // is whitecaps on the open sea: a sound the weather makes, not the boat.
+    ease(wash.gain.gain, (0.035 + 0.46 * c.foam) * env.sea)
+    ease(washBreath.gain, 0.05 + 0.2 * c.foam)
+    ease(washSets.gain, 0.03 + 0.22 * c.foam)
 
     ease(wind.gain.gain, (0.01 + 0.46 * heard * heard) * env.air)
     ease(wind.filter.frequency, lerp(300, 1020, blow), 0.5)
@@ -438,28 +338,7 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
     // gale behind it is the reason people mute portfolio sites.
     ease(master.gain, MASTER * (ducked ? 0.35 : 1), 0.4)
 
-    // --- Crests. The gap shortens and the size grows with the sea, and both
-    // are jittered every time, so no two arrive on the same beat. This is
-    // defence 4 and it is why the sea does not read as a texture.
-    if (ctx.currentTime > nextBreak) {
-      breaker(ctx, white, breakers, lerp(0.28, 1, c.sea) * between(0.55, 1))
-      const gap = lerp(BREAK_GAP.calm, BREAK_GAP.rough, c.sea)
-      nextBreak = ctx.currentTime + gap * between(0.45, 1.75)
-    }
-
-    // --- Gulls. They keep off the water in a blow, so their rate falls away as
-    // the weather gets up and they are gone entirely in a squall — which is
-    // also what makes them worth having: the silence where they were is a
-    // second, quieter signal that the weather has turned.
-    const gullChance = clamp01(1 - ramp(c.sea, 0.3, 0.72)) * (below ? 0.25 : 1)
-    if (ctx.currentTime > nextGull) {
-      if (gullChance > 0.02) {
-        const end = gullCry(ctx, gulls, 0.2 * gullChance * env.air)
-        nextGull = end + lerp(GULL_GAP.max, GULL_GAP.min, gullChance) * between(0.6, 1.4)
-      } else {
-        nextGull = ctx.currentTime + 6
-      }
-    }
+    primed = true
   }
 
   function dispose() {
@@ -469,8 +348,6 @@ export function createSoundscape(ctx: AudioContext): Soundscape {
       v.filter.disconnect()
       v.gain.disconnect()
     }
-    breakers.disconnect()
-    gulls.disconnect()
     hull.disconnect()
     master.disconnect()
     limiter.disconnect()

@@ -1,4 +1,5 @@
 import { Color } from 'three'
+import { clamp01, lerp, ramp, smoothstep01 } from './mathUtils'
 
 /**
  * The weather — the single drifting source of truth for what kind of day it is,
@@ -112,12 +113,6 @@ const FOG_FAIR = new Color('#cfdae4')
 const FOG_STORM = new Color('#6b7178')
 const FOG_THICK = new Color('#c3c8cc')
 
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x)
-const smooth = (t: number) => t * t * (3 - 2 * t)
-/** Ramp that stays at 0 until `lo`, reaching 1 at `hi`. */
-const ramp = (x: number, lo: number, hi: number) => clamp01((x - lo) / (hi - lo))
-
 /**
  * Turn the primary knobs into everything the scene draws. This is where the
  * coupling lives: every rule that says "rougher seas foam more" or "cloud kills
@@ -214,7 +209,7 @@ export function sampleConditions(time: number): Conditions {
   const a = TIMELINE[index]
   const b = TIMELINE[(index + 1) % TIMELINE.length]
   // Hold through the dwell, then ease across the fade.
-  const k = local <= DWELL ? 0 : smooth((local - DWELL) / FADE)
+  const k = local <= DWELL ? 0 : smoothstep01((local - DWELL) / FADE)
 
   _blend.name = k < 0.5 ? a.name : b.name
   _blend.sea = lerp(a.sea, b.sea, k)

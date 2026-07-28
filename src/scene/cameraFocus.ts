@@ -37,28 +37,25 @@ import type { SceneState } from '../state/useSceneStore'
  *
  * The Canvas runs a 50° vertical field, so the visible height at distance d is
  * 2·d·tan(25°) ≈ 0.93·d. Every final leg below is placed so the object fills
- * most of that: the desk group is about 0.8 m across seen from its own corner
- * and is read from 0.76 m, the books are 0.21 m tall and are read from 0.30 m.
- * That is what "takes up most of the frame" costs in metres, and it is why the
- * numbers look uncomfortably close — they are, because a person leaning in to
- * read a book spine is uncomfortably close to it.
+ * most of that: the desk group is about 0.75 m across as it lies under the
+ * camera and is read from 0.79 m, the books are 0.21 m tall and are read from
+ * 0.26 m, the VHF is 0.12 m tall and is read from 0.25 m. That is what "takes
+ * up most of the frame" costs in metres, and it is why the numbers look
+ * uncomfortably close — they are, because a person leaning in to read a book
+ * spine is uncomfortably close to it.
+ *
+ * ## Pacing
+ *
+ * There isn't any, here. A path is a *route* and nothing else: the rig flies
+ * every leg of it as one continuous curve and paces the whole thing itself
+ * (see `CameraRig`). Legs used to carry their own easing constants, which is
+ * what made a walk read as a series of hops — each leg eased in and eased out
+ * again, so the camera came to a stop at every waypoint it passed through.
  */
 
 export type FocusLeg = {
   position: Vector3Tuple
   target: Vector3Tuple
-  /**
-   * `smoothTime` for this leg, seconds — camera-controls' own easing constant,
-   * not the leg's duration. A leg takes several time constants to resolve, so
-   * these numbers are roughly a third of the seconds they cost.
-   *
-   * That is why they are as small as they are. The first version used 0.5–0.9
-   * per leg, on the reasoning that a walk should feel unhurried; five of those
-   * is ten seconds of not being able to do anything, and what it produced in
-   * testing was a visitor pressing the back button four legs early. A stride is
-   * about a third of a second and these are strides.
-   */
-  smoothTime?: number
 }
 
 export type CameraFocus = {
@@ -85,10 +82,23 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
    * The chart table: the safe in its corner, the chart, the lamp over it, the
    * pipe and the pencils.
    *
-   * Read from the inboard side and above, which is where the person sitting at
-   * it is. Two legs — a turn to port from the companionway, then the lean in —
-   * because a single leg from the stop swings the camera through 90° of heading
-   * and 0.7 m of travel at once, and what that looks like is a cut.
+   * Read from above and inboard — standing at the table's own edge and looking
+   * down at it, which is the only angle from which a worktop is a worktop
+   * rather than a shelf seen edge-on. The final leg is 40° above the horizontal
+   * at 0.79 m, which puts all five objects inside the frame with the safe
+   * standing up at the far corner and the chart lying flat under the lamp.
+   *
+   * The height is what the boat allows and not a round number. The coachroof
+   * only carries its full 1.30 m of deckhead inboard of x ≈ ±0.45; outboard of
+   * that it falls away to 1.04 m at the cabin side, and it is over the chart
+   * table that it falls. An eye at 1.03 m has a quarter of a metre of air above
+   * it where it stands and would be wearing the deckhead 200 mm further
+   * outboard — so the camera looks down across the table from inboard of the
+   * edge rather than standing over the middle of it.
+   *
+   * Two legs — a turn to port from the companionway, then the lean in — because
+   * a single leg from the stop swings the camera through 90° of heading and
+   * 0.7 m of travel at once, and what that looks like is a cut.
    */
   desk: {
     id: 'desk',
@@ -96,8 +106,8 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     scene: 'cabin',
     bounds: { centre: [-0.925, 0.52, 1.03], size: [0.52, 0.62, 0.66] },
     path: [
-      { position: [-0.1, 1.0, 0.95], target: [-0.7, 0.62, 1.05], smoothTime: 0.3 },
-      { position: [-0.34, 0.92, 0.68], target: [-0.93, 0.6, 1.03], smoothTime: 0.5 },
+      { position: [-0.12, 1.05, 0.93], target: [-0.75, 0.6, 1.0] },
+      { position: [-0.42, 1.03, 0.69], target: [-0.93, 0.52, 1.0] },
     ],
   },
 
@@ -134,14 +144,14 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     scene: 'cabin',
     bounds: { centre: [1.0, 0.68, -0.38], size: [0.18, 0.3, 0.34] },
     path: [
-      { position: [0.02, 0.93, 0.86], target: [0.1, 0.62, -0.9], smoothTime: 0.3 },
-      { position: [0.16, 0.97, 0.28], target: [0.55, 0.66, -0.75], smoothTime: 0.34 },
-      { position: [0.33, 0.92, -0.1], target: [0.95, 0.68, -0.55], smoothTime: 0.34 },
-      { position: [0.5, 0.95, -0.3], target: [1.0, 0.7, -0.4], smoothTime: 0.3 },
+      { position: [0.02, 0.93, 0.86], target: [0.1, 0.62, -0.9] },
+      { position: [0.16, 0.97, 0.28], target: [0.55, 0.66, -0.75] },
+      { position: [0.33, 0.92, -0.1], target: [0.95, 0.68, -0.55] },
+      { position: [0.5, 0.95, -0.3], target: [1.0, 0.7, -0.4] },
       // Square on the middle of the run, not on the two placeholders at its
       // after end -- framed on those, the other seven books ran off the left of
       // the picture and half the frame was bare liner.
-      { position: [0.7, 0.7, -0.38], target: [1.02, 0.68, -0.38], smoothTime: 0.5 },
+      { position: [0.7, 0.7, -0.38], target: [1.02, 0.68, -0.38] },
     ],
   },
 
@@ -151,6 +161,19 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
    * Almost behind the viewer at the cabin stop — it is on the bulkhead you came
    * through — so the first leg is a turn on the spot before any travel, which
    * is what makes it read as noticing the thing rather than being flown at it.
+   *
+   * The framing is square on and dead level: the same height as the set, on its
+   * own centreline, a quarter of a metre off its face. Nothing about that is a
+   * photograph and that is the point — this becomes the exhibit you talk to a
+   * passing ship through, so the display and the two knobs have to sit still in
+   * the middle of the frame at a size a finger can find, not be seen at a rake
+   * from the settee. Off the built model: the set is x 0.640…0.820,
+   * y 0.400…0.520, its face stands at z 1.278 and the display is the panel
+   * x 0.658…0.758, y 0.456…0.502. Aiming at x 0.75 rather than at the set's own
+   * centre carries the handset on its clip (out to x 0.884) into frame beside
+   * it — to the *left*, because this is the one view in the boat that faces
+   * aft, and facing aft puts starboard on the left of the picture. The coiled
+   * cord hangs out of the bottom of it, as it does on the boat.
    */
   vhf: {
     id: 'vhf',
@@ -158,8 +181,8 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     scene: 'cabin',
     bounds: { centre: [0.76, 0.45, 1.3], size: [0.34, 0.32, 0.18] },
     path: [
-      { position: [0.1, 1.0, 1.02], target: [0.7, 0.6, 1.3], smoothTime: 0.3 },
-      { position: [0.55, 0.55, 1.05], target: [0.76, 0.45, 1.32], smoothTime: 0.45 },
+      { position: [0.1, 1.0, 1.02], target: [0.7, 0.6, 1.3] },
+      { position: [0.75, 0.46, 1.025], target: [0.75, 0.46, 1.3] },
     ],
   },
 }

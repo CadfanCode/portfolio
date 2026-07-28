@@ -23,8 +23,9 @@ function App() {
           because the camera is locked in there. */}
       <FocusExit />
       {/* Outside the Canvas, and outside the Suspense boundary with it: the
-          mute must be there while the boat is still loading, because the sound
-          is not waiting for the boat. */}
+          mute must be there while the boat is still loading, because the audio
+          graph is not waiting for the boat either — `main.tsx` warms it at
+          boot. See `scene/audio/engine.ts`. */}
       <SoundToggle />
     </>
   )

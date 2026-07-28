@@ -1,14 +1,15 @@
 /**
  * Noise — the one raw ingredient every voice in the soundscape is made of.
  *
- * Sea, wind, rain, the wash along the hull and the cloth working in the rig are
- * all the same thing physically: broadband noise, shaped. What tells them apart
- * to an ear is which part of the spectrum survives and how the level moves, and
- * both of those are a filter and an envelope away from a single buffer. So there
- * is one buffer here, generated once, and `soundscape.ts` fans it out.
+ * Sea, wind, rain, the wash along the topsides and the rig singing in a blow
+ * are all the same thing physically: broadband noise, shaped. What tells them
+ * apart to an ear is which part of the spectrum survives and how the level
+ * moves, and both of those are a filter and an envelope away from a single
+ * buffer. So there is one buffer here, generated once, and `soundscape.ts` fans
+ * it out.
  *
  * `brown` tilts the spectrum. At 0 this is white noise — flat, hissy, the raw
- * material for rain and for the sail's rustle. At 1 it is brown: a leaky
+ * material for rain and for the sea's surface. At 1 it is brown: a leaky
  * integrator over the same samples, which rolls off about 6 dB per octave and
  * is what a swell actually sounds like. Everything in between is a mix. Two
  * buffers, one of each, cover every voice in the file.

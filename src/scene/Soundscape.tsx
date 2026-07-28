@@ -1,22 +1,26 @@
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAudioStore } from '../state/useAudioStore'
 import { useSceneStore } from '../state/useSceneStore'
-import { createSoundscape } from './audio/soundscape'
-import type { Soundscape as Graph } from './audio/soundscape'
+import { getSoundscape } from './audio/engine'
 
 /**
- * Owns the audio graph and feeds it the weather.
+ * Feeds the weather to the audio graph.
  *
- * Inside the Canvas so it can share `useFrame`'s clock. That is not a
- * convenience: `sampleConditions` is a pure function of elapsed time, and the
- * sound is only guaranteed to agree with the sea, the heel and the sails
- * because all of them are asking the same clock for the same instant. Given its
- * own timer it would drift a frame at a time and eventually be describing a
- * different day.
+ * It does not own the graph — `audio/engine.ts` does, and has already built it
+ * by the time this mounts, because this component sits behind the GLB's
+ * Suspense boundary and the sound must not. All that is left here is the one
+ * thing that genuinely needs to be inside the Canvas: the clock.
  *
- * Renders nothing — it is a behaviour, and it lives in the tree so that
- * mounting and unmounting the world starts and stops the sound.
+ * `sampleConditions` is a pure function of elapsed time, and the sound is only
+ * guaranteed to agree with the sea, the heel and the sails because all of them
+ * are asking `useFrame`'s clock for the same instant. Given its own timer the
+ * soundscape would drift a frame at a time and eventually be describing a
+ * different day — which is why the *driving* stays here even though the graph
+ * moved out.
+ *
+ * Renders nothing. Mounting it is what brings the sound up, and it mounts with
+ * the world, so the two arrive together.
  */
 
 /** Updates a second. The graph eases every parameter with `setTargetAtTime`, so
@@ -31,62 +35,29 @@ export function Soundscape() {
   const scene = useSceneStore((s) => s.scene)
   const exhibitOpen = useSceneStore((s) => s.activeExhibitId !== null)
 
-  const graph = useRef<Graph | null>(null)
+  // Claim the warm graph on the first render. `useState`'s initialiser rather
+  // than an effect, so `useFrame` below has it on the very first frame — an
+  // effect would cost a frame of silence, which is the whole thing this is
+  // trying to avoid. Warm, this is a pointer read; cold (if `warmSoundscape`
+  // never ran) it builds the graph, which still beats waiting for an effect.
+  const [graph] = useState(getSoundscape)
   const next = useRef(0)
 
-  // Build once and keep it. Toggling mute suspends and resumes the context
-  // rather than tearing the graph down: an AudioContext is a real audio device
-  // and rebuilding one on every click is both slow and, on some browsers, a
-  // way to run out of them.
   useEffect(() => {
-    const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Ctor) return
-
-    const ctx = new Ctor()
-    graph.current = createSoundscape(ctx)
-    setBlocked(ctx.state !== 'running')
-
-    // Autoplay policy: nothing sounds until the page has been interacted with.
-    // Any gesture will do, and the first one here is the click that comes
-    // aboard, so this almost never costs the visitor a separate action.
-    const unlock = () => {
-      void ctx.resume().then(() => setBlocked(ctx.state !== 'running'))
-    }
-    const events = ['pointerdown', 'keydown', 'touchstart'] as const
-    for (const event of events) window.addEventListener(event, unlock, { passive: true })
-
-    // A scene nobody is looking at should not be a scene anybody can hear.
-    const onVisibility = () => {
-      if (document.hidden) void ctx.suspend()
-      else if (useAudioStore.getState().enabled) void ctx.resume()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-
-    return () => {
-      for (const event of events) window.removeEventListener(event, unlock)
-      document.removeEventListener('visibilitychange', onVisibility)
-      graph.current?.dispose()
-      graph.current = null
-      void ctx.close()
-    }
-  }, [setBlocked])
-
-  useEffect(() => {
-    const ctx = graph.current?.context
+    const ctx = graph?.context
     if (!ctx) return
     if (enabled) void ctx.resume().then(() => setBlocked(ctx.state !== 'running'))
     else void ctx.suspend()
-  }, [enabled, setBlocked])
+  }, [enabled, graph, setBlocked])
 
   useFrame((state) => {
-    const current = graph.current
-    if (!current || !enabled) return
+    if (!graph || !enabled) return
 
     const t = state.clock.elapsedTime
     if (t < next.current) return
     next.current = t + 1 / RATE
 
-    current.update(t, scene, exhibitOpen)
+    graph.update(t, scene, exhibitOpen)
   })
 
   return null
