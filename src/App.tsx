@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber'
 import { Suspense } from 'react'
 import { PortfolioWorld } from './scene/PortfolioWorld'
+import { CabinHint } from './CabinHint'
 import { FocusExit } from './FocusExit'
 import { IntroVeil } from './IntroVeil'
 import { SoundToggle } from './SoundToggle'
@@ -28,6 +29,9 @@ function App() {
           graph is not waiting for the boat either — `main.tsx` warms it at
           boot. See `scene/audio/engine.ts`. */}
       <SoundToggle />
+      {/* A nudge toward the bookshelf, not a control — bottom-centre, below
+          everything else that floats over the scene. */}
+      <CabinHint />
       {/* Above the exhibit backdrop and the corner chrome — it has to hide the
           blank canvas behind everything while the boat GLB is still loading. */}
       <IntroVeil />

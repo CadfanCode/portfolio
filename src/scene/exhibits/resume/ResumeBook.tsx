@@ -84,8 +84,8 @@ const SLIDE_LIFT = 0.05
 /** Distance the presentation pose is placed at is solved from the camera's
  *  own FOV; these are the fractions of the viewport the open spread should
  *  fill on the tighter of the two axes. */
-const TARGET_HEIGHT_FRACTION = 0.78
-const TARGET_WIDTH_FRACTION = 0.86
+const TARGET_HEIGHT_FRACTION = 0.96
+const TARGET_WIDTH_FRACTION = 0.97
 /** Tip the top of the book away from the camera, like it's held up to read
  *  rather than presented flat-on. Negative: see the sign derivation below. */
 const READING_TILT = MathUtils.degToRad(-18)
