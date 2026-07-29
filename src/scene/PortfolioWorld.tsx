@@ -16,6 +16,7 @@ import { Boat } from './Boat'
 import { BookSpines } from './BookSpines'
 import { Cabin } from './Cabin'
 import { CabinHatch } from './CabinHatch'
+import { CabinPictures } from './CabinPictures'
 import { CameraRig } from './CameraRig'
 import { Effects } from './Effects'
 import { EnvSky } from './EnvSky'
@@ -252,6 +253,11 @@ export function PortfolioWorld() {
         {/* The two lettered book spines, sharing the model's own frame so
             their hit-testing needs no world-space maths (see BookSpines.tsx). */}
         <BookSpines />
+        {/* The two photos on the main bulkhead, outboard of the brass — one of
+            the boat, one of the owner's dogs, ridden with the hull like
+            everything else fixed to the joinery. See CabinPictures.tsx for why
+            they're deliberately not a matched pair. */}
+        <CabinPictures />
         <Exhibits />
       </group>
 

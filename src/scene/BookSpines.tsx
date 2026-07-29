@@ -16,6 +16,8 @@ import type { ThreeEvent } from '@react-three/fiber'
 import type { Mesh as MeshType, MeshBasicMaterial, MeshStandardMaterial } from 'three'
 import modelUrl from '../assets/models/maxi77.glb?url'
 import { useSceneStore } from '../state/useSceneStore'
+import { useCabinHint } from '../state/useCabinHint'
+import { prefersReducedMotion } from './introFlight'
 import { usePointerSelect } from './usePointerSelect'
 
 /**
@@ -43,6 +45,9 @@ type BookSpineDef = {
   title: string
   /** Exhibit id opened on selection. Omit for the sticky-glow placeholder. */
   exhibit?: string
+  /** External URL opened in a new tab on selection, for books that link out
+   *  rather than staging an in-scene exhibit. */
+  url?: string
 }
 
 // Shelf order is the model's, not this list's — `blender/fitout.py`'s
@@ -52,7 +57,7 @@ type BookSpineDef = {
 const BOOKS: readonly BookSpineDef[] = [
   { node: 'book_resume', title: 'My Resume', exhibit: 'resume' },
   { node: 'book_about', title: 'About Me' },
-  { node: 'book_github', title: 'Github' },
+  { node: 'book_github', title: 'Github', url: 'https://github.com/CadfanCode' },
 ]
 
 /** Colour of the lettering and its glow — the warm gilt band the model paints
@@ -264,7 +269,25 @@ const GLOW_HOVER_OPACITY = 0.45
 const GLOW_SELECTED_OPACITY = 0.55
 const DAMP_LAMBDA = 8
 
+/** Angular speed of the attract-mode pulse, in radians/second — `2π / 2.1`,
+ *  a touch over two seconds a cycle, which reads as a slow breathing glow
+ *  rather than a strobe. */
+const ATTRACT_SPEED = (2 * Math.PI) / 2.1
+
+/** Per-book phase offset, in radians, so the three spines don't pulse in
+ *  unison — a slight stagger reads as alive, in step reads like an alarm. */
+const ATTRACT_PHASE_STEP = (2 * Math.PI) / 3
+
+/** Steady raised intensity/opacity attract mode holds under reduced motion,
+ *  in place of the pulse — oscillating emissive light is a real seizure
+ *  trigger, so this branch is required, not a nicety. */
+const ATTRACT_STATIC_INTENSITY = (TITLE_REST_INTENSITY + TITLE_HOVER_INTENSITY) / 2
+const ATTRACT_STATIC_GLOW_OPACITY = GLOW_HOVER_OPACITY / 2
+
 type BookSpineProps = BookSpineDef & {
+  /** Position on the shelf, used only to stagger the attract-mode pulse's
+   *  phase per book — see `ATTRACT_PHASE_STEP`. */
+  index: number
   /** True only once the shelf close-up actually has the camera. */
   interactable: boolean
   /** Whether this book currently owns the single highlight slot. */
@@ -285,6 +308,7 @@ type BookSpineProps = BookSpineDef & {
 function BookSpine({
   node,
   title,
+  index,
   interactable,
   highlighted,
   selected,
@@ -294,6 +318,7 @@ function BookSpine({
 }: BookSpineProps) {
   const { scene: model } = useGLTF(modelUrl)
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
+  const attracting = useCabinHint((s) => s.attracting)
 
   const mesh = useMemo(() => findMesh(model, node), [model, node])
 
@@ -353,13 +378,35 @@ function BookSpine({
   const material = useRef<MeshStandardMaterial>(null)
   const glowMaterial = useRef<MeshBasicMaterial>(null)
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     const lit = highlighted || selected
-    const targetIntensity = selected
-      ? TITLE_SELECTED_INTENSITY
-      : lit
-        ? TITLE_HOVER_INTENSITY
-        : TITLE_REST_INTENSITY
+    // Hover and selection always win over the attract pulse — a book the
+    // visitor is already looking at doesn't need to keep asking for
+    // attention, and the flat targets below stay simple to reason about
+    // because of it.
+    let targetIntensity: number
+    let targetOpacity: number
+    if (selected) {
+      targetIntensity = TITLE_SELECTED_INTENSITY
+      targetOpacity = GLOW_SELECTED_OPACITY
+    } else if (lit) {
+      targetIntensity = TITLE_HOVER_INTENSITY
+      targetOpacity = GLOW_HOVER_OPACITY
+    } else if (attracting) {
+      if (prefersReducedMotion()) {
+        targetIntensity = ATTRACT_STATIC_INTENSITY
+        targetOpacity = ATTRACT_STATIC_GLOW_OPACITY
+      } else {
+        const pulse =
+          Math.sin(clock.elapsedTime * ATTRACT_SPEED + index * ATTRACT_PHASE_STEP) * 0.5 + 0.5
+        targetIntensity = MathUtils.lerp(TITLE_REST_INTENSITY, TITLE_HOVER_INTENSITY, pulse)
+        targetOpacity = MathUtils.lerp(0, GLOW_HOVER_OPACITY, pulse)
+      }
+    } else {
+      targetIntensity = TITLE_REST_INTENSITY
+      targetOpacity = 0
+    }
+
     emissiveIntensity.current = MathUtils.damp(
       emissiveIntensity.current,
       targetIntensity,
@@ -368,7 +415,6 @@ function BookSpine({
     )
     if (material.current) material.current.emissiveIntensity = emissiveIntensity.current
 
-    const targetOpacity = selected ? GLOW_SELECTED_OPACITY : lit ? GLOW_HOVER_OPACITY : 0
     glowOpacity.current = MathUtils.damp(glowOpacity.current, targetOpacity, DAMP_LAMBDA, delta)
     if (glowMaterial.current) glowMaterial.current.opacity = glowOpacity.current
   })
@@ -508,23 +554,29 @@ export function BookSpines() {
 
   return (
     <>
-      {BOOKS.map((book) => (
+      {BOOKS.map((book, index) => (
         <BookSpine
           key={book.node}
           {...book}
+          index={index}
           interactable={interactable}
           highlighted={highlighted === book.node}
           selected={selected === book.node}
           exhibitOpen={book.exhibit !== undefined && activeExhibitId === book.exhibit}
           setHighlighted={setHighlighted}
           onSelect={(node) => {
-            // A book wired to an exhibit opens it directly. The others keep
-            // the sticky-glow placeholder — a seam for whatever selecting
-            // them ends up doing, not the finished behaviour: selecting a
-            // lit book again clears the selection, selecting the other moves
-            // it, exclusive the same way the highlight is.
+            // A book wired to an exhibit opens it directly, one wired to a
+            // URL opens that in a new tab. The rest keep the sticky-glow
+            // placeholder — a seam for whatever selecting them ends up
+            // doing, not the finished behaviour: selecting a lit book again
+            // clears the selection, selecting the other moves it, exclusive
+            // the same way the highlight is.
             if (book.exhibit) {
               openExhibit(book.exhibit)
+              return
+            }
+            if (book.url) {
+              window.open(book.url, '_blank', 'noopener,noreferrer')
               return
             }
             setSelected((current) => (current === node ? null : node))

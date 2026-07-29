@@ -30,6 +30,8 @@ import type { SceneState } from '../state/useSceneStore'
  *     the lamp            x −1.10…−0.87, y  0.49…0.82, z  0.74…0.98
  *     books, fwd stbd     x  0.94… 1.06, y  0.57…0.78, z −0.52…−0.24
  *     the VHF             x  0.64… 0.88, y  0.33…0.52, z  1.28…1.35
+ *     photo, port bhd     x −0.86…−0.60, y  0.64…0.96, z −0.69…−0.65
+ *     photo, stbd bhd     x  0.65… 0.91, y  0.63…0.94, z −0.69…−0.65
  *     saloon table        x −0.13… 0.13, y  0.17…0.49, z −0.53… 0.37
  *     settee front        x ±0.42        cabin sole    y −0.19
  *
@@ -191,6 +193,68 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     path: [
       { position: [0.1, 1.0, 1.02], target: [0.7, 0.6, 1.3] },
       { position: [0.75, 0.46, 1.025], target: [0.75, 0.46, 1.3] },
+    ],
+  },
+
+  /**
+   * The framed photograph of the boat, hung to port of the doorway forward.
+   *
+   * The bulkhead's saloon face stands at z −0.689 and the moulding is 0.018 m
+   * proud of it, so the frame's own front face — and the plaque bolted to its
+   * bottom rail — sit at z −0.671. That is the plane the final leg reads
+   * square on: dead level, dead on the wall normal, no attempt to survey out
+   * the frame's own 0.6° of roll, because that roll is the point — it is the
+   * picture that hangs a hair crooked, not the camera that is careless.
+   *
+   * The moulding stands 0.328 m tall; read from 0.440 m it fills 80% of the
+   * frame by this file's 0.93·d rule, with room either side down to a 2:3
+   * portrait window (0.256 m of width needs an aspect no narrower than 0.63).
+   *
+   * Two legs for the same reason `vhf` has two: a step forward along the
+   * walkway beside the saloon table (which the first leg passes above and
+   * outboard of — the table spans x ±0.13, z −0.53…0.37 at y 0.49, and the
+   * settees' own backrests top out at y 0.59, so nothing in the cabin is
+   * clipped crossing to this wall) at eye height, turning to square up on
+   * the bulkhead before any real approach — then the lean in.
+   */
+  'photo-boat': {
+    id: 'photo-boat',
+    label: 'The photograph of the boat',
+    scene: 'cabin',
+    bounds: { centre: [-0.73, 0.799, -0.66], size: [0.3, 0.37, 0.06] },
+    path: [
+      { position: [-0.16, 1.0, 0.56], target: [-0.62, 0.86, -0.5] },
+      { position: [-0.73, 0.799, -0.231], target: [-0.73, 0.799, -0.671] },
+    ],
+  },
+
+  /**
+   * The framed photograph of the dogs, hung to starboard of the doorway
+   * forward — the owner's own two, on the panel by the barometer.
+   *
+   * Same wall, same z −0.671 front face, same dead-square and dead-level
+   * final leg for the same reason: the camera stays honest so the frame's
+   * own 0.8° of roll is what reads as a picture hung by hand.
+   *
+   * This moulding is 0.308 m tall; read from 0.410 m it fills 81% of the
+   * frame, again with a 2:3 window still wide enough at 0.256 m across. On a
+   * wide window only, the forward end of the book run (x 0.94…1.06,
+   * z −0.52…−0.24) shows just inside the right edge of frame, receding away
+   * — left in deliberately, since that is exactly what leaning in to a
+   * picture beside a bookshelf actually looks like.
+   *
+   * The first leg turns to face the bulkhead from beside the saloon table
+   * before travelling in, passing above the settee backrests (top y 0.59)
+   * the whole way, same as the port photograph's approach.
+   */
+  'photo-dogs': {
+    id: 'photo-dogs',
+    label: 'The photograph of the dogs',
+    scene: 'cabin',
+    bounds: { centre: [0.78, 0.787, -0.66], size: [0.3, 0.35, 0.06] },
+    path: [
+      { position: [0.16, 1.0, 0.56], target: [0.62, 0.85, -0.5] },
+      { position: [0.78, 0.787, -0.261], target: [0.78, 0.787, -0.671] },
     ],
   },
 }

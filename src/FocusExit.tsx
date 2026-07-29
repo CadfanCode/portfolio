@@ -1,7 +1,17 @@
 import { useCallback, useEffect } from 'react'
 import { CAMERA_FOCUS } from './scene/cameraFocus'
+import type { SceneState } from './state/useSceneStore'
 import { useSceneStore } from './state/useSceneStore'
 import './FocusExit.css'
+
+/**
+ * Which stop each stop steps back to. Only stops listed here get a back
+ * button at the scene level (i.e. with no close-up open). `cabin` is
+ * deliberately absent: the companionway hotspot in `CabinHatch.tsx` already
+ * walks the visitor back up to the cockpit, and a second, competing back
+ * affordance there would just be noise.
+ */
+const SCENE_BACK: Partial<Record<SceneState, SceneState>> = { cockpit: 'ocean' }
 
 /**
  * The way back out of a close-up: a return arrow, top left.
@@ -16,20 +26,39 @@ import './FocusExit.css'
  *
  * Escape does the same thing. Anyone who has been put inside a modal view by a
  * click will try it.
+ *
+ * The same button also does double duty one level up: at a stop that has a
+ * declared way back (currently just the cockpit, out to the open-ocean orbit)
+ * with nothing else open, it steps the camera back along the locked path
+ * instead of out of a close-up. Escape is deliberately not bound for that
+ * case — leaving a close-up is a modal-dismiss gesture, but sitting at a
+ * stop is not a modal state, so the keyboard shortcut stays scoped to focus.
  */
 export function FocusExit() {
   const focus = useSceneStore((s) => s.focus)
   const activeExhibitId = useSceneStore((s) => s.activeExhibitId)
+  const scene = useSceneStore((s) => s.scene)
+  const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const closeExhibit = useSceneStore((s) => s.closeExhibit)
   const clearFocus = useSceneStore((s) => s.clearFocus)
+  const goTo = useSceneStore((s) => s.goTo)
+
+  const sceneBackTarget = SCENE_BACK[scene]
 
   // "Back" steps out one level at a time: an open exhibit closes first,
   // leaving the close-up it lives inside still framed; only then does the
-  // same button walk the camera back out to the stop.
-  const goBack = useCallback(
-    () => (activeExhibitId ? closeExhibit() : clearFocus()),
-    [activeExhibitId, closeExhibit, clearFocus],
-  )
+  // same button walk the camera back out to the stop. With no close-up open
+  // at all, "back" instead means the stop-level step declared in
+  // `SCENE_BACK`, if this stop has one.
+  const goBack = useCallback(() => {
+    if (activeExhibitId) {
+      closeExhibit()
+    } else if (focus) {
+      clearFocus()
+    } else if (sceneBackTarget) {
+      goTo(sceneBackTarget)
+    }
+  }, [activeExhibitId, closeExhibit, focus, clearFocus, sceneBackTarget, goTo])
 
   // Above the early return, so hook order stays stable when nothing is open.
   useEffect(() => {
@@ -42,10 +71,16 @@ export function FocusExit() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [focus, goBack])
 
-  if (!focus) return null
+  const showSceneBack = !focus && !activeExhibitId && !isTransitioning && sceneBackTarget
 
-  const view = CAMERA_FOCUS[focus]
-  const label = view ? `Back from ${view.label.toLowerCase()}` : 'Back'
+  if (!focus && !showSceneBack) return null
+
+  const view = focus ? CAMERA_FOCUS[focus] : undefined
+  const label = focus
+    ? view
+      ? `Back from ${view.label.toLowerCase()}`
+      : 'Back'
+    : 'Back to the water'
 
   return (
     <button

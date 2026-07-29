@@ -55,7 +55,6 @@ export const RESUME_PAGES: readonly ResumePage[] = [
       { kind: 'rule' },
       { kind: 'spacer', size: 1 },
       { kind: 'paragraph', text: 'Stockholm, Sweden' },
-      { kind: 'paragraph', text: '0761589527' },
       { kind: 'paragraph', text: 'caiowain@gmail.com' },
     ],
   },
@@ -66,15 +65,15 @@ export const RESUME_PAGES: readonly ResumePage[] = [
       { kind: 'heading', text: 'Professional Summary' },
       {
         kind: 'paragraph',
-        text: 'System developer graduate focused on Java development, test automation and reliable backend systems. Hands-on experience with Java/Kotlin, Spring Boot, REST APIs, SQL/PostgreSQL, Git, JUnit/Mockito, Docker and Kubernetes.',
+        text: 'System developer graduate focused on Java, test automation and reliable backend systems. Hands-on with Java/Kotlin, Spring Boot, REST APIs, SQL/PostgreSQL, Git, JUnit/Mockito, Docker and Kubernetes.',
       },
       {
         kind: 'paragraph',
-        text: 'Strong foundation in object-oriented programming, debugging, secure development and writing maintainable code. Experienced in agile teams building cloud-based microservices, healthcare-data workflows and real-time communication features.',
+        text: 'Solid foundation in OOP, debugging, secure development and maintainable code, built in agile teams shipping cloud-based microservices, healthcare-data workflows and real-time communication features.',
       },
       {
         kind: 'paragraph',
-        text: 'Analytical and collaborative problem-solver seeking a Java Developer role where I can contribute to internal tools, automated test processes and high-quality software in complex technical environments.',
+        text: 'Looking for a Java Developer role building internal tools, automated test processes and high-quality software in complex technical environments.',
       },
     ],
   },
@@ -100,12 +99,11 @@ export const RESUME_PAGES: readonly ResumePage[] = [
           {
             label: 'Testing & quality',
             value:
-              'Unit testing, JUnit, Mockito, debugging, code reviews, secure development, test automation fundamentals',
+              'Unit testing, JUnit, Mockito, debugging, code reviews, secure development, test automation',
           },
           {
             label: 'Data & systems',
-            value:
-              'PostgreSQL, SQL, database management, system architecture, WebRTC, real-time application flows',
+            value: 'PostgreSQL, SQL, system architecture, WebRTC, real-time application flows',
           },
           {
             label: 'Frontend & web',
@@ -132,10 +130,10 @@ export const RESUME_PAGES: readonly ResumePage[] = [
         org: 'Braive AB',
         meta: 'Stockholm, Sweden | 2026',
         bullets: [
-          'Developed and tested Java/Kotlin Spring Boot microservices and Vue.js admin interfaces in an agile team using Git, JIRA and code review practices.',
-          'Improved reliability of backend logging flows by debugging race conditions, reducing downtime and strengthening data integrity.',
-          'Optimised PostgreSQL and Hibernate/JPA handling for sensitive healthcare data, applying secure-development principles and reducing manual error sources.',
-          'Containerised services with Docker and participated in Kubernetes-based DevOps workflows, supporting consistent environments and faster feedback loops.',
+          'Developed and tested Java/Kotlin Spring Boot microservices and Vue.js admin interfaces in an agile team, using Git, JIRA and code review.',
+          'Fixed race conditions in backend logging flows, cutting downtime and strengthening data integrity.',
+          'Optimised PostgreSQL and Hibernate/JPA handling of sensitive healthcare data, applying secure-development principles to reduce manual error.',
+          'Containerised services with Docker and worked Kubernetes-based DevOps, keeping environments consistent and feedback loops fast.',
         ],
       },
       {
@@ -144,9 +142,9 @@ export const RESUME_PAGES: readonly ResumePage[] = [
         org: 'Omika Health AB',
         meta: 'Stockholm, Sweden | 2025',
         bullets: [
-          'Designed and implemented a production-ready P2P video chat feature with WebRTC in React Native, including a lightweight signalling server and secure authentication.',
-          'Built, tested and debugged real-time application flows, validating complex interactions with sub-millisecond response times in proof-of-concept tests.',
-          'Translated user needs into practical technical solutions while collaborating closely with a small agile product team.',
+          'Built a production-ready P2P video chat feature with WebRTC in React Native, including a lightweight signalling server and secure authentication.',
+          'Tested and debugged real-time application flows, validating complex interactions with sub-millisecond response times in proof-of-concept tests.',
+          'Translated user needs into practical technical solutions alongside a small agile product team.',
         ],
       },
     ],
@@ -165,8 +163,8 @@ export const RESUME_PAGES: readonly ResumePage[] = [
         meta: 'Sweden | Ongoing — hourly and summer substitute',
         bullets: [
           'Work close to core operations in a high-trust environment with strict requirements for security, confidentiality and sound judgement.',
-          'Contribute in a setting where collaboration, accountability and clear communication are essential.',
-          'Bring an operational perspective into software development by connecting technical solutions to real user needs and safety requirements.',
+          'Rely daily on collaboration, accountability and clear communication.',
+          'Bring an operational perspective to software development, connecting technical solutions to real user needs and safety requirements.',
         ],
       },
       {
@@ -175,8 +173,8 @@ export const RESUME_PAGES: readonly ResumePage[] = [
         org: 'Loughborough University',
         meta: 'Loughborough, United Kingdom | 2018–2021',
         bullets: [
-          "Led advanced teaching in biomechanics and motor control for more than 100 undergraduate and master's students, using Matlab and OpenSim data collection protocols.",
-          'Coached colleagues in interdisciplinary teams and demonstrated knowledge-sharing, mentoring and collaborative problem-solving.',
+          "Taught biomechanics and motor control to more than 100 undergraduate and master's students, using Matlab and OpenSim data collection protocols.",
+          'Mentored colleagues in interdisciplinary teams, sharing knowledge and solving problems collaboratively.',
         ],
       },
       {
@@ -186,7 +184,7 @@ export const RESUME_PAGES: readonly ResumePage[] = [
         meta: 'Stockholm, Sweden | 2017',
         bullets: [
           'Analysed biomechanical data with quantitative modelling to identify patterns of muscle spasticity in stroke patients.',
-          'Applied analytical problem-solving and data interpretation in a research environment involving complex human movement data.',
+          'Applied analytical problem-solving and data interpretation to complex human movement data.',
         ],
       },
     ],
@@ -203,7 +201,7 @@ export const RESUME_PAGES: readonly ResumePage[] = [
       },
       {
         kind: 'note',
-        text: 'Focus on database management, system architecture and scalable backend solutions using Spring Boot in team settings. Practical training in Java/OOP, SQL, testing, Git, agile development and maintainable software design.',
+        text: 'Focus on database management, system architecture and scalable Spring Boot backends in team settings. Practical training in Java/OOP, SQL, testing, Git, agile development and maintainable software design.',
       },
       { kind: 'spacer', size: 1 },
       {
@@ -234,10 +232,10 @@ export const RESUME_PAGES: readonly ResumePage[] = [
       {
         kind: 'bullets',
         items: [
-          'Career focus — Java developer roles involving internal tools, test automation, backend services, integrations, secure systems or complex technical platforms.',
-          '3rd place, Innovation Pioneers Hackathon 2025 — prototyped an AI-driven collaboration app connecting entrepreneurs with key stakeholders, reaching the top 3 in a competition judged by innovation experts.',
-          "JFokus 2026 — attended one of Europe's leading developer conferences, with focus on modern Java architectures, tools and security trends.",
-          'Independent project — developing a machine-learning tool to analyse kinematic data and identify risk factors for musculoskeletal injuries.',
+          'Career focus — Java developer roles in internal tools, test automation, backend services, integrations, secure systems or complex technical platforms.',
+          '3rd place, Innovation Pioneers Hackathon 2025 — prototyped an AI-driven collaboration app connecting entrepreneurs with key stakeholders.',
+          "JFokus 2026 — attended one of Europe's leading developer conferences, focused on modern Java architectures, tools and security trends.",
+          'Independent project — building a machine-learning tool to analyse kinematic data and identify risk factors for musculoskeletal injuries.',
         ],
       },
     ],
