@@ -192,6 +192,16 @@ const OVERRIDE = (() => {
 // Scratch preset the drift blends into, so sampling allocates nothing per frame.
 const _blend: Preset = { name: '', sea: 0, wind: 0, cloud: 0, fog: 0, rain: 0 }
 
+// One-entry cache on the last sampled time. PortfolioWorld, Ocean, Boat, the
+// two Weather pieces and the soundscape each call `sampleConditions` once per
+// frame with the same `state.clock.elapsedTime`, so without this every frame
+// resolves the same weather five or six times over. Safe to hand back the
+// same object to all of them: every consumer only reads the result or
+// `.copy()`s its `sun`/`fog` colours, the same way they already share the
+// module's `_sun`/`_fog` scratch objects underneath.
+let _lastTime: number | null = null
+let _lastResult: Conditions | null = null
+
 /**
  * The weather at a moment. Blends the two presets the drift is currently between
  * — or returns the frozen override — then resolves the result. Cheap enough
@@ -199,23 +209,32 @@ const _blend: Preset = { name: '', sea: 0, wind: 0, cloud: 0, fog: 0, rain: 0 }
  * way the sea and wind are already sampled independently.
  */
 export function sampleConditions(time: number): Conditions {
-  if (OVERRIDE) return resolve(OVERRIDE)
+  if (time === _lastTime && _lastResult) return _lastResult
 
-  const cycle = TIMELINE.length * SEGMENT
-  const t = ((time % cycle) + cycle) % cycle
-  const index = Math.floor(t / SEGMENT)
-  const local = t - index * SEGMENT
+  let result: Conditions
+  if (OVERRIDE) {
+    result = resolve(OVERRIDE)
+  } else {
+    const cycle = TIMELINE.length * SEGMENT
+    const t = ((time % cycle) + cycle) % cycle
+    const index = Math.floor(t / SEGMENT)
+    const local = t - index * SEGMENT
 
-  const a = TIMELINE[index]
-  const b = TIMELINE[(index + 1) % TIMELINE.length]
-  // Hold through the dwell, then ease across the fade.
-  const k = local <= DWELL ? 0 : smoothstep01((local - DWELL) / FADE)
+    const a = TIMELINE[index]
+    const b = TIMELINE[(index + 1) % TIMELINE.length]
+    // Hold through the dwell, then ease across the fade.
+    const k = local <= DWELL ? 0 : smoothstep01((local - DWELL) / FADE)
 
-  _blend.name = k < 0.5 ? a.name : b.name
-  _blend.sea = lerp(a.sea, b.sea, k)
-  _blend.wind = lerp(a.wind, b.wind, k)
-  _blend.cloud = lerp(a.cloud, b.cloud, k)
-  _blend.fog = lerp(a.fog, b.fog, k)
-  _blend.rain = lerp(a.rain, b.rain, k)
-  return resolve(_blend)
+    _blend.name = k < 0.5 ? a.name : b.name
+    _blend.sea = lerp(a.sea, b.sea, k)
+    _blend.wind = lerp(a.wind, b.wind, k)
+    _blend.cloud = lerp(a.cloud, b.cloud, k)
+    _blend.fog = lerp(a.fog, b.fog, k)
+    _blend.rain = lerp(a.rain, b.rain, k)
+    result = resolve(_blend)
+  }
+
+  _lastTime = time
+  _lastResult = result
+  return result
 }

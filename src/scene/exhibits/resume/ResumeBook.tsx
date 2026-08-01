@@ -17,6 +17,7 @@ import {
 import type { Mesh as MeshType, MeshBasicMaterial } from 'three'
 import modelUrl from '../../../assets/models/maxi77.glb?url'
 import { RESUME_PAGES } from '../../../content/resume'
+import { useQualityStore } from '../../../state/useQualityStore'
 import { prefersReducedMotion } from '../../introFlight'
 import { clamp01 } from '../../mathUtils'
 import type { ExhibitSceneProps } from '../types'
@@ -140,29 +141,39 @@ type TextureBundle = {
   right: CanvasTexture[]
 }
 
-/** Builds and memoises the eight page textures, four to a side. Rebuilt only
- *  if the renderer's anisotropy cap changes, which in practice is never. */
-function usePageTextures(anisotropy: number): TextureBundle {
+/**
+ * Builds and memoises the eight page textures, four to a side.
+ *
+ * Keyed on `pageScale` alone, not on anisotropy. Eight pages at 1024×1448 is
+ * roughly 47 MB of RGBA VRAM, rasterised on the main thread the moment the
+ * book opens — the single largest allocation in the app, and a real failure
+ * mode on a memory-starved phone — so this memo exists specifically to avoid
+ * doing that rasterisation more than once. `pageScale` belongs in the key
+ * because it changes what gets drawn onto the canvas; anisotropy does not,
+ * since it is a property that can be set on an already-rendered texture
+ * without touching the canvas at all — see the `useEffect` below, which
+ * applies it separately so a tier change (which in this app's design never
+ * happens mid-session, but would be free to support) would not force all
+ * eight pages to be re-rasterised.
+ */
+function usePageTextures(pageScale: number): TextureBundle {
   return useMemo(() => {
     const left: CanvasTexture[] = []
     const right: CanvasTexture[] = []
     for (let spread = 0; spread < RESUME_PAGES.length / 2; spread++) {
       const leftPage = RESUME_PAGES[spread * 2]
       const rightPage = RESUME_PAGES[spread * 2 + 1]
-      const leftCanvas = renderResumePage(leftPage, 'left')
-      const rightCanvas = renderResumePage(rightPage, 'right')
+      const leftCanvas = renderResumePage(leftPage, 'left', pageScale)
+      const rightCanvas = renderResumePage(rightPage, 'right', pageScale)
       const leftTex = new CanvasTexture(leftCanvas)
       const rightTex = new CanvasTexture(rightCanvas)
       leftTex.colorSpace = SRGBColorSpace
       rightTex.colorSpace = SRGBColorSpace
-      leftTex.anisotropy = anisotropy
-      rightTex.anisotropy = anisotropy
       left.push(leftTex)
       right.push(rightTex)
     }
     return { left, right }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anisotropy])
+  }, [pageScale])
 }
 
 /**
@@ -190,13 +201,27 @@ export function ResumeBook({ active, onExited }: ExhibitSceneProps) {
   const finishTurn = useResumeBook((s) => s.finishTurn)
   const reset = useResumeBook((s) => s.reset)
 
-  const textures = usePageTextures(gl.capabilities.getMaxAnisotropy())
+  const pageScale = useQualityStore((s) => s.settings.textures.pageScale)
+  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  const textures = usePageTextures(pageScale)
   useEffect(() => {
     return () => {
       textures.left.forEach((t) => t.dispose())
       textures.right.forEach((t) => t.dispose())
     }
   }, [textures])
+
+  // Anisotropy is applied here rather than folded into `usePageTextures`'
+  // memo key — see the note on that hook — so it can change without forcing
+  // the eight pages to be re-rasterised. The GPU's own maximum still wins
+  // where it is lower than the tier's ceiling.
+  useEffect(() => {
+    const cap = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
+    for (const tex of [...textures.left, ...textures.right]) {
+      tex.anisotropy = cap
+      tex.needsUpdate = true
+    }
+  }, [textures, anisotropy, gl])
 
   const shelfSlot = useMemo(() => readShelfSlot(model), [model])
 

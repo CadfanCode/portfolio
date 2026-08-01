@@ -442,13 +442,22 @@ function drawRule(ctx: CanvasRenderingContext2D, left: number, right: number, cu
 }
 
 /** Renders one page — a title page, a section spread half, or the colophon —
- *  as a fresh canvas. `side` decides which edge is the gutter. */
-export function renderResumePage(page: ResumePage, side: 'left' | 'right'): HTMLCanvasElement {
+ *  as a fresh canvas. `side` decides which edge is the gutter. `scale`
+ *  resizes the canvas by the quality tier's `textures.pageScale` while every
+ *  layout constant below stays in the authored 1024×1448 design pixels: the
+ *  context is scaled once, immediately after acquisition, so nothing past
+ *  this point needs to know the canvas is any particular size. */
+export function renderResumePage(
+  page: ResumePage,
+  side: 'left' | 'right',
+  scale = 1,
+): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
-  canvas.width = CANVAS_WIDTH
-  canvas.height = CANVAS_HEIGHT
+  canvas.width = CANVAS_WIDTH * scale
+  canvas.height = CANVAS_HEIGHT * scale
   const ctx = canvas.getContext('2d')
   if (!ctx) return canvas
+  ctx.scale(scale, scale)
 
   paintPaper(ctx, side)
 

@@ -1,6 +1,4 @@
-import { Canvas } from '@react-three/fiber'
-import { Suspense } from 'react'
-import { PortfolioWorld } from './scene/PortfolioWorld'
+import { SceneCanvas } from './SceneCanvas'
 import { CabinHint } from './CabinHint'
 import { FocusExit } from './FocusExit'
 import { IntroVeil } from './IntroVeil'
@@ -11,15 +9,13 @@ import './App.css'
 function App() {
   return (
     <>
-      {/* `shadows` turns on the shadow map the sun light needs. The camera prop
-          matches the ocean stop's pose so the first frame is already framed —
-          see `cameraStops.ts`. Loading the boat GLB suspends, so the whole world
-          sits behind a Suspense boundary. */}
-      <Canvas shadows camera={{ position: [11, 6, -9], fov: 50 }}>
-        <Suspense fallback={null}>
-          <PortfolioWorld />
-        </Suspense>
-      </Canvas>
+      {/* The whole 3D scene, including the Canvas itself. It lives in its own
+          component because the quality system drives the Canvas's `dpr` and
+          shadow filter from the store, and R3F re-applies every Canvas prop on
+          every render of whatever owns it — so that owner has to be something
+          small with a tightly controlled set of subscriptions, not this file.
+          See the note at the top of `SceneCanvas.tsx`. */}
+      <SceneCanvas />
       <ExhibitOverlay />
       {/* The way out of a close-up. Only control on screen while one is open,
           because the camera is locked in there. */}

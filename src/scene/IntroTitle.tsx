@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { CanvasTexture, Object3D, Vector3 } from 'three'
 import type { ShaderMaterial } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
+import { useQualityStore } from '../state/useQualityStore'
 import {
   INTRO_HOLD_START,
   TITLE_FADE_IN_END,
@@ -148,6 +149,7 @@ const fragmentShader = /* glsl */ `
 export function IntroTitle() {
   const intro = useSceneStore((s) => s.intro)
   const gl = useThree((s) => s.gl)
+  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
 
   const material = useRef<ShaderMaterial>(null)
   /** Seconds into the hold beat, accumulated locally rather than read off the rig — the rig's own `holdElapsed` is private to `CameraRig`. */
@@ -227,10 +229,12 @@ export function IntroTitle() {
     }
 
     const tex = new CanvasTexture(canvas)
-    tex.anisotropy = gl.capabilities.getMaxAnisotropy()
+    // The tier is a ceiling, not a demand — the GPU's own maximum still wins
+    // where it is lower.
+    tex.anisotropy = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
     return tex
-  }, [gl])
+  }, [gl, anisotropy])
 
   // The texture is baked once per mount; dispose it on the way out rather
   // than leaving it for the GC, same as any other GPU resource this project

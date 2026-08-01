@@ -3,6 +3,7 @@ import {
   ChromaticAberration,
   DepthOfField,
   EffectComposer,
+  FXAA,
   N8AO,
   Noise,
   SMAA,
@@ -12,6 +13,7 @@ import {
 import { BlendFunction, ToneMappingMode } from 'postprocessing'
 import { useMemo, type ReactElement } from 'react'
 import { Vector2, Vector3 } from 'three'
+import { useQualityStore } from '../state/useQualityStore'
 import { useSceneStore } from '../state/useSceneStore'
 import { CAMERA_FOCUS } from './cameraFocus'
 
@@ -45,15 +47,34 @@ const CA_OFFSET = new Vector2(0.0005, 0.0005)
  *    ACES keeps the look identical to the tuned forward render.
  *  - Vignette and a faint film grain last, over the graded image, to settle it
  *    and hide the banding a smooth sky always shows.
- *  - SMAA closes it out. The default MSAA does nothing for *specular*
- *    aliasing, and specular aliasing — crawling highlights on the thin rigging
- *    and stainless against a bright sky — is the loudest realtime tell there
- *    is. SMAA resolves the finished image and takes most of it out.
+ *  - The resolve-time antialias closes it out, and it is never absent: the
+ *    Canvas now runs with `antialias: false`, since the composer renders
+ *    offscreen and context MSAA would have been resolving a buffer nothing
+ *    samples. What is left is deliberate. `EffectComposer multisampling`
+ *    handles geometric edges on the top tier; SMAA or FXAA handle *specular*
+ *    aliasing on every tier, which MSAA does nothing for — crawling
+ *    highlights on the thin rigging and stainless against a bright sky is the
+ *    loudest realtime tell there is, so this is the one thing scaled to
+ *    "cheaper", never to "off". FXAA is the bottom-tier pick not because it
+ *    looks as good as SMAA but because it is a non-convolution effect, so the
+ *    library folds it into the same `EffectPass` as the mandatory tone
+ *    mapping below rather than costing a pass of its own.
+ *
+ * `ChromaticAberration`, `ToneMapping`, `Vignette` and `Noise` are the other
+ * three non-convolution effects sharing that pass, and none of them read
+ * from the quality table. They are already close to free once the pass
+ * exists for tone mapping, so tiering them would trade three more branches
+ * for a fraction of an ALU each — not worth it.
  */
 export function Effects() {
   const scene = useSceneStore((s) => s.scene)
   const focus = useSceneStore((s) => s.focus)
   const inCabin = scene === 'cabin'
+  // A stable sub-object of a frozen module-constant table (`QUALITY[tier].post`
+  // — see `quality.ts`), so this subscription only re-renders `Effects` when
+  // the tier itself changes, which is never mid-session. Safe to read once
+  // here rather than threading it through each pass below.
+  const post = useQualityStore((s) => s.settings.post)
 
   // What the lens is focused on while a close-up is open, if one is. The
   // registry entries are module constants, so this is stable for as long as the
@@ -68,23 +89,28 @@ export function Effects() {
   // where it is not wanted. The composer only wires up the Effect children and
   // ignores the rest, so ordering here is the order applied.
   const passes = [
-    <N8AO
-      key="ao"
-      aoRadius={0.7}
-      distanceFalloff={1}
-      intensity={2}
-      aoSamples={16}
-      denoiseSamples={4}
-      denoiseRadius={12}
-      halfRes
-      color="#0a1418"
-    />,
+    // The heaviest pass in the stack, and the one real exception to "turn it
+    // down, not off" — at the bottom tier the contact shadows are not worth
+    // the frame. The look constants (radius, falloff, intensity, colour) stay
+    // hand-tuned and inline; only the sample counts come from the table.
+    post.ao ? (
+      <N8AO
+        key="ao"
+        aoRadius={0.7}
+        distanceFalloff={1}
+        intensity={2}
+        halfRes
+        color="#0a1418"
+        {...post.ao}
+      />
+    ) : null,
     <Bloom
       key="bloom"
       mipmapBlur
       luminanceThreshold={0.85}
       luminanceSmoothing={0.2}
       intensity={0.5}
+      levels={post.bloomLevels}
     />,
     // Close focus on the joinery, companionway soft behind — the cabin is the
     // one stop where you are at arm's length from a surface, so it is the one
@@ -102,7 +128,7 @@ export function Effects() {
     // distance the whole object has to be inside the sharp band, not just the
     // face of it, and 2.4 of bokeh on a background 200 mm behind a book is a
     // smear rather than a depth cue.
-    inCabin ? (
+    post.dof && inCabin ? (
       subject ? (
         <DepthOfField
           key="dof-close"
@@ -128,11 +154,11 @@ export function Effects() {
     <ToneMapping key="tone" mode={ToneMappingMode.ACES_FILMIC} />,
     <Vignette key="vignette" offset={0.32} darkness={0.42} />,
     <Noise key="grain" premultiply blendFunction={BlendFunction.OVERLAY} opacity={0.035} />,
-    <SMAA key="smaa" />,
+    post.aa === 'smaa' ? <SMAA key="smaa" /> : <FXAA key="fxaa" />,
   ].filter((pass): pass is ReactElement => pass !== null)
 
   return (
-    <EffectComposer multisampling={4} enableNormalPass={false}>
+    <EffectComposer multisampling={post.multisampling} enableNormalPass={false}>
       {passes}
     </EffectComposer>
   )
