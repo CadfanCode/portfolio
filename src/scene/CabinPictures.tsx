@@ -1,9 +1,11 @@
 import { useTexture } from '@react-three/drei'
-import { useEffect, useMemo } from 'react'
+import { useThree } from '@react-three/fiber'
+import { useCallback, useEffect, useMemo } from 'react'
 import { CanvasTexture, SRGBColorSpace } from 'three'
 import type { Texture } from 'three'
 import maxi77Url from '../assets/textures/maxi77.jpg?url'
 import alysTeddyUrl from '../assets/textures/alys-teddy.jpg?url'
+import { useQualityStore } from '../state/useQualityStore'
 
 /**
  * Two framed photographs on the main bulkhead — the boat to port, the owner's
@@ -148,14 +150,28 @@ useTexture.preload(alysTeddyUrl)
  * would therefore run *after* the upload. `onLoad` fires from a
  * `useLayoutEffect`, ahead of both the upload and the first draw, so the
  * colour space is already right the first time the material compiles — no
- * `needsUpdate` recompile needed. Module-level so its identity is stable;
- * drei keys the callback on reference.
+ * `needsUpdate` recompile needed.
+ *
+ * No longer module-level: the anisotropy ceiling comes from the quality tier,
+ * which is only reachable inside the component, so this is built with
+ * `useCallback` and kept referentially stable across re-renders instead —
+ * `gl` and the tier's `anisotropy` are both fixed for the life of the session,
+ * so in practice this identity never changes either.
  */
-const asSRGB = (texture: Texture) => {
-  texture.colorSpace = SRGBColorSpace
-  // Matching `BookSpines`' spine lettering: these hang almost flat to the
-  // camera but the cabin is dim enough that the cheap win is worth taking.
-  texture.anisotropy = 4
+function useApplySRGB() {
+  const gl = useThree((s) => s.gl)
+  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  return useCallback(
+    (texture: Texture) => {
+      texture.colorSpace = SRGBColorSpace
+      // Matching `BookSpines`' spine lettering: these hang almost flat to the
+      // camera but the cabin is dim enough that the cheap win is worth
+      // taking. The GPU's own maximum still wins where it is lower than the
+      // tier's ceiling.
+      texture.anisotropy = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
+    },
+    [gl, anisotropy],
+  )
 }
 
 /**
@@ -256,7 +272,10 @@ function Picture({
   label,
   plaque,
 }: PictureDef) {
-  const texture = useTexture(url, asSRGB)
+  const gl = useThree((s) => s.gl)
+  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  const applySRGB = useApplySRGB()
+  const texture = useTexture(url, applySRGB)
   const outerWidth = width + border * 2
   const outerHeight = height + border + borderBottom
   // The moulding box is no longer centred on the picture: the bottom rail's
@@ -270,9 +289,9 @@ function Picture({
     const canvas = drawPlaqueCanvas(plaque.lines, plaqueAspect)
     const tex = new CanvasTexture(canvas)
     tex.colorSpace = SRGBColorSpace
-    tex.anisotropy = 4
+    tex.anisotropy = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
     return tex
-  }, [plaque.lines, plaqueAspect])
+  }, [plaque.lines, plaqueAspect, anisotropy, gl])
 
   useEffect(() => {
     return () => plaqueTexture.dispose()

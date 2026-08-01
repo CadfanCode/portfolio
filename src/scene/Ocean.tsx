@@ -10,8 +10,9 @@ import {
   Vector2,
   Vector3,
 } from 'three'
+import { useQualityStore } from '../state/useQualityStore'
 import { sampleConditions } from './conditions'
-import { boatWorldInverse } from './water/boatPose'
+import { boatWorldInverse, worldFrameQuat } from './water/boatPose'
 import {
   SECTION_BOW_Z,
   SECTION_HALF_BEAM,
@@ -21,7 +22,8 @@ import {
   SECTION_STATIONS,
   SECTION_STERN_Z,
 } from './water/hullSections'
-import { DERIVED, WAVES } from './water/waves'
+import { DERIVED, steepScale, WAVES } from './water/waves'
+import { WIND_DIR } from './wind'
 
 /**
  * The sea: a large plane displaced by the shared Gerstner waves in its own
@@ -140,6 +142,7 @@ const fragmentShader = /* glsl */ `
   uniform float uFogDensity; // matches the scene FogExp2
   uniform vec3  uFogColor;
   uniform vec3  uSSSColor;   // colour light glows when it passes through a crest
+  uniform vec2  uWindDir;    // the wind's own bearing, world XZ, that the fine ripple fans around
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
@@ -192,11 +195,15 @@ const fragmentShader = /* glsl */ `
   // exactly what a real sea's wind-ripple does to the light — the mesh is far too
   // coarse to carry ripple this fine, but the normal is what the eye reads, and
   // breaking it up here is what turns a smooth sheet into water and the one sun
-  // into a field of glitter. Returns d(height)/d(xz), summed.
+  // into a field of glitter. Each wavelet's (dx, dz) is a heading relative to the
+  // wind rather than a fixed compass bearing, rotated onto uWindDir below, so the
+  // whole fan of ripple turns with the wind instead of sitting still while the sea
+  // around it swings. Returns d(height)/d(xz), summed.
   vec2 detailSlope(vec2 p, float t) {
     vec2 g = vec2(0.0);
     #define WAVELET(dx, dz, wl, am, sp) { \
-      vec2 d = normalize(vec2(dx, dz)); \
+      vec2 o = normalize(vec2(dx, dz)); \
+      vec2 d = vec2(o.x * uWindDir.x - o.y * uWindDir.y, o.x * uWindDir.y + o.y * uWindDir.x); \
       float k = 6.2831853 / (wl); \
       float ph = dot(d, p) * k - t * (sp) * k; \
       g += d * (am) * k * cos(ph); \
@@ -336,11 +343,24 @@ const fragmentShader = /* glsl */ `
 
 // Kept in step with PortfolioWorld's SUN by direction; magnitude does not matter
 // once normalised. Duplicated rather than imported to keep the sea shader from
-// reaching up into the scene graph for one vector.
+// reaching up into the scene graph for one vector. This is the sun's direction
+// *in the world frame's own coordinates* — the sea, sky, cloud and sun all ride
+// inside one rotating world frame, so it is turned into an actual world-space
+// direction each frame by that frame's rotation (see sunWorld, below) before it
+// reaches the shader.
 const SUN_DIR = new Vector3(-38, 14, -48).normalize()
+// Scratch for the world-space sun direction, written each frame; allocated once
+// so useFrame never allocates.
+const sunWorld = new Vector3()
 
 export function Ocean() {
   const material = useRef<ShaderMaterial>(null)
+  // The single biggest vertex-shader load in the scene: at 240 this plane is
+  // 115,200 triangles, each one running the three-iteration Gerstner sum and its
+  // Jacobian. Resolved once at startup and fixed for the session, so the
+  // geometry is built once and never rebuilt. See `quality.ts` for why the lower
+  // tiers cannot go much below this before the shortest wave disappears.
+  const segments = useQualityStore((s) => s.settings.ocean.segments)
 
   // The measured hull sections, packed into a small single-channel texture the
   // fragment shader can fetch bilinearly. Built once; the table is generated
@@ -371,7 +391,7 @@ export function Ocean() {
       uOmega: { value: DERIVED.map((w) => w.omega) },
       uAmp: { value: DERIVED.map((w) => w.amplitude) },
       uQA: { value: DERIVED.map((w) => w.qa) },
-      uSunDir: { value: SUN_DIR },
+      uSunDir: { value: sunWorld },
       uSunColor: { value: new Color('#fff1dc') },
       uDeepColor: { value: new Color('#08222c') },
       uShallowColor: { value: new Color('#1b5866') },
@@ -397,6 +417,10 @@ export function Ocean() {
       uRain: { value: 0 },
       uFogDensity: { value: 0.0016 },
       uFogColor: { value: new Color('#cfdae4') },
+      // A copy, not the shared WIND_DIR — this is effectively constant, so it
+      // never needs setting again, but it should not be the same object another
+      // module might later start mutating.
+      uWindDir: { value: new Vector2(WIND_DIR.x, WIND_DIR.y) },
     }),
     [sections],
   )
@@ -408,8 +432,16 @@ export function Ocean() {
     const c = sampleConditions(t)
     const u = m.uniforms
     u.uTime.value = t
+    // The frame-local sun turned into world space by the frame's own rotation
+    // this frame — see the comment on SUN_DIR — so the glitter road points at
+    // the sun the sky is actually showing, heel and all.
+    sunWorld.copy(SUN_DIR).applyQuaternion(worldFrameQuat)
     u.uAmpScale.value = c.seaAmp
-    u.uSteepScale.value = c.seaChop
+    // Not the raw c.seaChop: amplitude and chop together ask for roughly twice
+    // what Gerstner can draw in a squall (Σ Q·A·k ≈ 2 against a folding limit
+    // of 1), which turned the crests inside out and sloshed them sideways.
+    // steepScale eases that demand onto the limit instead of overshooting it.
+    u.uSteepScale.value = steepScale(c.seaAmp, c.seaChop)
     u.uWind.value = c.wind
     u.uFoam.value = c.foam
     u.uSpray.value = c.spray
@@ -420,10 +452,16 @@ export function Ocean() {
   })
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]}>
+    // Nothing binds a pointer handler to the ocean, so let R3F skip raycasting
+    // it entirely. `Mesh.raycast` would otherwise walk all 115,200 triangles of
+    // this plane on every pointer move with no early-out — the camera sits
+    // inside its bounding sphere — and that work lands on the main thread
+    // during camera drags, where it reads as input lag.
+    <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
       {/* Big enough to fill the horizon, subdivided finely enough that the
-          shortest wave still gets several vertices across its crest. */}
-      <planeGeometry args={[400, 400, 240, 240]} />
+          shortest wave still gets several vertices across its crest — how finely
+          is the quality tier's call. */}
+      <planeGeometry args={[400, 400, segments, segments]} />
       <shaderMaterial
         ref={material}
         uniforms={uniforms}

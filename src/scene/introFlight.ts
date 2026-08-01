@@ -120,15 +120,28 @@ export const introHaze = (y: number) => {
   return Math.min(base + top + 0.3 * pulse, 0.97)
 }
 
+// `BookSpines.tsx` and `ResumeBook.tsx` poll `prefersReducedMotion()` inside
+// `useFrame`, ~120 times a second, so the check itself has to be free: a
+// module-level `MediaQueryList` created once, with a cached boolean kept
+// current by its `change` listener, rather than calling `matchMedia()` and
+// reading `.matches` fresh every frame. This also means it now tracks the OS
+// setting changing mid-visit, where `useSceneStore.ts:169` only reads it once
+// at boot.
+const _reducedMotionQuery =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null
+let _reducedMotion = _reducedMotionQuery?.matches ?? false
+_reducedMotionQuery?.addEventListener('change', (e) => {
+  _reducedMotion = e.matches
+})
+
 /**
  * Whether to skip the opening entirely. A seven-second unskippable swoop is
  * exactly the kind of motion this media query exists to turn off, so those
  * visitors start seated in the cockpit instead.
  */
-export const prefersReducedMotion = () =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+export const prefersReducedMotion = () => _reducedMotion
 
 /**
  * Where the camera hangs for the new opening beat: level-ish in the cloud

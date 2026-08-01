@@ -1,5 +1,5 @@
 import { useGLTF } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import {
@@ -17,6 +17,7 @@ import type { Mesh as MeshType, MeshBasicMaterial, MeshStandardMaterial } from '
 import modelUrl from '../assets/models/maxi77.glb?url'
 import { useSceneStore } from '../state/useSceneStore'
 import { useCabinHint } from '../state/useCabinHint'
+import { useQualityStore } from '../state/useQualityStore'
 import { prefersReducedMotion } from './introFlight'
 import { usePointerSelect } from './usePointerSelect'
 
@@ -317,6 +318,8 @@ function BookSpine({
   onSelect,
 }: BookSpineProps) {
   const { scene: model } = useGLTF(modelUrl)
+  const gl = useThree((s) => s.gl)
+  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const attracting = useCabinHint((s) => s.attracting)
 
@@ -427,9 +430,11 @@ function BookSpine({
     const canvas = drawSpineCanvas(title, aspect)
     const tex = new CanvasTexture(canvas)
     tex.colorSpace = SRGBColorSpace
-    tex.anisotropy = 4
+    // The tier is a ceiling, not a demand — the GPU's own maximum still wins
+    // where it is lower.
+    tex.anisotropy = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())
     return tex
-  }, [title, aspect])
+  }, [title, aspect, anisotropy, gl])
 
   useEffect(() => {
     return () => texture.dispose()

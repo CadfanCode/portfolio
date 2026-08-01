@@ -1,3 +1,5 @@
+import { Vector2 } from 'three'
+
 /**
  * The wind — a single gentle, gusting value the whole scene reads, the way
  * `waves.ts` is the single sea. It drives three things that must agree: how far
@@ -10,6 +12,27 @@
  * lagging nothing and simply reading the same smooth gust curve everywhere, so
  * the heel and the sail-stir move together and look caused by the same air.
  */
+
+/**
+ * The bearing the wind blows *toward*, degrees in the world XZ plane, measured
+ * the way `waves.ts` measures its trains.
+ *
+ * This is the other half of "one wind": not just how hard, but which way. Air
+ * and water do not each pick their own direction — the wind raises the sea it
+ * blows over, and carries the cloud above it on the same bearing. So everything
+ * the wind moves is derived from this one number: the wave trains in `waves.ts`
+ * spread either side of it, the fine ripple on the sea aligns to it, the cloud
+ * on the overcast dome drifts along it, and the rain slants with it. Change it
+ * once and the whole sky and sea turn together.
+ */
+export const WIND_DEG = 18
+
+/** The same bearing as a unit vector in world XZ, for the shaders that need a
+ *  direction rather than an angle. */
+export const WIND_DIR = new Vector2(
+  Math.cos((WIND_DEG * Math.PI) / 180),
+  Math.sin((WIND_DEG * Math.PI) / 180),
+)
 
 /** Steady breeze, before gusts. 0…1. */
 const BASE = 0.62

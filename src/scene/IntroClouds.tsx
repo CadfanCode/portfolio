@@ -2,9 +2,26 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { Color, DoubleSide, ShaderMaterial } from 'three'
 import type { Mesh, MeshBasicMaterial } from 'three'
+import { useQualityStore } from '../state/useQualityStore'
 import { useSceneStore } from '../state/useSceneStore'
 import { CLOUD_BASE, CLOUD_LAYERS, introHaze } from './introFlight'
 import { smoothstep } from './mathUtils'
+
+/**
+ * `count` of the given heights, spread as evenly as the source allows and always
+ * keeping the first and the last.
+ *
+ * Both ends matter more than the middle: the bottom sheet is the one the camera
+ * breaks out of just above the sea, and the top one is what the opening frame
+ * looks into. Thinning from the middle keeps the deck feeling like it has a
+ * floor and a ceiling rather than just fewer things in it.
+ */
+function pickEvenly(heights: readonly number[], count: number): number[] {
+  if (count >= heights.length) return [...heights]
+  if (count <= 1) return [heights[0]]
+  const last = heights.length - 1
+  return Array.from({ length: count }, (_, i) => heights[Math.round((i * last) / (count - 1))])
+}
 
 // Shared, so a sheet only exists near its own altitude and the whole deck lets
 // go once the camera has dropped below the cloud base — see `introFlight.ts`.
@@ -82,19 +99,32 @@ type Sheet = {
 export function IntroClouds() {
   const intro = useSceneStore((s) => s.intro)
   const scene = useThree((s) => s.scene)
+  const cloudSheets = useQualityStore((s) => s.settings.intro.cloudSheets)
 
-  const sheets = useRef<Sheet[]>(CLOUD_LAYERS.map(() => ({ mesh: null, material: null })))
+  // How many of the seven authored heights actually get a sheet. This is the
+  // heaviest frame budget in the app — each sheet is a 700x700 double-sided
+  // transparent plane running three four-octave fbm evaluations — and it lands
+  // on the opening shot, before the visitor has any reason to forgive it.
+  //
+  // Note that `introHaze()` in `introFlight.ts` still pulses on all seven
+  // heights regardless of this. That is deliberate: the whiteout quad is what
+  // actually hides the horizon, and its seven punch-throughs are what give the
+  // descent its rhythm. Thinning the sheets takes out the shading cost while
+  // leaving the beat of the shot intact.
+  const layers = useMemo(() => pickEvenly(CLOUD_LAYERS, cloudSheets), [cloudSheets])
+
+  const sheets = useRef<Sheet[]>(layers.map(() => ({ mesh: null, material: null })))
   const whiteout = useRef<Mesh>(null)
   const whiteoutMaterial = useRef<MeshBasicMaterial>(null)
 
   const sheetUniforms = useMemo(
     () =>
-      CLOUD_LAYERS.map(() => ({
+      layers.map(() => ({
         uTime: { value: 0 },
         uOpacity: { value: 0 },
         uColor: { value: new Color('#cfdae4') },
       })),
-    [],
+    [layers],
   )
 
   useFrame((state) => {
@@ -102,8 +132,8 @@ export function IntroClouds() {
     const t = state.clock.elapsedTime
     const fogColor = scene.fog?.color ?? fallbackColor
 
-    for (let i = 0; i < CLOUD_LAYERS.length; i++) {
-      const layerY = CLOUD_LAYERS[i]
+    for (let i = 0; i < layers.length; i++) {
+      const layerY = layers[i]
       const sheet = sheets.current[i]
       const mesh = sheet.mesh
       const material = sheet.material
@@ -121,6 +151,13 @@ export function IntroClouds() {
       u.uTime.value = t
       u.uOpacity.value = near * band
       u.uColor.value.copy(fogColor)
+      // Below BAND_LO the band term is 0, so the sheet draws fully transparent
+      // regardless of the noise underneath it. Skip the draw entirely there —
+      // without this, all seven 700x700 DoubleSide sheets keep shading fully
+      // transparent black: three fBm evaluations of four octaves each, twelve
+      // noise octaves per pixel, on the heaviest frame budget in the app and
+      // the first thing a visitor sees.
+      mesh.visible = u.uOpacity.value > 0.002
     }
 
     const quad = whiteout.current
@@ -138,7 +175,7 @@ export function IntroClouds() {
 
   return (
     <>
-      {CLOUD_LAYERS.map((layerY, i) => (
+      {layers.map((layerY, i) => (
         <mesh
           key={layerY}
           ref={(el) => {
