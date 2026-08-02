@@ -1,0 +1,311 @@
+/* A comic-book speech balloon anchored beside Skipper (`ParrotAssistant.tsx`
+   mounts this inside a `<Html>` at `CHAT_ANCHOR`), rather than a panel
+   docked to a screen corner — the scene stays visible and Skipper stays on
+   screen the whole time, so this reads as talking to the bird you can see.
+   The z-index contract lives on the `<Html zIndexRange>` prop that wraps
+   this, not here (see `ParrotAssistant.tsx`'s own comment on it): capped
+   under `.focus-exit`'s 5 (`ResumeChrome.css:7`) so a close-up's back
+   button always wins if the two are ever on screen together.
+
+   Offset up-and-right of the anchor point so the tail (below) lands back on
+   the bird rather than the balloon sitting on top of him. No `transform` or
+   `distanceFactor` on the `<Html>` itself — a fixed screen-size balloon
+   reads as a comic panel, not a perspective-warped card. */
+.parrot-chat {
+  position: relative;
+  /* Right of the anchor and lifted clear above it (the balloon's own full
+     height, plus a further 20px of headroom) so the tail below has room to
+     reach back down to the bird without the box sitting on top of him. */
+  transform: translate(24px, calc(-100% - 20px));
+
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-width: calc(100vw - 40px);
+
+  font: inherit;
+  font-size: 14px;
+  color: #3a2308;
+
+  /* Same palette as the in-world hint bubble (`SpeechBubble.tsx`'s
+     FILL_TOP/FILL_BOTTOM/BORDER_COLOUR/TEXT_COLOUR) and the below-decks
+     chrome (`ParrotChrome.css`), so Skipper's voice reads the same wherever
+     it's coming from. */
+  background: linear-gradient(180deg, #ffd76a, #f4a63a);
+  border: 2px solid #b5691a;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  overflow: visible;
+
+  animation: parrot-chat-in 0.2s ease-out both;
+}
+
+/* The CSS triangle tail, bottom-left, pointing down toward Skipper — the
+   comic-panel idiom the in-world bubble's own canvas-drawn tail also uses
+   (`SpeechBubble.tsx`'s `drawBubble`), redone here as a border trick since
+   this box is real DOM, not a texture. */
+.parrot-chat::after {
+  content: '';
+  position: absolute;
+  left: 28px;
+  bottom: -14px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 18px solid transparent;
+  border-top: 18px solid #b5691a;
+}
+
+.parrot-chat::before {
+  content: '';
+  position: absolute;
+  left: 30px;
+  bottom: -10px;
+  width: 0;
+  height: 0;
+  z-index: 1;
+  border-left: 4px solid transparent;
+  border-right: 15px solid transparent;
+  border-top: 15px solid #f4a63a;
+}
+
+.parrot-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 12px 16px;
+  border-bottom: 1px solid rgba(181, 105, 26, 0.35);
+}
+
+.parrot-chat-title {
+  font-weight: 700;
+}
+
+.parrot-chat-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.parrot-chat-close:hover,
+.parrot-chat-close:focus-visible {
+  background: rgba(58, 35, 8, 0.12);
+}
+
+.parrot-chat-close:focus-visible {
+  outline: 2px solid #3a2308;
+  outline-offset: 1px;
+}
+
+.parrot-chat-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Its own scrolling container, capped independently of the balloon around
+   it — a balloon is a small, fixed-size prop, not a panel that grows with
+   the conversation. */
+.parrot-chat-transcript {
+  flex: 0 1 auto;
+  min-height: 60px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.parrot-chat-empty {
+  margin: 0;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.parrot-chat-turn {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  line-height: 1.4;
+  max-width: 88%;
+  word-break: break-word;
+}
+
+.parrot-chat-turn--visitor {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.parrot-chat-turn--parrot {
+  align-self: flex-start;
+  background: rgba(58, 35, 8, 0.1);
+}
+
+.parrot-chat-turn--pending {
+  opacity: 0.85;
+}
+
+.parrot-chat-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(181, 105, 26, 0.35);
+}
+
+.parrot-chat-label {
+  /* Visually hidden but readable — the input's placeholder isn't a label,
+     see the WCAG note it always gets. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.parrot-chat-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: #3a2308;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid #b5691a;
+  border-radius: 10px;
+}
+
+.parrot-chat-input:focus-visible {
+  outline: 2px solid #3a2308;
+  outline-offset: 1px;
+}
+
+.parrot-chat-send {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3a2308;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid #b5691a;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.parrot-chat-send:hover:not(:disabled),
+.parrot-chat-send:focus-visible {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.parrot-chat-send:focus-visible {
+  outline: 2px solid #3a2308;
+  outline-offset: 1px;
+}
+
+.parrot-chat-send:disabled,
+.parrot-chat-input:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.parrot-chat-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px 10px;
+  font-size: 11px;
+}
+
+.parrot-chat-footer-line {
+  opacity: 0.7;
+}
+
+/* The asset credit reuses the footer line's own scale and mutedness so it
+   doesn't compete with the brain-state text above it; it's a link only in
+   that it's clickable, not visually. */
+.parrot-chat-credit {
+  color: inherit;
+  text-decoration: none;
+}
+
+.parrot-chat-credit:hover,
+.parrot-chat-credit:focus-visible {
+  text-decoration: underline;
+}
+
+/* Deliberately not styled like `.parrot-chat-send` — this is an occasional
+   opt-in, not the primary action of the panel, so it reads as a quieter,
+   text-first link rather than competing with Send for attention. */
+.parrot-chat-upgrade {
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.parrot-chat-upgrade:hover,
+.parrot-chat-upgrade:focus-visible {
+  opacity: 0.85;
+}
+
+.parrot-chat-upgrade:focus-visible {
+  outline: 2px solid #3a2308;
+  outline-offset: 1px;
+}
+
+.parrot-chat-model-progress {
+  opacity: 0.7;
+}
+
+/* Both keyframes carry the balloon's own resting transform (see
+   `.parrot-chat` above) forward, rather than animating `transform` on its
+   own — the animation's `to` state is what the element holds once it ends
+   ("both" fill mode), so leaving the base transform out here would snap the
+   balloon back onto the anchor the moment the fade-in finishes. */
+@keyframes parrot-chat-in {
+  from {
+    opacity: 0;
+    transform: translate(24px, calc(-100% - 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(24px, calc(-100% - 20px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parrot-chat {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .parrot-chat {
+    width: min(300px, calc(100vw - 48px));
+  }
+}

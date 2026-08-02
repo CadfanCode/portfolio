@@ -38,6 +38,14 @@ type QualityStore = {
    */
   dprScale: number
   setDprScale: (scale: number) => void
+  /**
+   * Whether a `focus` close-up is open. Drives `selectDprCeiling` below, which
+   * swaps the Canvas over to the close-up's own DPR budget for as long as this
+   * is true — see `FocusQuality.tsx` for what sets it and why on entry rather
+   * than on arrival.
+   */
+  closeUp: boolean
+  setCloseUp: (next: boolean) => void
 }
 
 /** Coarsest steps that still leave somewhere useful to go between 0.5 and 1. */
@@ -61,4 +69,24 @@ export const useQualityStore = create<QualityStore>((set) => ({
       const next = Math.max(DPR_MIN, Math.round(scale / DPR_STEP) * DPR_STEP)
       return next === s.dprScale ? s : { dprScale: next }
     }),
+
+  closeUp: false,
+
+  // Set-only-on-change, in the same style as `setDprScale` above: `FocusQuality`
+  // fires this from an effect keyed on `focus !== null`, and a no-op guard keeps
+  // that from forcing a `SceneCanvas` re-render (and the full prop re-apply that
+  // comes with it) on every unrelated store update.
+  setCloseUp: (next) => set((s) => (next === s.closeUp ? s : { closeUp: next })),
 }))
+
+/**
+ * The DPR ceiling `SceneCanvas` actually passes to `<Canvas dpr>`.
+ *
+ * A plain number rather than a tuple, and deliberately so: zustand's default
+ * equality is reference equality, so a selector that returned `[floor, ceiling]`
+ * would build a fresh array on every read and defeat the whole point of
+ * subscribing narrowly (see `SceneCanvas.tsx`'s header on why that matters).
+ * A primitive needs no custom equality function to be stable.
+ */
+export const selectDprCeiling = (s: QualityStore) =>
+  s.closeUp ? s.settings.focus.dpr : s.settings.dprMax * s.dprScale

@@ -201,8 +201,10 @@ export function ResumeBook({ active, onExited }: ExhibitSceneProps) {
   const finishTurn = useResumeBook((s) => s.finishTurn)
   const reset = useResumeBook((s) => s.reset)
 
-  const pageScale = useQualityStore((s) => s.settings.textures.pageScale)
-  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  // The resume book only ever opens from inside the `books` close-up, so the
+  // close-up budget applies unconditionally — no branching on `focus` needed.
+  const pageScale = useQualityStore((s) => s.settings.focus.pageScale)
+  const anisotropy = useQualityStore((s) => s.settings.textures.detailAnisotropy)
   const textures = usePageTextures(pageScale)
   useEffect(() => {
     return () => {

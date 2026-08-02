@@ -16,7 +16,7 @@ import type { ThreeEvent } from '@react-three/fiber'
 import type { Mesh as MeshType, MeshBasicMaterial, MeshStandardMaterial } from 'three'
 import modelUrl from '../assets/models/maxi77.glb?url'
 import { useSceneStore } from '../state/useSceneStore'
-import { useCabinHint } from '../state/useCabinHint'
+import { useParrotStore } from '../parrot/useParrotStore'
 import { useQualityStore } from '../state/useQualityStore'
 import { prefersReducedMotion } from './introFlight'
 import { usePointerSelect } from './usePointerSelect'
@@ -319,9 +319,9 @@ function BookSpine({
 }: BookSpineProps) {
   const { scene: model } = useGLTF(modelUrl)
   const gl = useThree((s) => s.gl)
-  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  const anisotropy = useQualityStore((s) => s.settings.textures.detailAnisotropy)
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
-  const attracting = useCabinHint((s) => s.attracting)
+  const attracting = useParrotStore((s) => s.attracting)
 
   const mesh = useMemo(() => findMesh(model, node), [model, node])
 

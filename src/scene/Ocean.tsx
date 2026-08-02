@@ -50,6 +50,25 @@ import { WIND_DIR } from './wind'
  */
 const SECTION_RANGE = 1.5
 
+/**
+ * How many of its own wavelengths a wave train runs before it starts fading out
+ * with distance, on the reference sea and the reference mesh. The train is gone
+ * 2.8x further out again.
+ *
+ * Calibrated against the squall, which is the only state where this is visible:
+ * the 5.2 m chop starts fading at ~48 m and is gone by ~135 m, which is where
+ * the fog is already 90% opaque, so the fade itself is never what you notice.
+ * The 17 m swell survives past 150 m and keeps the horizon's shape. On a calm
+ * sea the whole field stays intact well past the plane's edge.
+ *
+ * Both divisors below tighten it for the conditions that actually cause the
+ * aliasing: a bigger sea (taller crests against the same pixel grid) and a
+ * coarser mesh (fewer vertices per crest to begin with).
+ */
+const FADE_WAVELENGTHS = 28
+/** Quad size the fade is calibrated on: the `high` tier's 400 m / 240 segments. */
+const REFERENCE_QUAD = 400 / 240
+
 const vertexShader = /* glsl */ `
   #define NUM_WAVES ${WAVES.length}
   uniform float uTime;
@@ -63,6 +82,10 @@ const vertexShader = /* glsl */ `
   // boat's buoyancy (which reads the same scale) cannot part company.
   uniform float uAmpScale;
   uniform float uSteepScale;
+  // Where a wave train starts fading with distance, as a multiple of its own
+  // wavelength. Set on the CPU from the sea state and the tier's quad size --
+  // see FADE_WAVELENGTHS below.
+  uniform float uFadeRef;
 
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
@@ -76,6 +99,10 @@ const vertexShader = /* glsl */ `
   void main() {
     vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
     vec2 base = world.xz;
+    // Distance to the *undisplaced* vertex. Using the flat position rather than
+    // the displaced one keeps this stable -- the fade cannot feed back into the
+    // displacement it is scaling.
+    float d = distance(cameraPosition, world);
 
     vec3 disp = vec3(0.0);
     // Gerstner normal, accumulated per GPU Gems: start from straight up and bend.
@@ -87,8 +114,27 @@ const vertexShader = /* glsl */ `
     float jxz = 0.0;
 
     for (int i = 0; i < NUM_WAVES; i++) {
-      float amp = uAmp[i] * uAmpScale;
-      float qa = uQA[i] * uSteepScale * uAmpScale;
+      // Roll each train off with distance, keyed on its own wavelength.
+      //
+      // The mesh is tessellated uniformly across 400 m, so a quad near the bow
+      // and a quad at the horizon are the same size in metres and wildly
+      // different in pixels. Past a few dozen wavelengths a train carries less
+      // than a pixel per cycle while its crests are still several pixels tall --
+      // a full-amplitude signal sampled far under Nyquist, which is exactly what
+      // makes the far field beat and crawl instead of reading as sea. It is
+      // worst in a squall because that is where amplitude is 2.5x and steepness
+      // sits at 89% of the folding limit.
+      //
+      // Keying the fade to wavelength means the short chop dies first and the
+      // long swell carries on, so the horizon keeps its shape and loses only the
+      // detail that could never have been drawn at that size anyway. Amplitude
+      // and the Jacobian both scale from this, so the normals flatten and the
+      // foam stops breaking out there too, for free.
+      float fadeStart = uFadeRef * (6.2831853 / uK[i]);
+      float wf = 1.0 - smoothstep(fadeStart, fadeStart * 2.8, d);
+
+      float amp = uAmp[i] * uAmpScale * wf;
+      float qa = uQA[i] * uSteepScale * uAmpScale * wf;
       float phase = uK[i] * dot(uDir[i], base) - uOmega[i] * uTime;
       float c = cos(phase);
       float s = sin(phase);
@@ -301,9 +347,17 @@ const fragmentShader = /* glsl */ `
     // flagged, gated by the weather's foam level so a calm sea stays unbroken
     // and only a real blow turns the tops over. A little noise stops it reading
     // as a clean painted line along each crest.
+    //
+    // Faded by the same footprint as the ripple above, and for the same reason.
+    // vFold is a varying, so at the horizon -- where several quads land inside
+    // one pixel -- it is point-sampled per triangle, and uFoam climbs twelvefold
+    // from a fair breeze to a squall. Undimmed, that put up to half a pixel's
+    // worth of white on crests four pixels tall and one pixel deep, which is the
+    // crawling speckle along the horizon rather than anything you would call a
+    // whitecap.
     if (uFoam > 0.0) {
       float churn = 0.55 + 0.45 * vnoise(vWorldPos.xz * 0.9 + uTime * vec2(0.15, -0.1));
-      float caps = clamp(vFold * uFoam * churn * 1.6, 0.0, 1.0);
+      float caps = clamp(vFold * uFoam * churn * 1.6 * detailFade, 0.0, 1.0);
       color = mix(color, vec3(0.92, 0.95, 0.96), smoothstep(0.12, 0.6, caps));
     }
 
@@ -325,10 +379,12 @@ const fragmentShader = /* glsl */ `
     }
 
     // Rain stippling the surface — a scatter of bright dimples where drops
-    // strike, stepped in time so they flicker rather than crawl.
+    // strike, stepped in time so they flicker rather than crawl. Footprint-faded
+    // as well: the dimples are a 0.14 m feature, so by 200 m a single pixel spans
+    // dozens of them and point-sampling one at random is white noise, not rain.
     if (uRain > 0.0) {
       float cell = vnoise(vWorldPos.xz * 7.0 + floor(uTime * 11.0));
-      color += vec3(0.06) * uRain * step(0.82, cell);
+      color += vec3(0.06) * uRain * detailFade * step(0.82, cell);
     }
 
     // Aerial perspective / fog, matched to the scene's FogExp2 so the sea's
@@ -410,6 +466,7 @@ export function Ocean() {
       // Weather, driven each frame from conditions.ts.
       uAmpScale: { value: 1 },
       uSteepScale: { value: 1 },
+      uFadeRef: { value: FADE_WAVELENGTHS },
       uWind: { value: 0.3 },
       uFoam: { value: 0 },
       uSpray: { value: 0 },
@@ -442,6 +499,13 @@ export function Ocean() {
     // of 1), which turned the crests inside out and sloshed them sideways.
     // steepScale eases that demand onto the limit instead of overshooting it.
     u.uSteepScale.value = steepScale(c.seaAmp, c.seaChop)
+    // Distance rolloff, tightened by the sea state and by the mesh's own
+    // coarseness — the two things that decide when a train drops under a pixel
+    // per wavelength. `segments` is fixed for the session, so this is really
+    // only tracking the weather.
+    u.uFadeRef.value =
+      (FADE_WAVELENGTHS / (0.55 + c.seaAmp)) *
+      Math.sqrt(REFERENCE_QUAD / (400 / segments))
     u.uWind.value = c.wind
     u.uFoam.value = c.foam
     u.uSpray.value = c.spray

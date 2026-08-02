@@ -107,7 +107,12 @@ export function Effects() {
     <Bloom
       key="bloom"
       mipmapBlur
-      luminanceThreshold={0.85}
+      // Raised while a close-up is open: gilt spine lettering and white page
+      // text are bright enough at arm's length to catch the default 0.85
+      // threshold and bloom into mush, which is exactly the opposite of what a
+      // reading shot needs. 0.95 leaves genuine specular — the sun on
+      // stainless and water — untouched everywhere else.
+      luminanceThreshold={focus !== null ? 0.95 : 0.85}
       luminanceSmoothing={0.2}
       intensity={0.5}
       levels={post.bloomLevels}
@@ -154,7 +159,13 @@ export function Effects() {
     <ToneMapping key="tone" mode={ToneMappingMode.ACES_FILMIC} />,
     <Vignette key="vignette" offset={0.32} darkness={0.42} />,
     <Noise key="grain" premultiply blendFunction={BlendFunction.OVERLAY} opacity={0.035} />,
-    post.aa === 'smaa' ? <SMAA key="smaa" /> : <FXAA key="fxaa" />,
+    // FXAA is a blur filter, and a close-up is a near-static shot of small
+    // text — exactly what that blur is worst for. So SMAA runs unconditionally
+    // while a close-up is open, even on the `low` tier where FXAA is normally
+    // the pick. `focus` already causes `passes` to be rebuilt on every
+    // close-up open and close (the DOF branch above reads it too), so this
+    // swap rides along for free.
+    focus !== null || post.aa === 'smaa' ? <SMAA key="smaa" /> : <FXAA key="fxaa" />,
   ].filter((pass): pass is ReactElement => pass !== null)
 
   return (

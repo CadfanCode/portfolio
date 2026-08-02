@@ -1,7 +1,7 @@
 import { SceneCanvas } from './SceneCanvas'
-import { CabinHint } from './CabinHint'
 import { FocusExit } from './FocusExit'
 import { IntroVeil } from './IntroVeil'
+import { ParrotChrome } from './parrot'
 import { SoundToggle } from './SoundToggle'
 import { ExhibitOverlay } from './scene/exhibits/ExhibitOverlay'
 import './App.css'
@@ -25,9 +25,10 @@ function App() {
           graph is not waiting for the boat either — `main.tsx` warms it at
           boot. See `scene/audio/engine.ts`. */}
       <SoundToggle />
-      {/* A nudge toward the bookshelf, not a control — bottom-centre, below
-          everything else that floats over the scene. */}
-      <CabinHint />
+      {/* Skipper's voice below decks, where his in-world speech box has
+          nothing to visibly hang off — bottom-centre, below everything else
+          that floats over the scene. See `parrot/ParrotChrome.tsx`. */}
+      <ParrotChrome />
       {/* Above the exhibit backdrop and the corner chrome — it has to hide the
           blank canvas behind everything while the boat GLB is still loading. */}
       <IntroVeil />
