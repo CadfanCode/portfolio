@@ -1541,6 +1541,13 @@ Per the project's established approach (`Page.captureScreenshot` reliably times 
 
 ```js
 const m = await import('/src/state/useSceneStore.ts')
+// The authored path is ocean → cockpit → cabin (see CLAUDE.md) — `goTo`
+// only knows the legal single-step routes, so calling it straight to
+// 'cabin' from the initial 'ocean' state silently no-ops (logs
+// `[scene] no route from "ocean" to "cabin"`) and leaves `scene` stuck at
+// 'ocean'. Route through 'cockpit' first.
+m.useSceneStore.getState().goTo('cockpit')
+m.useSceneStore.getState().arrive()
 m.useSceneStore.getState().goTo('cabin')
 m.useSceneStore.getState().arrive()
 m.useSceneStore.getState().focusOn('books')
@@ -1553,6 +1560,18 @@ Then visually confirm in the browser window itself (this part genuinely needs ey
 - All 5 spreads read correctly page-by-page (arrows, both on-screen and ArrowLeft/ArrowRight) — 3 photos appear the right way up, not stretched or blank; the torn-edge pages look torn, not corrupted; the video tile appears on spread 4 (index) with its "▶ Watch: Sunday ride, best co-pilot" button showing only on that spread.
 - Clicking "Watch video" opens the lightbox with a playable embed; Escape closes the lightbox only (check the exhibit is still open after); a second Escape then closes the exhibit.
 - `m.useSceneStore.getState().closeExhibit()` closes the book cleanly (it retracts rather than vanishing).
+
+Note: browser automation tabs run backgrounded (`document.hidden === true`),
+which throttles `requestAnimationFrame` to near-zero — the same trap
+documented in this project's own memory on verifying the scene without
+screenshots. `useAboutBook`'s `turn()`/`finishTurn()` and `AboutBook.tsx`'s
+open/fly/turn timeline are both driven by `useFrame`, so a `turn('forward')`
+call will start a turn that never completes under automation. Calling
+`finishTurn()` directly afterward bypasses the animation and validates the
+store's state machine (spread bounds, `showVideoTrigger`'s spread-matching)
+without needing the tween to run — real proof of the animation itself
+requires eyes on a genuinely foregrounded browser tab (the user's own, or a
+manual check), not automation.
 
 Also confirm with quality/reduced-motion:
 
