@@ -17,8 +17,8 @@ import {
 import type { Mesh as MeshType, MeshBasicMaterial } from 'three'
 import modelUrl from '../../../assets/models/maxi77.glb?url'
 import hikingUrl from '../../../assets/textures/about/hiking.jpg?url'
+import rideThumbnailUrl from '../../../assets/textures/about/ride-thumbnail.jpg?url'
 import skiingUrl from '../../../assets/textures/about/skiing.jpg?url'
-import runningUrl from '../../../assets/textures/about/running.jpg?url'
 import { ABOUT_PAGES } from '../../../content/about'
 import { useQualityStore } from '../../../state/useQualityStore'
 import { prefersReducedMotion } from '../../introFlight'
@@ -165,25 +165,25 @@ function useHandFontReady(): boolean {
 }
 
 /**
- * Builds and memoises the ten page textures, five to a side.
+ * Builds and memoises the six page textures, three to a side.
  *
  * Keyed on `pageScale`, `photos` and `fontReady` — not anisotropy, see the
- * note on that below. Ten pages at 1024×1448 is roughly 59 MB of RGBA VRAM,
- * rasterised on the main thread the moment the
- * book opens — the single largest allocation in the app, and a real failure
- * mode on a memory-starved phone — so this memo exists specifically to avoid
+ * note on that below. Rasterised on the main thread the moment the book
+ * opens — the single largest allocation in the app, and a real failure mode
+ * on a memory-starved phone — so this memo exists specifically to avoid
  * doing that rasterisation more than once (beyond the one unavoidable
  * rebuild `fontReady` forces if the font wasn't ready yet on first open).
  * `pageScale` belongs in the key because it changes what gets drawn onto the
  * canvas; anisotropy does not,
  * since it is a property that can be set on an already-rendered texture
  * without touching the canvas at all — see the `useEffect` below, which
- * applies it separately so a tier change would not force all ten pages to
- * be re-rasterised.
+ * applies it separately so a tier change would not force all pages to be
+ * re-rasterised.
  */
 function usePageTextures(
   pageScale: number,
   photos: AboutPagePhotos,
+  videoThumb: HTMLImageElement,
   fontReady: boolean,
 ): TextureBundle {
   return useMemo(() => {
@@ -192,8 +192,8 @@ function usePageTextures(
     for (let spread = 0; spread < ABOUT_PAGES.length / 2; spread++) {
       const leftPage = ABOUT_PAGES[spread * 2]
       const rightPage = ABOUT_PAGES[spread * 2 + 1]
-      const leftCanvas = renderAboutPage(leftPage, 'left', photos, pageScale)
-      const rightCanvas = renderAboutPage(rightPage, 'right', photos, pageScale)
+      const leftCanvas = renderAboutPage(leftPage, 'left', photos, videoThumb, pageScale)
+      const rightCanvas = renderAboutPage(rightPage, 'right', photos, videoThumb, pageScale)
       const leftTex = new CanvasTexture(leftCanvas)
       const rightTex = new CanvasTexture(rightCanvas)
       leftTex.colorSpace = SRGBColorSpace
@@ -207,7 +207,7 @@ function usePageTextures(
     // once the Caveat webfont finishes loading after a first-ever open (see
     // `useHandFontReady`'s doc comment for why that rebuild matters).
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageScale, photos, fontReady])
+  }, [pageScale, photos, videoThumb, fontReady])
 }
 
 /**
@@ -239,7 +239,11 @@ export function AboutBook({ active, onExited }: ExhibitSceneProps) {
   // close-up budget applies unconditionally — no branching on `focus` needed.
   const pageScale = useQualityStore((s) => s.settings.focus.pageScale)
   const anisotropy = useQualityStore((s) => s.settings.textures.detailAnisotropy)
-  const photoTextures = useTexture({ hiking: hikingUrl, skiing: skiingUrl, running: runningUrl })
+  const photoTextures = useTexture({
+    hiking: hikingUrl,
+    skiing: skiingUrl,
+    rideThumbnail: rideThumbnailUrl,
+  })
   const photos = useMemo<AboutPagePhotos>(
     () => ({
       // TextureLoader's `.image` is always an HTMLImageElement for a
@@ -247,18 +251,18 @@ export function AboutBook({ active, onExited }: ExhibitSceneProps) {
       // cover video/canvas sources, which don't apply here.
       hiking: photoTextures.hiking.image as HTMLImageElement,
       skiing: photoTextures.skiing.image as HTMLImageElement,
-      running: photoTextures.running.image as HTMLImageElement,
     }),
     // Individual textures, not the `photoTextures` wrapper object — drei's
     // cache guarantees the same URL resolves to the same `Texture` instance
     // across renders, but says nothing about the identity of the plain
     // object `useTexture` wraps them in, and that object is what this memo
-    // must not spuriously rebuild on (each rebuild re-rasterises all ten
-    // pages — see `usePageTextures`'s own doc comment on why that's costly).
-    [photoTextures.hiking, photoTextures.skiing, photoTextures.running],
+    // must not spuriously rebuild on (each rebuild re-rasterises every
+    // page — see `usePageTextures`'s own doc comment on why that's costly).
+    [photoTextures.hiking, photoTextures.skiing],
   )
+  const videoThumb = photoTextures.rideThumbnail.image as HTMLImageElement
   const fontReady = useHandFontReady()
-  const textures = usePageTextures(pageScale, photos, fontReady)
+  const textures = usePageTextures(pageScale, photos, videoThumb, fontReady)
   useEffect(() => {
     return () => {
       textures.left.forEach((t) => t.dispose())
@@ -553,4 +557,4 @@ export function AboutBook({ active, onExited }: ExhibitSceneProps) {
   )
 }
 
-useTexture.preload([hikingUrl, skiingUrl, runningUrl])
+useTexture.preload([hikingUrl, skiingUrl, rideThumbnailUrl])

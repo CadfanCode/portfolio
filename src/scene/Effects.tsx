@@ -8,7 +8,6 @@ import {
   Noise,
   SMAA,
   ToneMapping,
-  Vignette,
 } from '@react-three/postprocessing'
 import { BlendFunction, ToneMappingMode } from 'postprocessing'
 import { useMemo, type ReactElement } from 'react'
@@ -45,8 +44,8 @@ const CA_OFFSET = new Vector2(0.0005, 0.0005)
  *    renderer's own tone mapping off while it is mounted, so without an ACES
  *    pass here the whole scene renders untonemapped and blows out. Re-applying
  *    ACES keeps the look identical to the tuned forward render.
- *  - Vignette and a faint film grain last, over the graded image, to settle it
- *    and hide the banding a smooth sky always shows.
+ *  - A faint film grain last, over the graded image, to hide the banding a
+ *    smooth sky always shows.
  *  - The resolve-time antialias closes it out, and it is never absent: the
  *    Canvas now runs with `antialias: false`, since the composer renders
  *    offscreen and context MSAA would have been resolving a buffer nothing
@@ -60,11 +59,11 @@ const CA_OFFSET = new Vector2(0.0005, 0.0005)
  *    library folds it into the same `EffectPass` as the mandatory tone
  *    mapping below rather than costing a pass of its own.
  *
- * `ChromaticAberration`, `ToneMapping`, `Vignette` and `Noise` are the other
- * three non-convolution effects sharing that pass, and none of them read
- * from the quality table. They are already close to free once the pass
- * exists for tone mapping, so tiering them would trade three more branches
- * for a fraction of an ALU each — not worth it.
+ * `ChromaticAberration`, `ToneMapping` and `Noise` are the other two
+ * non-convolution effects sharing that pass, and none of them read from the
+ * quality table. They are already close to free once the pass exists for
+ * tone mapping, so tiering them would trade two more branches for a
+ * fraction of an ALU each — not worth it.
  */
 export function Effects() {
   const scene = useSceneStore((s) => s.scene)
@@ -157,7 +156,6 @@ export function Effects() {
       modulationOffset={0.3}
     />,
     <ToneMapping key="tone" mode={ToneMappingMode.ACES_FILMIC} />,
-    <Vignette key="vignette" offset={0.32} darkness={0.42} />,
     <Noise key="grain" premultiply blendFunction={BlendFunction.OVERLAY} opacity={0.035} />,
     // FXAA is a blur filter, and a close-up is a near-static shot of small
     // text — exactly what that blur is worst for. So SMAA runs unconditionally
