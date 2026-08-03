@@ -1,3 +1,4 @@
+import { about } from './about'
 import { dummy } from './dummy'
 import { resume } from './resume'
 import type { Exhibit } from './types'
@@ -8,4 +9,4 @@ import type { Exhibit } from './types'
  * Adding one is an import and a line here, plus the exhibit's own module. If a
  * change ever needs to reach further than that, the plugin boundary has leaked.
  */
-export const EXHIBITS: readonly Exhibit[] = [dummy, resume]
+export const EXHIBITS: readonly Exhibit[] = [dummy, resume, about]

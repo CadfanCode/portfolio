@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import {
   AdditiveBlending,
   CanvasTexture,
+  Color,
   MathUtils,
   Matrix4,
   Mesh,
@@ -17,9 +18,8 @@ import type { Mesh as MeshType, MeshBasicMaterial, MeshStandardMaterial } from '
 import modelUrl from '../assets/models/maxi77.glb?url'
 import { useSceneStore } from '../state/useSceneStore'
 import { useComingSoonStore } from '../state/useComingSoonStore'
-import { useParrotStore } from '../parrot/useParrotStore'
+import { useParrotStore, ATTRACT_OSCILLATION_MS } from '../parrot/useParrotStore'
 import { useQualityStore } from '../state/useQualityStore'
-import { prefersReducedMotion } from './introFlight'
 import { usePointerSelect } from './usePointerSelect'
 
 /**
@@ -58,13 +58,26 @@ type BookSpineDef = {
 // the other two. Reordering here changes nothing about where they stand.
 const BOOKS: readonly BookSpineDef[] = [
   { node: 'book_resume', title: 'My Resume', exhibit: 'resume' },
-  { node: 'book_about', title: 'About Me' },
+  { node: 'book_about', title: 'About Me', exhibit: 'about' },
   { node: 'book_github', title: 'Github', url: 'https://github.com/CadfanCode' },
 ]
 
 /** Colour of the lettering and its glow — the warm gilt band the model paints
  *  onto real book edges elsewhere, so the spines read as part of the same set. */
 const GILT_COLOUR = '#d9b978'
+
+/** Colour of the attract blink, distinct from `GILT_COLOUR` so it reads as a
+ *  different kind of signal — "look here" — rather than the ordinary
+ *  hover/selected affordance. */
+const BLINK_COLOUR = '#ffd400'
+
+// Scratch `Color` instances for the per-frame gilt↔blink lerp in
+// `BookSpine`'s `useFrame` below, hoisted to module scope rather than
+// allocated per frame or per component instance — same convention as
+// `CameraRig.tsx`'s `eye`/`pivot`/`aim` and `IntroClouds.tsx`'s `fallbackColor`.
+const GILT_COLOUR_OBJ = new Color(GILT_COLOUR)
+const BLINK_COLOUR_OBJ = new Color(BLINK_COLOUR)
+const scratchColour = new Color()
 
 function findMesh(root: Object3D, name: string): MeshType | null {
   let found: MeshType | null = null
@@ -271,25 +284,7 @@ const GLOW_HOVER_OPACITY = 0.45
 const GLOW_SELECTED_OPACITY = 0.55
 const DAMP_LAMBDA = 8
 
-/** Angular speed of the attract-mode pulse, in radians/second — `2π / 2.1`,
- *  a touch over two seconds a cycle, which reads as a slow breathing glow
- *  rather than a strobe. */
-const ATTRACT_SPEED = (2 * Math.PI) / 2.1
-
-/** Per-book phase offset, in radians, so the three spines don't pulse in
- *  unison — a slight stagger reads as alive, in step reads like an alarm. */
-const ATTRACT_PHASE_STEP = (2 * Math.PI) / 3
-
-/** Steady raised intensity/opacity attract mode holds under reduced motion,
- *  in place of the pulse — oscillating emissive light is a real seizure
- *  trigger, so this branch is required, not a nicety. */
-const ATTRACT_STATIC_INTENSITY = (TITLE_REST_INTENSITY + TITLE_HOVER_INTENSITY) / 2
-const ATTRACT_STATIC_GLOW_OPACITY = GLOW_HOVER_OPACITY / 2
-
 type BookSpineProps = BookSpineDef & {
-  /** Position on the shelf, used only to stagger the attract-mode pulse's
-   *  phase per book — see `ATTRACT_PHASE_STEP`. */
-  index: number
   /** True only once the shelf close-up actually has the camera. */
   interactable: boolean
   /** Whether this book currently owns the single highlight slot. */
@@ -310,7 +305,6 @@ type BookSpineProps = BookSpineDef & {
 function BookSpine({
   node,
   title,
-  index,
   interactable,
   highlighted,
   selected,
@@ -379,10 +373,24 @@ function BookSpine({
   // than switched, so the highlight settles in rather than snapping on.
   const emissiveIntensity = useRef(TITLE_REST_INTENSITY)
   const glowOpacity = useRef(0)
+  // How attract-lit this frame is, 0..1 — 1 only when the frame's target came
+  // from the `attracting` branch specifically (not `selected`/`lit`), damped
+  // the same as the intensity/opacity above so the gilt→yellow colour lerp
+  // eases in and out with the same softness rather than snapping.
+  const attractLit = useRef(0)
   const material = useRef<MeshStandardMaterial>(null)
   const glowMaterial = useRef<MeshBasicMaterial>(null)
 
-  useFrame(({ clock }, delta) => {
+  // Wall-clock time a burst started, so the sine below can phase itself off
+  // "time since this burst began" rather than off the render clock directly
+  // — the latter would make a burst's first oscillation start mid-cycle
+  // depending on when in the global clock `attracting` happened to flip.
+  const attractStart = useRef<number | null>(null)
+  useEffect(() => {
+    attractStart.current = attracting ? performance.now() : null
+  }, [attracting])
+
+  useFrame((_state, delta) => {
     const lit = highlighted || selected
     // Hover and selection always win over the attract pulse — a book the
     // visitor is already looking at doesn't need to keep asking for
@@ -390,25 +398,32 @@ function BookSpine({
     // because of it.
     let targetIntensity: number
     let targetOpacity: number
+    let targetAttractLit: number
     if (selected) {
       targetIntensity = TITLE_SELECTED_INTENSITY
       targetOpacity = GLOW_SELECTED_OPACITY
+      targetAttractLit = 0
     } else if (lit) {
       targetIntensity = TITLE_HOVER_INTENSITY
       targetOpacity = GLOW_HOVER_OPACITY
+      targetAttractLit = 0
     } else if (attracting) {
-      if (prefersReducedMotion()) {
-        targetIntensity = ATTRACT_STATIC_INTENSITY
-        targetOpacity = ATTRACT_STATIC_GLOW_OPACITY
-      } else {
-        const pulse =
-          Math.sin(clock.elapsedTime * ATTRACT_SPEED + index * ATTRACT_PHASE_STEP) * 0.5 + 0.5
-        targetIntensity = MathUtils.lerp(TITLE_REST_INTENSITY, TITLE_HOVER_INTENSITY, pulse)
-        targetOpacity = MathUtils.lerp(0, GLOW_HOVER_OPACITY, pulse)
-      }
+      // `ParrotAssistant.tsx` holds `attracting` true for one whole burst
+      // (`ATTRACT_OSCILLATIONS_PER_BURST` cycles of `ATTRACT_OSCILLATION_MS`
+      // back to back) rather than toggling per-oscillation, so the pulsing
+      // itself is drawn here: a 0→1→0 wave per `ATTRACT_OSCILLATION_MS`,
+      // starting at 0 so the burst's first pulse ramps up from rest instead
+      // of snapping straight to full brightness.
+      const elapsedMs =
+        attractStart.current === null ? 0 : performance.now() - attractStart.current
+      const pulse = (1 - Math.cos((elapsedMs / ATTRACT_OSCILLATION_MS) * Math.PI * 2)) / 2
+      targetIntensity = MathUtils.lerp(TITLE_REST_INTENSITY, TITLE_HOVER_INTENSITY, pulse)
+      targetOpacity = GLOW_HOVER_OPACITY * pulse
+      targetAttractLit = pulse
     } else {
       targetIntensity = TITLE_REST_INTENSITY
       targetOpacity = 0
+      targetAttractLit = 0
     }
 
     emissiveIntensity.current = MathUtils.damp(
@@ -421,6 +436,18 @@ function BookSpine({
 
     glowOpacity.current = MathUtils.damp(glowOpacity.current, targetOpacity, DAMP_LAMBDA, delta)
     if (glowMaterial.current) glowMaterial.current.opacity = glowOpacity.current
+
+    attractLit.current = MathUtils.damp(attractLit.current, targetAttractLit, DAMP_LAMBDA, delta)
+    if (material.current) {
+      material.current.emissive.copy(
+        scratchColour.copy(GILT_COLOUR_OBJ).lerp(BLINK_COLOUR_OBJ, attractLit.current),
+      )
+    }
+    if (glowMaterial.current) {
+      glowMaterial.current.color.copy(
+        scratchColour.copy(GILT_COLOUR_OBJ).lerp(BLINK_COLOUR_OBJ, attractLit.current),
+      )
+    }
   })
 
   const planeWidth = layout ? layout.size.z * 0.8 : 1
@@ -481,49 +508,53 @@ function BookSpine({
         />
       </mesh>
 
-      {interactable && (
-        <>
-          {/* b) The glow, in the book's own silhouette. */}
-          <mesh
-            geometry={mesh.geometry}
-            matrixAutoUpdate={false}
-            onUpdate={(m) => m.matrix.copy(toModel)}
-            raycast={() => null}
-          >
-            <meshBasicMaterial
-              ref={glowMaterial}
-              color={GILT_COLOUR}
-              transparent
-              opacity={0}
-              depthWrite={false}
-              blending={AdditiveBlending}
-              polygonOffset
-              polygonOffsetFactor={-1}
-            />
-          </mesh>
+      {/* b) The glow, in the book's own silhouette. Mounted whenever it might
+          have something to show — the close-up (`interactable`) or the
+          attract blink, which fires from anywhere in the cabin, not just
+          once the camera has arrived at the shelf — so the nudge lights the
+          whole book, not just the always-rendered title plane above. */}
+      {(interactable || attracting) && (
+        <mesh
+          geometry={mesh.geometry}
+          matrixAutoUpdate={false}
+          onUpdate={(m) => m.matrix.copy(toModel)}
+          raycast={() => null}
+        >
+          <meshBasicMaterial
+            ref={glowMaterial}
+            color={GILT_COLOUR}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={AdditiveBlending}
+            polygonOffset
+            polygonOffsetFactor={-1}
+          />
+        </mesh>
+      )}
 
-          {/* c) The hit target. `onPointerOver` composes around `bind`'s own
-              handler rather than replacing it, adding `stopPropagation` so
-              this book's hit box — being nearer the camera in a close-up —
-              claims the shared highlight slot before the ray reaches the
-              farther book behind it. R3F sorts intersections near-to-far, so
-              stopping propagation here is what makes proximity decide the
-              winner. This is unrelated to `usePointerSelect`'s own note
-              about skipping `stopPropagation` on `onPointerDown`, which is
-              about not swallowing camera drags — hovering does not drag. */}
-          <mesh
-            position={[hitCentre.x, hitCentre.y, hitCentre.z]}
-            name={title}
-            {...bind}
-            onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-              e.stopPropagation()
-              bind.onPointerOver()
-            }}
-          >
-            <boxGeometry args={[hitSize.x, hitSize.y, hitSize.z]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-        </>
+      {interactable && (
+        // c) The hit target. `onPointerOver` composes around `bind`'s own
+        // handler rather than replacing it, adding `stopPropagation` so this
+        // book's hit box — being nearer the camera in a close-up — claims the
+        // shared highlight slot before the ray reaches the farther book
+        // behind it. R3F sorts intersections near-to-far, so stopping
+        // propagation here is what makes proximity decide the winner. This
+        // is unrelated to `usePointerSelect`'s own note about skipping
+        // `stopPropagation` on `onPointerDown`, which is about not
+        // swallowing camera drags — hovering does not drag.
+        <mesh
+          position={[hitCentre.x, hitCentre.y, hitCentre.z]}
+          name={title}
+          {...bind}
+          onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+            e.stopPropagation()
+            bind.onPointerOver()
+          }}
+        >
+          <boxGeometry args={[hitSize.x, hitSize.y, hitSize.z]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
       )}
     </group>
   )
@@ -561,11 +592,10 @@ export function BookSpines() {
 
   return (
     <>
-      {BOOKS.map((book, index) => (
+      {BOOKS.map((book) => (
         <BookSpine
           key={book.node}
           {...book}
-          index={index}
           interactable={interactable}
           highlighted={highlighted === book.node}
           selected={selected === book.node}
