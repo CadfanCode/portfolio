@@ -52,6 +52,7 @@ export const ABOUT_PAGES: readonly AboutPage[] = [
   // — Spread 2 — the leap ————————————————————————————————————
   {
     id: 'leap-1',
+    torn: true,
     blocks: [
       {
         kind: 'journal',
@@ -82,7 +83,6 @@ export const ABOUT_PAGES: readonly AboutPage[] = [
   },
   {
     id: 'why-2',
-    torn: true,
     blocks: [
       {
         kind: 'journal',
@@ -95,6 +95,7 @@ export const ABOUT_PAGES: readonly AboutPage[] = [
   // — Spread 4 — away from the keyboard ————————————————————
   {
     id: 'away',
+    torn: true,
     blocks: [
       {
         kind: 'journal',
@@ -118,7 +119,6 @@ export const ABOUT_PAGES: readonly AboutPage[] = [
   },
   {
     id: 'closer',
-    torn: true,
     blocks: [{ kind: 'quote', text: "You're standing in a 3D model of her." }],
   },
 ]

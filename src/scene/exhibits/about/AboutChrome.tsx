@@ -24,7 +24,11 @@ const VIDEO_BLOCK = ABOUT_PAGES[VIDEO_PAGE_INDEX]?.blocks.find(
  * own controls, and sits below `FocusExit`'s z-index of 5 — except the
  * lightbox itself, which sits above it (`AboutChrome.css`): while a video is
  * open it is the topmost layer on purpose, with its own explicit close
- * controls, rather than leaving the exhibit's back button reachable behind it.
+ * controls, rather than leaving the exhibit's back button reachable behind
+ * it. `.about-chrome` is `position: fixed` with its own z-index, which forms
+ * a stacking context — so the lightbox is rendered as a *sibling* of it, not
+ * a child, letting its z-index resolve in the root stacking context where it
+ * can actually outrank `FocusExit` instead of being trapped underneath it.
  */
 export function AboutChrome() {
   const activeExhibitId = useSceneStore((s) => s.activeExhibitId)
@@ -81,34 +85,36 @@ export function AboutChrome() {
   if (!isOpen) return null
 
   return (
-    <div className="about-chrome">
-      <button
-        type="button"
-        className="about-arrow about-arrow-left"
-        onClick={() => turn('backward')}
-        disabled={atFirst || midTurn}
-        aria-label="Previous page"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M15 5 8 12l7 7" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        className="about-arrow about-arrow-right"
-        onClick={() => turn('forward')}
-        disabled={atLast || midTurn}
-        aria-label="Next page"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
-      {showVideoTrigger && VIDEO_BLOCK && (
-        <button type="button" className="about-watch" onClick={() => setLightboxOpen(true)}>
-          ▶ Watch: {VIDEO_BLOCK.caption}
+    <>
+      <div className="about-chrome">
+        <button
+          type="button"
+          className="about-arrow about-arrow-left"
+          onClick={() => turn('backward')}
+          disabled={atFirst || midTurn}
+          aria-label="Previous page"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M15 5 8 12l7 7" />
+          </svg>
         </button>
-      )}
+        <button
+          type="button"
+          className="about-arrow about-arrow-right"
+          onClick={() => turn('forward')}
+          disabled={atLast || midTurn}
+          aria-label="Next page"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+        {showVideoTrigger && VIDEO_BLOCK && (
+          <button type="button" className="about-watch" onClick={() => setLightboxOpen(true)}>
+            ▶ Watch: {VIDEO_BLOCK.caption}
+          </button>
+        )}
+      </div>
       {lightboxOpen && VIDEO_BLOCK && (
         <div className="about-lightbox" onClick={() => setLightboxOpen(false)}>
           <div className="about-lightbox-frame" onClick={(event) => event.stopPropagation()}>
@@ -117,6 +123,7 @@ export function AboutChrome() {
               className="about-lightbox-close"
               onClick={() => setLightboxOpen(false)}
               aria-label="Close video"
+              autoFocus
             >
               ×
             </button>
@@ -129,6 +136,6 @@ export function AboutChrome() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

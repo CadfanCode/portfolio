@@ -29,7 +29,7 @@ import { renderAboutPage } from './renderAboutPage'
 import { useAboutBook } from './useAboutBook'
 
 /**
- * The resume, staged as a physical book: slides off the shelf, flies round to
+ * The About Me scrapbook, staged as a physical book: slides off the shelf, flies round to
  * face the camera, opens to the current spread. Everything is driven off one
  * scripted `t` in `progress` — see the module doc in the task brief this was
  * built from, and `CameraRig`'s own authored-path philosophy, which this
@@ -268,7 +268,7 @@ export function AboutBook({ active, onExited }: ExhibitSceneProps) {
 
   // Anisotropy is applied here rather than folded into `usePageTextures`'
   // memo key — see the note on that hook — so it can change without forcing
-  // the eight pages to be re-rasterised. The GPU's own maximum still wins
+  // the ten pages to be re-rasterised. The GPU's own maximum still wins
   // where it is lower than the tier's ceiling.
   useEffect(() => {
     const cap = Math.min(anisotropy, gl.capabilities.getMaxAnisotropy())

@@ -73,11 +73,27 @@ function makeRand(seed: number) {
   }
 }
 
+/** A cheap string hash, purely to turn a page id into a distinct RNG seed —
+ *  not cryptographic, just needs to spread different ids to different
+ *  numbers so no two torn pages draw the identical tear. */
+function hashSeed(text: string): number {
+  let h = 0
+  for (let i = 0; i < text.length; i++) {
+    h = (h * 31 + text.charCodeAt(i)) & 0x7fffffff
+  }
+  return h || 1
+}
+
 /** Paper fill, gutter shading and — for pages the content marks `torn` — a
  *  jagged top edge clipped into the fill, so the page reads as ripped from a
  *  bigger sheet rather than a plain rectangle. */
-function paintPaper(ctx: CanvasRenderingContext2D, side: 'left' | 'right', torn: boolean) {
-  const rand = makeRand(side === 'left' ? 3 : 11)
+function paintPaper(
+  ctx: CanvasRenderingContext2D,
+  side: 'left' | 'right',
+  torn: boolean,
+  pageId: string,
+) {
+  const rand = makeRand(hashSeed(`${pageId}-${side}`))
 
   ctx.save()
   if (torn) {
@@ -374,7 +390,7 @@ export function renderAboutPage(
   if (!ctx) return canvas
   ctx.scale(scale, scale)
 
-  paintPaper(ctx, side, page.torn ?? false)
+  paintPaper(ctx, side, page.torn ?? false, page.id)
 
   const { left, right } = textMargins(side)
   const contentRight = CANVAS_WIDTH - right
