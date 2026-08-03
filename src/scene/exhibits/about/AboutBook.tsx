@@ -202,6 +202,11 @@ function usePageTextures(
       right.push(rightTex)
     }
     return { left, right }
+    // `fontReady` is deliberately unread inside this callback; it exists
+    // solely as a dependency-array trigger that forces exactly one rebuild
+    // once the Caveat webfont finishes loading after a first-ever open (see
+    // `useHandFontReady`'s doc comment for why that rebuild matters).
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [pageScale, photos, fontReady])
 }
 
