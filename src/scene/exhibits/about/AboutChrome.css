@@ -1,0 +1,179 @@
+/* The book fills the frame, so this layer has to float over the canvas
+   rather than sit in a panel — same approach as `ResumeChrome.css`. */
+.about-chrome {
+  position: fixed;
+  inset: 0;
+  z-index: 4; /* under .focus-exit's 5, except the lightbox below. */
+  pointer-events: none;
+}
+
+.about-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+
+  color: var(--text-h);
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+
+  backdrop-filter: blur(8px);
+  transition:
+    border-color 0.3s,
+    opacity 0.3s,
+    transform 0.3s;
+}
+
+.about-arrow-left {
+  left: max(20px, 3vw);
+}
+
+.about-arrow-right {
+  right: max(20px, 3vw);
+}
+
+.about-arrow:hover:not(:disabled),
+.about-arrow:focus-visible:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.about-arrow-left:hover:not(:disabled) {
+  transform: translateY(-50%) translateX(-3px);
+}
+
+.about-arrow-right:hover:not(:disabled) {
+  transform: translateY(-50%) translateX(3px);
+}
+
+.about-arrow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.about-arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.about-arrow svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.about-watch {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-h);
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.3s;
+}
+
+.about-watch:hover,
+.about-watch:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.about-watch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.about-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 6; /* above .focus-exit's 5 — see the component's own note. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 5, 0.82);
+  pointer-events: auto;
+}
+
+.about-lightbox-frame {
+  position: relative;
+  width: min(90vw, 960px);
+  aspect-ratio: 16 / 9;
+  background: #000;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.about-lightbox-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.about-lightbox-close {
+  position: absolute;
+  top: -44px;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  font-size: 24px;
+  line-height: 1;
+  color: #fff;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .about-arrow {
+    width: 46px;
+    height: 46px;
+    top: auto;
+    bottom: 76px;
+    transform: none;
+  }
+
+  .about-arrow-left,
+  .about-arrow-right {
+    top: auto;
+  }
+
+  .about-arrow-left:hover:not(:disabled),
+  .about-arrow-right:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .about-watch {
+    bottom: 132px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-arrow,
+  .about-watch {
+    transition: none;
+  }
+
+  .about-arrow-left:hover:not(:disabled),
+  .about-arrow-right:hover:not(:disabled) {
+    transform: translateY(-50%);
+  }
+}
