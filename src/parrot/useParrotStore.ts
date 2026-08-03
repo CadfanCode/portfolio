@@ -3,14 +3,24 @@ import { getBrain, setBrain } from './brains'
 import type { Turn } from './brains/types'
 import { resolveBrainTier, type BrainTier } from './brainTier'
 import { PARROT_HINTS } from '../content/parrot'
-import type { SceneState } from '../state/useSceneStore'
+import { useSceneStore, type SceneState } from '../state/useSceneStore'
 
-/** How long a visitor can sit in the cabin without opening the books before
- *  the spines start blinking to draw the eye. */
-export const ATTRACT_DELAY_MS = 60_000
+/** Length of one on/off cycle within an attract burst, in milliseconds —
+ *  shared between `ParrotAssistant.tsx`'s scheduler (which times a burst as
+ *  `ATTRACT_OSCILLATIONS_PER_BURST` of these back to back) and
+ *  `BookSpines.tsx`'s per-frame pulse (which phases its sine wave off this
+ *  same period), so the two stay in lockstep without either hardcoding the
+ *  other's constant. */
+export const ATTRACT_OSCILLATION_MS = 500
+
+/** Oscillations per attract burst — see `ATTRACT_OSCILLATION_MS`. */
+export const ATTRACT_OSCILLATIONS_PER_BURST = 4
 
 type ParrotStore = {
-  /** True once the attract-mode blink on the book spines should be running. */
+  /** True while the book-spine blink is in its on-phase — toggled on and off
+   *  in discrete steps by `ParrotAssistant.tsx`'s blink sequence, not held
+   *  continuously true, so `BookSpines.tsx` only has to damp toward whichever
+   *  binary target this is this frame. */
   attracting: boolean
   /**
    * True once the visitor has opened the books close-up, once, ever. Sticky
@@ -20,9 +30,15 @@ type ParrotStore = {
    */
   booksSeen: boolean
 
-  /** Starts the blink. No-ops if the books have already been found — they
-   *  don't need drawing to something they've already seen. */
+  /** Starts a blink's on-phase. No-ops if the books have already been found —
+   *  they don't need drawing to something they've already seen. */
   startAttract: () => void
+  /** Ends a blink's on-phase, letting the spines damp back to rest between
+   *  flashes. Unlike `startAttract`, not gated on `booksSeen`: the caller's
+   *  own timer chain already stops scheduling once the books are seen, so
+   *  this only ever runs as the second half of a blink that was allowed to
+   *  start. */
+  stopAttract: () => void
   /** Marks the books found and clears the attract nudge for good. */
   noteBooksOpened: () => void
   /** Clears the attract nudge on leaving a scene — `booksSeen`, `hintedScenes`
@@ -131,6 +147,8 @@ export const useParrotStore = create<ParrotStore>((set, get) => ({
   startAttract: () =>
     set((state) => (state.booksSeen ? state : { attracting: true })),
 
+  stopAttract: () => set({ attracting: false }),
+
   // Also closes the chat panel: once the books are open, a panel pointing at
   // them is stale (the panel exists in the cabin to point at the shelf).
   noteBooksOpened: () => set({ booksSeen: true, attracting: false, chatOpen: false }),
@@ -194,8 +212,14 @@ export const useParrotStore = create<ParrotStore>((set, get) => ({
 
     const brain = getBrain()
 
+    // Read imperatively rather than subscribed, same idiom as
+    // `resolveBrainTier`/`getBrain` above — this store cares where the
+    // visitor is only at the instant a question is asked, not on every scene
+    // change, so there is nothing to subscribe to.
+    const scene = useSceneStore.getState().scene
+
     let accumulated = ''
-    for await (const chunk of brain.ask(trimmed, historyForBrain)) {
+    for await (const chunk of brain.ask(trimmed, historyForBrain, scene)) {
       accumulated += chunk
       set({ draft: accumulated })
     }

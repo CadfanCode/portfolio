@@ -167,7 +167,16 @@ export function IntroClouds() {
       quad.quaternion.copy(camera.quaternion)
       quad.translateZ(-0.3)
       material.color.copy(fogColor)
-      material.opacity = introHaze(camera.position.y)
+      // `introHaze`'s cap below 1 is deliberate for the plummet — see its own
+      // doc — but the hold beat is a held, near-level shot (`INTRO_HOLD_TARGET`
+      // is barely below horizontal), which is exactly the shallow angle
+      // `introFlight.ts`'s hard limit #1 warns about: a sightline that shallow
+      // clears the ocean's 400x400 plane at z ±200 while still well above sea
+      // level, so the plane's edge shows through introHaze's few percent of
+      // see-through as a sharp line right as the title's tilt pans onto it.
+      // The flight's own waypoints are all steep enough not to need this; only
+      // the hold is shallow enough to leak, so only the hold goes fully opaque.
+      material.opacity = intro === 'holding' ? 1 : introHaze(camera.position.y)
     }
   })
 
