@@ -1,8 +1,9 @@
 import { SceneCanvas } from './SceneCanvas'
-import { CabinHint } from './CabinHint'
 import { FocusExit } from './FocusExit'
 import { IntroVeil } from './IntroVeil'
+import { ParrotChatDock } from './parrot'
 import { SoundToggle } from './SoundToggle'
+import { ComingSoonToast } from './ComingSoonToast'
 import { ExhibitOverlay } from './scene/exhibits/ExhibitOverlay'
 import './App.css'
 
@@ -25,9 +26,14 @@ function App() {
           graph is not waiting for the boat either — `main.tsx` warms it at
           boot. See `scene/audio/engine.ts`. */}
       <SoundToggle />
-      {/* A nudge toward the bookshelf, not a control — bottom-centre, below
-          everything else that floats over the scene. */}
-      <CabinHint />
+      {/* Polly's voice below decks, where the bird himself has nothing to
+          visibly hang the balloon off — bottom-centre, below everything else
+          that floats over the scene. See `parrot/ParrotChatDock.tsx`. */}
+      <ParrotChatDock />
+      {/* The "not built yet" toast for the still-unwired exhibits (chart
+          table, VHF, About Me). Top-centre — see `ComingSoonToast.tsx` for
+          why that slot and not one of the corners already in use. */}
+      <ComingSoonToast />
       {/* Above the exhibit backdrop and the corner chrome — it has to hide the
           blank canvas behind everything while the boat GLB is still loading. */}
       <IntroVeil />

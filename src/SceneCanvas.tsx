@@ -2,7 +2,7 @@ import { Canvas } from '@react-three/fiber'
 import { Suspense } from 'react'
 import { AdaptiveEvents, Preload } from '@react-three/drei'
 import { PortfolioWorld } from './scene/PortfolioWorld'
-import { useQualityStore } from './state/useQualityStore'
+import { selectDprCeiling, useQualityStore } from './state/useQualityStore'
 
 /**
  * The Canvas, split out of `App` so that quality changes re-render as little as
@@ -24,8 +24,8 @@ import { useQualityStore } from './state/useQualityStore'
  *
  *  2. Nothing else may subscribe here. Every extra store field read in this
  *     component is another reason to re-render the Canvas, and every re-render
- *     is a full re-application of all of its props. Three narrow selectors, and
- *     they stay three.
+ *     is a full re-application of all of its props. Two narrow selectors, and
+ *     they stay two.
  */
 
 // Module constants rather than inline object literals. An inline `camera={{...}}`
@@ -66,9 +66,13 @@ const WORLD = (
 )
 
 export function SceneCanvas() {
-  // These three, and only these three. See the note above.
-  const dprMax = useQualityStore((s) => s.settings.dprMax)
-  const dprScale = useQualityStore((s) => s.dprScale)
+  // These two, and only these two. See the note above.
+  //
+  // `dprCeiling` folds `dprMax`, `dprScale` and the close-up override into one
+  // primitive so this only re-renders when the number a visitor would actually
+  // see change moves — which, for `closeUp`, is exactly twice per close-up:
+  // once on entry and once on exit. See `selectDprCeiling`.
+  const dprCeiling = useQualityStore(selectDprCeiling)
   const shadowFilter = useQualityStore((s) => s.settings.shadows.filter)
 
   return (
@@ -86,7 +90,7 @@ export function SceneCanvas() {
     // solid. Do not "optimise" this to demand mode.
     <Canvas
       shadows={shadowFilter}
-      dpr={[1, dprMax * dprScale]}
+      dpr={[1, dprCeiling]}
       camera={CAMERA}
       gl={GL}
     >

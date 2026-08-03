@@ -21,6 +21,7 @@ import { useQualityStore } from '../state/useQualityStore'
  */
 export function QualityMonitor() {
   const intro = useSceneStore((s) => s.intro)
+  const closeUp = useQualityStore((s) => s.closeUp)
   const setDprScale = useQualityStore((s) => s.setDprScale)
 
   // Not while the intro is flying. Those seven seconds are deliberately the
@@ -30,6 +31,14 @@ export function QualityMonitor() {
   // resolution for the rest of a visit. Mounting only once the intro is done also
   // means the monitor's first measurements are of the scene proper.
   if (intro !== 'done') return null
+
+  // Not while a close-up is open, either. `FocusQuality` has already pushed the
+  // DPR ceiling up to `focus.dpr` for exactly this span, and a close-up's frame
+  // cost is unrelated to the wide shot's — this monitor measuring the resize
+  // hitch or a heavier close-up scene and clawing `dprScale` back down would
+  // fight that boost and could leave it depressed for the rest of the session,
+  // long after the close-up that triggered it has closed.
+  if (closeUp) return null
 
   return (
     <PerformanceMonitor

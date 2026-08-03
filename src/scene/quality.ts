@@ -165,6 +165,44 @@ export type QualitySettings = {
      * legible.
      */
     readonly pageScale: number
+    /**
+     * Ceiling for `texture.anisotropy` on the handful of surfaces a `focus`
+     * close-up puts at arm's length: spine labels, plaques, photographs, resume
+     * pages. Held at 8 on every tier, `low` included — there are only four such
+     * textures and they exist solely in the cabin, so the cost is nil, while
+     * grazing-angle blur on a book spine is exactly what makes it unreadable.
+     * See `textures.anisotropy` for the wide-shot number this leaves alone.
+     */
+    readonly detailAnisotropy: number
+  }
+
+  /**
+   * The close-up budget. `focus` close-ups — book spines, framed pictures, the
+   * resume book — are the one place the app asks a visitor to read something,
+   * and unlike the wide shot they are a static shot of one object at arm's
+   * length with DOF already off at `low`. That is headroom the wide shot does
+   * not have, so it gets its own numbers instead of inheriting the tier's.
+   */
+  readonly focus: {
+    /**
+     * Ceiling for `<Canvas dpr>` while a close-up is open, in place of
+     * `dprMax` for that span — see `useQualityStore`'s `selectDprCeiling`.
+     * 1.5 rather than 2 on `low`: a fourfold pixel increase on a GPU that is
+     * already struggling is not worth it, but 1.5 is still triple the 0.5
+     * worst case the wide shot can fall to. Note R3F clamps
+     * `window.devicePixelRatio` into `[1, dpr]` rather than supersampling, so
+     * raising this only ever sharpens a hidpi panel — precisely where `low`
+     * bites hardest.
+     */
+    readonly dpr: number
+    /**
+     * `textures.pageScale`'s close-up counterpart. 0.75 rather than 1 on
+     * `low`: eight resume pages at full scale is ~47 MB of RGBA rasterised on
+     * the main thread (see the note in `ResumeBook.tsx`), a real failure mode
+     * on a memory-starved phone. 0.75 gives 768×1086 — comfortably legible
+     * once the `focus.dpr` bump lands, and still 1.5x what renders today.
+     */
+    readonly pageScale: number
   }
 }
 
@@ -183,7 +221,8 @@ const HIGH: QualitySettings = {
   sky: { envResolution: 512 },
   intro: { cloudSheets: 7 },
   rainCount: 1800,
-  textures: { anisotropy: 8, pageScale: 1 },
+  textures: { anisotropy: 8, pageScale: 1, detailAnisotropy: 8 },
+  focus: { dpr: 2, pageScale: 1 },
 }
 
 const MEDIUM: QualitySettings = {
@@ -201,7 +240,8 @@ const MEDIUM: QualitySettings = {
   sky: { envResolution: 256 },
   intro: { cloudSheets: 4 },
   rainCount: 900,
-  textures: { anisotropy: 4, pageScale: 0.75 },
+  textures: { anisotropy: 4, pageScale: 0.75, detailAnisotropy: 8 },
+  focus: { dpr: 2, pageScale: 1 },
 }
 
 const LOW: QualitySettings = {
@@ -219,7 +259,8 @@ const LOW: QualitySettings = {
   sky: { envResolution: 128 },
   intro: { cloudSheets: 3 },
   rainCount: 500,
-  textures: { anisotropy: 1, pageScale: 0.5 },
+  textures: { anisotropy: 1, pageScale: 0.5, detailAnisotropy: 8 },
+  focus: { dpr: 1.5, pageScale: 0.75 },
 }
 
 /**

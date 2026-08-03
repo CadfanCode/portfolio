@@ -160,7 +160,7 @@ useTexture.preload(alysTeddyUrl)
  */
 function useApplySRGB() {
   const gl = useThree((s) => s.gl)
-  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  const anisotropy = useQualityStore((s) => s.settings.textures.detailAnisotropy)
   return useCallback(
     (texture: Texture) => {
       texture.colorSpace = SRGBColorSpace
@@ -273,7 +273,7 @@ function Picture({
   plaque,
 }: PictureDef) {
   const gl = useThree((s) => s.gl)
-  const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
+  const anisotropy = useQualityStore((s) => s.settings.textures.detailAnisotropy)
   const applySRGB = useApplySRGB()
   const texture = useTexture(url, applySRGB)
   const outerWidth = width + border * 2

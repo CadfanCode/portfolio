@@ -144,9 +144,28 @@ function OvercastDome() {
             float clouds = smoothstep(0.85 - uHaze * 0.9, 1.15 - uHaze * 0.5, n + uHaze * 0.35);
             float alpha = mix(clouds, 1.0, uFill) * uHaze;
 
-            // Ease it out at the very horizon so the cloud does not end in a hard
-            // ring where the dome meets the sea.
-            alpha *= smoothstep(-0.02, 0.12, dir.y);
+            // Ease it out below the horizon so the cloud does not end in a hard
+            // ring where the dome meets the sea — but ease it out *below* the
+            // waterline, not above it.
+            //
+            // The old band ran from 7 degrees up down to just under the horizon,
+            // which left the dome only about 6% opaque along the horizon itself.
+            // That mattered because drei's Sky takes no fog — three-stdlib's sky
+            // shader has no fog chunk and pins itself to the far plane — so in
+            // that gap you saw raw atmospheric sky sitting directly on a sea that
+            // a squall has already mixed 99.99% to the fog colour. Sea and sky
+            // met at a colour step, along precisely the line the wave crests
+            // silhouette against, which is what made the horizon read as a seam
+            // rather than a distance.
+            //
+            // Starting the fade at -0.12 puts the dome at ~90% along the horizon
+            // and carries it under the waterline, where the ocean plane occludes
+            // it anyway. It also quietly covers the far corners of that plane —
+            // it ends at 200 m, closer than the dome's 300 m — so in the clear
+            // presets, where fog never reaches the edge, the plane no longer ends
+            // against bare sky. uHaze still gates the whole term, so a clear day
+            // is unchanged.
+            alpha *= smoothstep(-0.12, 0.03, dir.y);
             alpha = clamp(alpha, 0.0, 0.97);
 
             gl_FragColor = vec4(uColor, alpha);
