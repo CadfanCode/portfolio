@@ -1,5 +1,6 @@
 import { Edges } from '@react-three/drei'
 import { useSceneStore } from '../state/useSceneStore'
+import { useComingSoonStore } from '../state/useComingSoonStore'
 import { FOCUS_LIST, type CameraFocus } from './cameraFocus'
 import { usePointerSelect } from './usePointerSelect'
 
@@ -35,10 +36,17 @@ const HOVER_OPACITY = 0.4
 function FocusTarget({ view }: { view: CameraFocus }) {
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const focusOn = useSceneStore((s) => s.focusOn)
+  const showComingSoon = useComingSoonStore((s) => s.show)
 
   const { hovered, bind } = usePointerSelect({
     enabled: !isTransitioning,
-    onSelect: () => focusOn(view.id),
+    onSelect: () => {
+      focusOn(view.id)
+      // The camera work is real even where the exhibit isn't yet — see
+      // `CameraFocus['placeholder']`'s own doc — so the toast rides along
+      // with the fly-in rather than replacing it.
+      if (view.placeholder) showComingSoon('Coming soon')
+    },
   })
 
   return (

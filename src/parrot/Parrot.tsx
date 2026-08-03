@@ -29,7 +29,7 @@ const HEAD_DEAD_ZONE = deg(3.5)
 
 const HEAD_DAMP_LAMBDA = 6
 
-/** Roughly how often, in seconds, Skipper glances away and back — a bird
+/** Roughly how often, in seconds, Polly glances away and back — a bird
  *  that never breaks eye contact reads as a camera, not a pet. */
 const SACCADE_MIN_INTERVAL = 3
 const SACCADE_MAX_INTERVAL = 7.5
@@ -68,7 +68,7 @@ const HOVER_PERK = deg(9)
 const HOVER_DAMP_LAMBDA = 9
 
 /**
- * Skipper, the ship's parrot: a real GLB (see `parrot.glb`, attribution in
+ * Polly, the ship's parrot: a real GLB (see `parrot.glb`, attribution in
  * `ATTRIBUTION.md`), rigged at load time by `parrotRig.ts` since the asset
  * ships with no skeleton of its own. `buildParrotSkin` hands back a
  * `SkinnedMesh` and its five bones; everything below drives those bones the
@@ -108,6 +108,7 @@ export function Parrot() {
   // button — a second overlapping panel would fight it).
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const activeExhibitId = useSceneStore((s) => s.activeExhibitId)
+  const sceneState = useSceneStore((s) => s.scene)
   const openChat = useParrotStore((s) => s.openChat)
   // Set here, consumed in `useFrame` where `clock.elapsedTime` is available —
   // same idiom the saccade and flap timers already use, driving off clock
@@ -118,7 +119,7 @@ export function Parrot() {
   const { hovered, bind } = usePointerSelect({
     enabled: !isTransitioning && activeExhibitId === null,
     onSelect: () => {
-      openChat()
+      openChat(sceneState)
       flapRequested.current = true
     },
   })
@@ -286,7 +287,7 @@ export function Parrot() {
     // drawn inside, so the whole bird is the click target without each mesh
     // needing its own handler. Deliberately no stopPropagation inside
     // `usePointerSelect` — see its own doc — so a drag that starts on
-    // Skipper still rotates the camera underneath him.
+    // Polly still rotates the camera underneath him.
     <group
       ref={root}
       position={PARROT_POSITION}

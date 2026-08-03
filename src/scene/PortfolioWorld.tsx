@@ -334,7 +334,7 @@ export function PortfolioWorld() {
             everything else fixed to the joinery. See CabinPictures.tsx for why
             they're deliberately not a matched pair. */}
         <CabinPictures />
-        {/* Skipper, the guide character — perched on deck, so a sibling of
+        {/* Polly, the guide character — perched on deck, so a sibling of
             `Boat` here rather than a new exhibit; see `parrot/`. */}
         <ParrotAssistant />
         <Exhibits />

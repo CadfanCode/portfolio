@@ -1,92 +1,117 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Html } from '@react-three/drei'
+import { useFrame } from '@react-three/fiber'
 import { useSceneStore } from '../state/useSceneStore'
-import { PARROT_HINTS } from '../content/parrot'
-import { HINT_VISIBLE_MS, ATTRACT_DELAY_MS, useParrotStore } from './useParrotStore'
+import { ATTRACT_DELAY_MS, useParrotStore } from './useParrotStore'
 import { Parrot } from './Parrot'
-import { SpeechBubble, CHAT_ANCHOR } from './SpeechBubble'
+import { CHAT_ANCHOR } from './geometry'
 import { ParrotChat } from './ParrotChat'
+import { sampleConditions } from '../scene/conditions'
+import { PARROT_WEATHER_HINTS } from '../content/parrot'
 
-/** Beat between arriving at a stop and Skipper speaking up, so the line
- *  reads as a reaction to arrival rather than something that was already
- *  playing when you got there. */
-const SPEAK_DELAY_MS = 1_200
+/** How long a visitor can sit in the cabin, books unopened and chat unopened,
+ *  before Polly squawks the nudge himself — see the cabin effect below. Kept
+ *  as its own constant rather than reusing `ATTRACT_DELAY_MS`, even though
+ *  the squawk now also starts the spine blink (see that effect): the two
+ *  still mean different things — one is "how long before Polly says
+ *  something", the other is "how long before the shelf lights up on its
+ *  own even with no line said" (the fallback path below) — they just
+ *  happen to fire together on the common path now. */
+const CABIN_NUDGE_DELAY_MS = 20_000
 
 /**
- * The 3D half of the guide character: the bird himself, always rendered; the
- * in-world hint bubble that carries his per-scene line at the cockpit stop;
- * and the click-to-open chat balloon, mounted here as a `<Html>` anchored
- * next to him rather than docked to a screen corner, so talking to Skipper
- * reads as talking to the bird you can see. Below decks both are suppressed
- * (see `ParrotChrome`, which speaks the hint for him there instead) — the
- * bird's body stays out of sight behind the coachroof once you're in the
- * cabin, and either box floating in the same spot with nothing visibly
- * saying it would read as a stray prop.
+ * The 3D half of the guide character: the bird himself, always rendered, and
+ * the click-to-open chat balloon, mounted here as a `<Html>` anchored next to
+ * him rather than docked to a screen corner, so talking to Polly reads as
+ * talking to the bird you can see. Below decks the bird's body is out of
+ * sight behind the coachroof, so the balloon is docked to the screen instead
+ * (see `ParrotChatDock.tsx`) and this component only fires the cabin's own
+ * delayed nudge into the same chat state.
  */
 export function ParrotAssistant() {
   const scene = useSceneStore((s) => s.scene)
   const focus = useSceneStore((s) => s.focus)
-  const say = useParrotStore((s) => s.say)
-  const hush = useParrotStore((s) => s.hush)
+  const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const startAttract = useParrotStore((s) => s.startAttract)
   const leaveScene = useParrotStore((s) => s.leaveScene)
   const noteBooksOpened = useParrotStore((s) => s.noteBooksOpened)
-  const bubble = useParrotStore((s) => s.bubble)
   const chatOpen = useParrotStore((s) => s.chatOpen)
+  const booksSeen = useParrotStore((s) => s.booksSeen)
+  const openChat = useParrotStore((s) => s.openChat)
+  const announceWeather = useParrotStore((s) => s.announceWeather)
 
   // Keyed only on `scene`, not on `isTransitioning` — `focusOn`/`clearFocus`
-  // both flip `isTransitioning` too, so keying on it would re-arm the speak
-  // and attract timers every time a close-up opens or closes at this stop,
-  // including the books close-up itself, which would restart the very timer
-  // its own opening is meant to cancel. Same reasoning `CabinHint.tsx` used
-  // to document here before this replaced it.
+  // both flip `isTransitioning` too, so keying on it would re-arm the attract
+  // timer every time a close-up opens or closes at this stop, including the
+  // books close-up itself, which would restart the very timer its own
+  // opening is meant to cancel.
   useEffect(() => {
-    // At the ocean stop the visitor is orbiting the whole boat from outside;
-    // nothing renders the bubble there (see the `line` guard below), so
-    // scheduling a speak/hide pair would just be a timer that lies about
-    // what's on screen.
-    if (scene === 'ocean') {
-      return () => leaveScene()
-    }
-
-    const speakTimer = window.setTimeout(() => say(PARROT_HINTS[scene]), SPEAK_DELAY_MS)
-    const hideTimer = window.setTimeout(hush, SPEAK_DELAY_MS + HINT_VISIBLE_MS)
     const attractTimer =
       scene === 'cabin' ? window.setTimeout(startAttract, ATTRACT_DELAY_MS) : undefined
 
     return () => {
-      window.clearTimeout(speakTimer)
-      window.clearTimeout(hideTimer)
       if (attractTimer !== undefined) window.clearTimeout(attractTimer)
       leaveScene()
     }
-  }, [scene, say, hush, startAttract, leaveScene])
+  }, [scene, startAttract, leaveScene])
 
   useEffect(() => {
     if (scene === 'cabin' && focus === 'books') noteBooksOpened()
   }, [scene, focus, noteBooksOpened])
 
-  // The in-world bubble only ever shows at the cockpit stop: below decks
-  // `ParrotChrome`'s DOM box speaks for him instead, over a close-up it
-  // would be clutter (same as `CabinHint.tsx`'s old `focus` check), and at
-  // the ocean stop the visitor is orbiting the whole boat from outside — the
-  // bird isn't even the thing being looked at, so a prompt anchored to him
-  // would read as attached to nothing.
-  const line = scene === 'cockpit' && focus === null ? bubble : null
+  // The cabin's own delayed squawk: the bird is unreachable there (behind
+  // the coachroof, out of click range), so instead of waiting to be clicked
+  // he speaks up on his own once someone's lingered without finding the
+  // shelf. Same dependency discipline as the attract effect above and for
+  // the same reason — `focus`/`isTransitioning` would re-arm this on every
+  // close-up. Also starts the spine blink here, not just at the standalone
+  // effect's own 60s: the line says "check out the books", so the shelf
+  // should light up the moment he says it, not 40s afterward. `startAttract`
+  // is a no-op once the books are already seen, so calling it a second time
+  // when the standalone effect's own timer lands later is harmless.
+  useEffect(() => {
+    if (scene !== 'cabin') return
+    const nudgeTimer = window.setTimeout(() => {
+      if (!booksSeen && !chatOpen) {
+        openChat('cabin')
+        startAttract()
+      }
+    }, CABIN_NUDGE_DELAY_MS)
+    return () => window.clearTimeout(nudgeTimer)
+  }, [scene, booksSeen, chatOpen, openChat, startAttract])
 
-  // The balloon is below decks' equivalent of the coachroof problem the
-  // hint bubble already has: the bird himself is out of sight in the cabin,
-  // so a balloon pointing at nothing would read as a stray prop (same
-  // reasoning as the `line` guard above, and the doc at the top of this
-  // file). `chatOpen` alone gates it everywhere else — unlike the passive
-  // hint, the chat is something the visitor asked for, so it stays up over
-  // a close-up rather than being suppressed by `focus`.
+  // Watches the drifting weather (`conditions.ts`) for a crossing into a
+  // named preset worth an unprompted line. `prevWeatherName` starts `null`
+  // so the very first sample just records where the drift already is,
+  // rather than treating scene load as a "crossing" into whatever preset
+  // happens to be current.
+  const prevWeatherName = useRef<string | null>(null)
+  useFrame((state) => {
+    const name = sampleConditions(state.clock.elapsedTime).name
+    if (prevWeatherName.current === null) {
+      prevWeatherName.current = name
+      return
+    }
+    if (name === prevWeatherName.current) return
+    prevWeatherName.current = name
+
+    const line = PARROT_WEATHER_HINTS[name]
+    if (!line) return
+    // Same "don't interrupt" guards as the click-to-open balloon: no cabin
+    // (no balloon to speak from there), no close-up, no camera move, and no
+    // stepping on an already-open conversation.
+    if (scene === 'cabin' || focus !== null || isTransitioning || chatOpen) return
+    announceWeather(line)
+  })
+
+  // The balloon is anchored to the bird himself, so it only makes sense
+  // where he's actually visible — below decks he's out of sight behind the
+  // coachroof, and `ParrotChatDock.tsx` speaks for him there instead.
   const showChat = chatOpen && scene !== 'cabin'
 
   return (
     <>
       <Parrot />
-      <SpeechBubble line={line} />
       {showChat && (
         // `zIndexRange` capped at 4, same as `.resume-chrome`'s own z-index
         // (`ResumeChrome.css:7`): under `.focus-exit`'s 5, so a close-up's

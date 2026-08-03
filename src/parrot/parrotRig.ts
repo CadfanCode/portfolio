@@ -122,7 +122,7 @@ export function buildParrotSkin(sourceMesh: Mesh): ParrotSkin {
     ? sourceMesh.material[0]
     : sourceMesh.material
   const material = sourceMaterial.clone()
-  // The GLB's plumage is red; Skipper is recoloured to green at load time by
+  // The GLB's plumage is red; Polly is recoloured to green at load time by
   // repainting the (cloned, never the cached) material's texture — see
   // `parrotTexture.ts` for the hue-band selection and why it isn't a literal
   // colour swap.

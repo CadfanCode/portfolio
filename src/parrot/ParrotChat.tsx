@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import type { FormEvent } from 'react'
 import { useSceneStore } from '../state/useSceneStore'
 import { useParrotStore } from './useParrotStore'
-import { getBrain } from './brains'
 import { PARROT_NAME } from '../content/parrot'
 import './ParrotChat.css'
 
@@ -11,7 +10,7 @@ import './ParrotChat.css'
  * `brains/index.ts` currently hands out doing the answering (see that
  * module's own doc — this component never knows or cares which one).
  *
- * Mounted by `ParrotAssistant.tsx` inside a `<Html>` anchored beside Skipper
+ * Mounted by `ParrotAssistant.tsx` inside a `<Html>` anchored beside Polly
  * rather than docked to a screen corner, and styled (`ParrotChat.css`) as a
  * speech balloon coming off him — a full-screen modal or a bottom-right
  * panel would read as a context switch away from the boat; this reads as a
@@ -24,11 +23,8 @@ export function ParrotChat() {
   const pending = useParrotStore((s) => s.pending)
   const draft = useParrotStore((s) => s.draft)
   const askParrot = useParrotStore((s) => s.askParrot)
-  const brainTier = useParrotStore((s) => s.brainTier)
-  const modelState = useParrotStore((s) => s.modelState)
-  const modelProgress = useParrotStore((s) => s.modelProgress)
-  const modelStatus = useParrotStore((s) => s.modelStatus)
-  const enableModel = useParrotStore((s) => s.enableModel)
+  const inputOpen = useParrotStore((s) => s.inputOpen)
+  const revealInput = useParrotStore((s) => s.revealInput)
 
   // Focus is not gating chat's own visibility — a visitor can still be
   // reading a close-up's own chrome while the panel is open — but Escape is:
@@ -39,6 +35,7 @@ export function ParrotChat() {
   const focus = useSceneStore((s) => s.focus)
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const askButtonRef = useRef<HTMLButtonElement>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
 
@@ -47,14 +44,24 @@ export function ParrotChat() {
     // Remember whatever had focus before the panel opened (almost always
     // nothing, since the parrot itself is a 3D object and can't hold DOM
     // focus) so closing can hand focus back somewhere sensible rather than
-    // dropping it on `<body>`.
+    // dropping it on `<body>`. Focus lands on whichever of the ask button or
+    // the input is actually rendered — see the `inputOpen` effect below for
+    // the case where that changes while the panel stays open.
     openerRef.current = document.activeElement as HTMLElement | null
-    inputRef.current?.focus()
+    if (inputOpen) inputRef.current?.focus()
+    else askButtonRef.current?.focus()
 
     return () => {
       openerRef.current?.focus?.()
     }
-  }, [chatOpen])
+  }, [chatOpen, inputOpen])
+
+  // Separate from the mount effect above: clicking "Ask something back"
+  // doesn't remount the panel, so nothing else would move focus into the
+  // freshly-revealed input.
+  useEffect(() => {
+    if (chatOpen && inputOpen) inputRef.current?.focus()
+  }, [inputOpen, chatOpen])
 
   useEffect(() => {
     if (!chatOpen || focus !== null) return
@@ -101,9 +108,6 @@ export function ParrotChat() {
       </div>
 
       <div className="parrot-chat-transcript" role="log" aria-live="polite" ref={transcriptRef}>
-        {history.length === 0 && !pending && (
-          <p className="parrot-chat-empty">Ask Skipper about the boat, or about Cai.</p>
-        )}
         {history.map((turn, i) => (
           <p key={i} className={`parrot-chat-turn parrot-chat-turn--${turn.role}`}>
             {turn.text}
@@ -116,54 +120,36 @@ export function ParrotChat() {
         )}
       </div>
 
-      <form className="parrot-chat-form" onSubmit={submit}>
-        <label className="parrot-chat-label" htmlFor="parrot-chat-input">
-          Ask Skipper a question
-        </label>
-        <input
-          id="parrot-chat-input"
-          ref={inputRef}
-          type="text"
-          className="parrot-chat-input"
-          placeholder="Ask something…"
-          autoComplete="off"
-          disabled={pending}
-        />
-        <button type="submit" className="parrot-chat-send" disabled={pending}>
-          Send
-        </button>
-      </form>
-
-      <div className="parrot-chat-footer">
-        <span className="parrot-chat-footer-line">Answering from {getBrain().label}</span>
-        {/* The upgrade offer only ever exists for hardware that cleared every
-         *  gate in `brainTier.ts` — everyone else (`'scripted'`, or still
-         *  `'unknown'` because the panel was just opened) sees nothing here
-         *  at all, per the spec: no teaser for a download most visitors
-         *  can't or shouldn't take. */}
-        {brainTier === 'chat' && modelState === 'absent' && (
-          <button
-            type="button"
-            className="parrot-chat-upgrade"
-            onClick={() => void enableModel()}
-          >
-            Teach Skipper to talk properly (~880 MB, one-off download)
+      {inputOpen ? (
+        <form className="parrot-chat-form" onSubmit={submit}>
+          <label className="parrot-chat-label" htmlFor="parrot-chat-input">
+            {`Ask ${PARROT_NAME} a question`}
+          </label>
+          <input
+            id="parrot-chat-input"
+            ref={inputRef}
+            type="text"
+            className="parrot-chat-input"
+            placeholder="Ask something…"
+            autoComplete="off"
+            disabled={pending}
+          />
+          <button type="submit" className="parrot-chat-send" disabled={pending}>
+            Send
           </button>
-        )}
-        {brainTier === 'chat' && modelState === 'loading' && (
-          <span className="parrot-chat-footer-line parrot-chat-model-progress">
-            {modelStatus || 'Loading…'} ({Math.round(modelProgress * 100)}%)
-          </span>
-        )}
-        <a
-          className="parrot-chat-footer-line parrot-chat-credit"
-          href="https://poly.pizza/m/dfNjMLtO0pd"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Parrot model by Poly by Google (CC-BY)
-        </a>
-      </div>
+        </form>
+      ) : (
+        <div className="parrot-chat-form">
+          <button
+            ref={askButtonRef}
+            type="button"
+            className="parrot-chat-ask"
+            onClick={revealInput}
+          >
+            Ask something back
+          </button>
+        </div>
+      )}
     </div>
   )
 }

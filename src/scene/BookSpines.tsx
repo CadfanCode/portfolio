@@ -16,6 +16,7 @@ import type { ThreeEvent } from '@react-three/fiber'
 import type { Mesh as MeshType, MeshBasicMaterial, MeshStandardMaterial } from 'three'
 import modelUrl from '../assets/models/maxi77.glb?url'
 import { useSceneStore } from '../state/useSceneStore'
+import { useComingSoonStore } from '../state/useComingSoonStore'
 import { useParrotStore } from '../parrot/useParrotStore'
 import { useQualityStore } from '../state/useQualityStore'
 import { prefersReducedMotion } from './introFlight'
@@ -537,6 +538,7 @@ export function BookSpines() {
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const activeExhibitId = useSceneStore((s) => s.activeExhibitId)
   const openExhibit = useSceneStore((s) => s.openExhibit)
+  const showComingSoon = useComingSoonStore((s) => s.show)
   // A book stops being clickable the moment an exhibit is open — otherwise a
   // click meant for the exhibit's own controls could land on the shelf
   // behind it, and a second click on the same book would try to reopen what
@@ -584,6 +586,13 @@ export function BookSpines() {
               window.open(book.url, '_blank', 'noopener,noreferrer')
               return
             }
+            // Neither an exhibit nor a URL: this is a placeholder spine (e.g.
+            // "About Me"), so the sticky-glow toggle still runs but is now
+            // paired with the same "coming soon" toast the placeholder camera
+            // focuses use — driven off the absence of `exhibit`/`url` rather
+            // than the book's own name, so a future placeholder book needs no
+            // change here.
+            showComingSoon('Coming soon')
             setSelected((current) => (current === node ? null : node))
           }}
         />

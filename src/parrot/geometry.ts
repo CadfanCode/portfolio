@@ -1,7 +1,7 @@
 const deg = (d: number) => (d * Math.PI) / 180
 
 /**
- * Where Skipper perches: the port half of the `cockpit_shelves` node, a
+ * Where Polly perches: the port half of the `cockpit_shelves` node, a
  * rounded corner shelf against the aft bulkhead beside the companionway —
  * top surface y 0.964, x -0.72..-0.54, z 1.28..1.37.
  *
@@ -24,11 +24,25 @@ const deg = (d: number) => (d * Math.PI) / 180
  * at you — a normal parrot pose, not a compromise. (See `PARROT_REST_YAW`
  * for why the head range itself had to widen to make that turn work.)
  *
- * Its own module rather than living in `Parrot.tsx`: `SpeechBubble.tsx`
+ * Its own module rather than living in `Parrot.tsx`: `CHAT_ANCHOR` below
  * needs it too, to place itself relative to the bird, and a plain data file
  * is what keeps both components from having to import one another.
  */
 export const PARROT_POSITION: readonly [number, number, number] = [-0.62, 0.964, 1.338]
+
+/**
+ * Anchor for the chat balloon (`ParrotChat.tsx`, mounted via `<Html>` from
+ * `ParrotAssistant.tsx`), defined next to `PARROT_POSITION` so the two don't
+ * drift apart. Its own, smaller offset rather than reusing the perch point
+ * directly: the balloon is a DOM panel, not a billboard plane, and the CSS
+ * itself pushes it further up-and-right of this point so its tail lands on
+ * the bird (see `ParrotChat.css`).
+ */
+export const CHAT_ANCHOR: readonly [number, number, number] = [
+  PARROT_POSITION[0] + 0.1,
+  PARROT_POSITION[1] + 0.2,
+  PARROT_POSITION[2] + 0.06,
+]
 
 /**
  * Resting heading, in radians: 72 deg off dead-ahead, which puts him side-on
@@ -38,8 +52,8 @@ export const PARROT_POSITION: readonly [number, number, number] = [-0.62, 0.964,
  * this rest yaw his head tracks the visitor at about a -44 deg turn — inside
  * `Parrot.tsx`'s `HEAD_YAW_RANGE` of 65 deg, which this rest yaw is the
  * reason that range had to widen from its old 52 deg. Lives here rather than
- * in `Parrot.tsx` because `SpeechBubble.tsx` reasons about the same perch
- * and the two should not drift apart.
+ * in `Parrot.tsx` because `CHAT_ANCHOR` reasons about the same perch and the
+ * two should not drift apart.
  */
 export const PARROT_REST_YAW = deg(72)
 

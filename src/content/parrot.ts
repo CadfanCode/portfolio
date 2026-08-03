@@ -1,27 +1,39 @@
 import type { SceneState } from '../state/useSceneStore'
 
-/** The parrot's name, used by both the in-world bubble's neighbourhood and
- *  (eventually) the chat panel a later task adds — kept here rather than
- *  hardcoded in a component so there is one place to rename him. */
-export const PARROT_NAME = 'Skipper'
+/** The parrot's name, shown in the chat panel's header and referenced by its
+ *  ARIA label — kept here rather than hardcoded in a component so there is
+ *  one place to rename him. */
+export const PARROT_NAME = 'Polly'
 
 /**
- * What Skipper says on arriving at each stop, keyed by `SceneState` so the
- * copy lives beside the content it belongs to rather than inside the
- * component that speaks it — see the `content/` convention in `CLAUDE.md`.
- * Written the way you'd actually say it showing someone round the boat, not
- * as marketing copy.
+ * What Polly says as the first line of the chat panel at each stop, keyed
+ * by `SceneState` so the copy lives beside the content it belongs to rather
+ * than inside the component that speaks it — see the `content/` convention
+ * in `CLAUDE.md`. Written the way you'd actually say it showing someone
+ * round the boat, not as marketing copy. Each is click-triggered now, not
+ * automatic — see `useParrotStore.ts`'s `openChat`.
  */
 export const PARROT_HINTS: Record<SceneState, string> = {
-  // Currently unspoken: `ParrotAssistant` never schedules or shows the
-  // ocean-stop bubble, since that stop is an orbit of the whole boat from
-  // outside and a prompt anchored to the bird would read as attached to
-  // nothing. Left in place because the `Record<SceneState, string>` needs
-  // the key, and it's the copy to restore if that's ever reverted.
   ocean: 'Maxi 77, seven and a half metres of her. Click the hull and come aboard.',
   cockpit: "Mind the boom. There's a way below, through the companionway.",
-  // The existing cabin copy, carried over unchanged — it was already good.
-  cabin: "There's a shelf of books to starboard. One of them isn't just for show.",
+  // The cabin is the one stop where the bird himself is out of sight below
+  // the coachroof, so this line is a delayed nudge (`ParrotAssistant.tsx`'s
+  // `CABIN_NUDGE_DELAY_MS`) rather than something clicked into being — hence
+  // the shouted-from-outside tone. Spelling of "Squak" is verbatim as
+  // specified, not a typo for "Squawk".
+  cabin: "*Squak* What are you doing, taking your time in there? Check out the books!",
+}
+
+/**
+ * Unprompted lines Polly fires off when the drifting weather (`conditions.ts`)
+ * crosses into one of these named presets — see `ParrotAssistant.tsx`'s
+ * weather watch. Keyed by `Conditions['name']`, not `SceneState`: this is
+ * about what the sky is doing, not where the visitor is standing, so only the
+ * presets worth a comment get an entry here.
+ */
+export const PARROT_WEATHER_HINTS: Partial<Record<string, string>> = {
+  squall: "I'm glad I'm not flying around in this weather!",
+  fog: '*squak* This fog is spooky!',
 }
 
 /**
@@ -64,15 +76,38 @@ const SCRIPTED_INTENTS: readonly ScriptedIntent[] = [
     triggers: [
       'what are you',
       'who are you',
-      'are you real',
-      'are you a bot',
-      'are you an ai',
       'your name',
       "what's your name",
       'what is your name',
     ],
     answer:
-      "Skipper, ship's parrot. I keep watch, I heckle the rigging, and I'll answer what I can about the boat and the man who built her.",
+      "Polly, ship's parrot. I keep watch, I heckle the rigging, and I'll answer what I can about the boat and the man who built her.",
+  },
+  {
+    id: 'ai-disclosure',
+    triggers: [
+      'are you an ai',
+      'are you ai',
+      'you ai',
+      'are you a bot',
+      'are you a robot',
+      'are you real',
+      'are you human',
+      'is this ai',
+      'what model',
+      'which model',
+      'llama',
+      'language model',
+      'gpt',
+      'chatgpt',
+      'how do you work',
+      'artificial intelligence',
+      'your limitations',
+      "what can't you do",
+      'what can you not do',
+    ],
+    answer:
+      "Between you and me — under the feathers there's a small AI running on Llama 3, tucked away in your browser. I stick to short answers and whatever I've actually been told about the boat and about Cai; ask me something outside that and I'll likely just squawk and change the subject rather than make something up. Still a parrot, mind. Just one with a chip for a brain.",
   },
   {
     id: 'boat',
@@ -246,7 +281,7 @@ export function matchScripted(question: string): string | null {
   return bestScore >= MIN_SCORE && best ? best.answer : null
 }
 
-/** The line Skipper falls back to when nothing in the script matches — kept
+/** The line Polly falls back to when nothing in the script matches — kept
  *  as its own export so `brains/scripted.ts` doesn't have to reach into the
  *  intent table to find the one entry with no triggers. */
 export const SCRIPTED_FALLBACK =

@@ -2,19 +2,14 @@ import { create } from 'zustand'
 import { getBrain, setBrain } from './brains'
 import type { Turn } from './brains/types'
 import { resolveBrainTier, type BrainTier } from './brainTier'
+import { PARROT_HINTS } from '../content/parrot'
+import type { SceneState } from '../state/useSceneStore'
 
-/** How long a spoken line stays on screen before the parrot goes quiet again. */
-export const HINT_VISIBLE_MS = 10_000
 /** How long a visitor can sit in the cabin without opening the books before
  *  the spines start blinking to draw the eye. */
 export const ATTRACT_DELAY_MS = 60_000
 
 type ParrotStore = {
-  /** The line the parrot is currently saying, or `null` while silent. Carries
-   *  the actual text rather than a boolean, since the speaker (the in-world
-   *  bubble on deck, or the DOM chrome below decks) changes with scene but
-   *  the words don't — see `ParrotAssistant`. */
-  bubble: string | null
   /** True once the attract-mode blink on the book spines should be running. */
   attracting: boolean
   /**
@@ -25,28 +20,35 @@ type ParrotStore = {
    */
   booksSeen: boolean
 
-  /** Shows a line. No-ops for the books nudge's own purpose is left to the
-   *  caller — this store just holds what's being said. */
-  say: (line: string) => void
-  hush: () => void
   /** Starts the blink. No-ops if the books have already been found — they
    *  don't need drawing to something they've already seen. */
   startAttract: () => void
-  /** Marks the books found and clears both nudges for good. */
+  /** Marks the books found and clears the attract nudge for good. */
   noteBooksOpened: () => void
-  /** Clears the two per-visit nudges on leaving a scene, but leaves
-   *  `booksSeen` alone — see its own doc. */
+  /** Clears the attract nudge on leaving a scene — `booksSeen`, `hintedScenes`
+   *  and `inputOpen` all stay, since they're per-tab, not per-visit. */
   leaveScene: () => void
 
   // --- Chat --------------------------------------------------------------
   //
-  // The click-to-open panel, layered on top of the hint system above rather
-  // than replacing it: the hint bubble is a passive nudge that fires on
-  // arrival, the chat is something the visitor asked for, and the two only
-  // interact at the moment the chat opens (see `openChat`), never otherwise.
+  // The click-to-open panel now carries the hint too: opening it for the
+  // first time at a given stop speaks that stop's `PARROT_HINTS` line as the
+  // first transcript turn (see `openChat`), so there is only ever one place
+  // Polly's voice comes from.
 
   /** Whether the DOM chat panel (`ParrotChat.tsx`) is on screen. */
   chatOpen: boolean
+  /** Which stops have already had their hint line appended to `history`.
+   *  Sticky for the life of the tab, same as `booksSeen` — reopening the
+   *  panel at a stop you've already heard from shouldn't repeat itself. */
+  hintedScenes: SceneState[]
+  /** Whether the text-input form is showing, as opposed to the collapsed
+   *  "Ask something back" button. Sticky for the tab: once a visitor knows
+   *  they can talk back, re-collapsing it on every reopen would just be
+   *  friction for no reason. */
+  inputOpen: boolean
+  /** Reveals the input, permanently for the tab. */
+  revealInput: () => void
   /** The conversation so far, oldest first. Cleared on nothing — it persists
    *  for the life of the tab, same as `booksSeen`, so closing and reopening
    *  the panel doesn't lose what was already said. */
@@ -61,8 +63,20 @@ type ParrotStore = {
    *  consumer to render specially. */
   draft: string
 
-  openChat: () => void
+  /**
+   * Opens the panel for the given stop. The first time a stop is opened, its
+   * `PARROT_HINTS` line is appended as a `{ role: 'parrot' }` turn before
+   * anything else happens — that's the hint, now indistinguishable from any
+   * other message in the transcript. Every later open at the same stop is a
+   * no-op against `hintedScenes`, so the line is never repeated.
+   */
+  openChat: (scene: SceneState) => void
   closeChat: () => void
+  /** Fired by ParrotAssistant's weather watch when the sky crosses into a named
+   *  condition worth a comment. Unlike openChat, this never touches
+   *  hintedScenes — it's not a stop hint, it can fire again on the next squall.
+   *  Caller already guards against firing while the panel's open. */
+  announceWeather: (line: string) => void
   /**
    * Sends a question to the current brain (`brains/index.ts`'s `getBrain`,
    * not a brain this store holds itself — see that module's own doc on why)
@@ -80,7 +94,7 @@ type ParrotStore = {
   // it in (`modelState`/`modelProgress`/`modelStatus`).
 
   /**
-   * Whether this session is even allowed to see the "teach Skipper to talk
+   * Whether this session is even allowed to see the "teach Polly to talk
    * properly" button — `'unknown'` until `resolveBrainTier()` has settled,
    * so `ParrotChat.tsx` can render nothing rather than a flash of the wrong
    * answer while a WebGPU adapter query is in flight. Resolved once, lazily,
@@ -111,36 +125,36 @@ type ParrotStore = {
 }
 
 export const useParrotStore = create<ParrotStore>((set, get) => ({
-  bubble: null,
   attracting: false,
   booksSeen: false,
-
-  say: (line) => set({ bubble: line }),
-
-  hush: () => set({ bubble: null }),
 
   startAttract: () =>
     set((state) => (state.booksSeen ? state : { attracting: true })),
 
-  noteBooksOpened: () => set({ booksSeen: true, bubble: null, attracting: false }),
+  // Also closes the chat panel: once the books are open, a panel pointing at
+  // them is stale (the panel exists in the cabin to point at the shelf).
+  noteBooksOpened: () => set({ booksSeen: true, attracting: false, chatOpen: false }),
 
-  // Also closes the chat balloon: it's anchored in-world to `PARROT_POSITION`
-  // (see `ParrotAssistant.tsx`), so surviving a stop change would leave it
-  // pointing at wherever the bird used to be, or nothing at all.
-  leaveScene: () => set({ bubble: null, attracting: false, chatOpen: false }),
+  leaveScene: () => set({ attracting: false, chatOpen: false }),
 
   chatOpen: false,
+  hintedScenes: [],
+  inputOpen: false,
   history: [],
   pending: false,
   draft: '',
 
-  openChat: () => {
-    // Opening the chat is the visitor choosing to read something themselves;
-    // the ambient hint bubble talking over that would just be noise, so it's
-    // hushed here. Closing the chat does the reverse of nothing — there is
-    // no line queued up to resume, and re-saying whatever the hint last said
-    // would read as the parrot repeating itself for no reason.
-    set({ chatOpen: true, bubble: null })
+  revealInput: () => set({ inputOpen: true }),
+
+  openChat: (scene) => {
+    set((state) => {
+      if (state.hintedScenes.includes(scene)) return { chatOpen: true }
+      return {
+        chatOpen: true,
+        hintedScenes: [...state.hintedScenes, scene],
+        history: [...state.history, { role: 'parrot', text: PARROT_HINTS[scene] }],
+      }
+    })
 
     // Resolved lazily, on first open rather than at module load, so a
     // visitor who never opens the chat never triggers a WebGPU adapter
@@ -152,6 +166,12 @@ export const useParrotStore = create<ParrotStore>((set, get) => ({
   },
 
   closeChat: () => set({ chatOpen: false }),
+
+  announceWeather: (line) =>
+    set((state) => ({
+      chatOpen: true,
+      history: [...state.history, { role: 'parrot', text: line }],
+    })),
 
   askParrot: async (question) => {
     const trimmed = question.trim()

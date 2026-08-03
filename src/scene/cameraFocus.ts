@@ -77,6 +77,10 @@ export type CameraFocus = {
   /** The move in, leg by leg. The last leg is the framing; anything before it
    *  is the approach. Played in reverse (less the last leg) on the way out. */
   path: FocusLeg[]
+  /** True for a focus with real camera work but no exhibit behind it yet —
+   *  `FocusTargets.tsx` still flies the camera in, but also surfaces the
+   *  "coming soon" toast rather than letting the click read as dead. */
+  placeholder?: boolean
 }
 
 export const CAMERA_FOCUS: Record<string, CameraFocus> = {
@@ -106,6 +110,7 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     id: 'desk',
     label: 'The chart table',
     scene: 'cabin',
+    placeholder: true,
     bounds: { centre: [-0.925, 0.52, 1.03], size: [0.52, 0.62, 0.66] },
     path: [
       { position: [-0.12, 1.05, 0.93], target: [-0.75, 0.6, 1.0] },
@@ -189,6 +194,7 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     id: 'vhf',
     label: 'The VHF set',
     scene: 'cabin',
+    placeholder: true,
     bounds: { centre: [0.76, 0.45, 1.3], size: [0.34, 0.32, 0.18] },
     path: [
       { position: [0.1, 1.0, 1.02], target: [0.7, 0.6, 1.3] },

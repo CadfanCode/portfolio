@@ -1,6 +1,6 @@
-/* A comic-book speech balloon anchored beside Skipper (`ParrotAssistant.tsx`
+/* A comic-book speech balloon anchored beside Polly (`ParrotAssistant.tsx`
    mounts this inside a `<Html>` at `CHAT_ANCHOR`), rather than a panel
-   docked to a screen corner — the scene stays visible and Skipper stays on
+   docked to a screen corner — the scene stays visible and Polly stays on
    screen the whole time, so this reads as talking to the bird you can see.
    The z-index contract lives on the `<Html zIndexRange>` prop that wraps
    this, not here (see `ParrotAssistant.tsx`'s own comment on it): capped
@@ -27,10 +27,9 @@
   font-size: 14px;
   color: #3a2308;
 
-  /* Same palette as the in-world hint bubble (`SpeechBubble.tsx`'s
-     FILL_TOP/FILL_BOTTOM/BORDER_COLOUR/TEXT_COLOUR) and the below-decks
-     chrome (`ParrotChrome.css`), so Skipper's voice reads the same wherever
-     it's coming from. */
+  /* Warm yellow-to-orange so Polly's voice reads the same whether the
+     balloon is anchored beside him or docked below decks
+     (`.parrot-chat-dock`). */
   background: linear-gradient(180deg, #ffd76a, #f4a63a);
   border: 2px solid #b5691a;
   border-radius: 18px;
@@ -40,10 +39,10 @@
   animation: parrot-chat-in 0.2s ease-out both;
 }
 
-/* The CSS triangle tail, bottom-left, pointing down toward Skipper — the
-   comic-panel idiom the in-world bubble's own canvas-drawn tail also uses
-   (`SpeechBubble.tsx`'s `drawBubble`), redone here as a border trick since
-   this box is real DOM, not a texture. */
+/* The CSS triangle tail, bottom-left, pointing down toward Polly — a
+   comic-panel idiom done here as a border trick since this box is real DOM,
+   not a texture. Hidden entirely in the docked context (`.parrot-chat-dock`
+   below), where there's nothing for it to point at. */
 .parrot-chat::after {
   content: '';
   position: absolute;
@@ -129,12 +128,6 @@
   gap: 8px;
 }
 
-.parrot-chat-empty {
-  margin: 0;
-  font-style: italic;
-  opacity: 0.75;
-}
-
 .parrot-chat-turn {
   margin: 0;
   padding: 6px 10px;
@@ -158,12 +151,58 @@
   opacity: 0.85;
 }
 
+/* Shared by both the revealed `<form>` and the collapsed ask-button wrapper
+   below it, so the two occupy the same slot and swapping between them reads
+   as one control changing shape rather than two different pieces of chrome.
+   The panel itself is bottom-anchored (`.parrot-chat`'s `transform`), so
+   this growing taller pushes the balloon up, not down — the reveal
+   animation below leans into that rather than fighting it. */
 .parrot-chat-form {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid rgba(181, 105, 26, 0.35);
+  overflow: hidden;
+  animation: parrot-chat-form-in 0.2s ease-out both;
+}
+
+/* Growing from nothing rather than just fading in, so revealing the input
+   visibly pushes the balloon upward — a plain opacity fade wouldn't read as
+   growth at all. */
+@keyframes parrot-chat-form-in {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 60px;
+    opacity: 1;
+  }
+}
+
+.parrot-chat-ask {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a2308;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid #b5691a;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.parrot-chat-ask:hover,
+.parrot-chat-ask:focus-visible {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.parrot-chat-ask:focus-visible {
+  outline: 2px solid #3a2308;
+  outline-offset: 1px;
 }
 
 .parrot-chat-label {
@@ -299,7 +338,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .parrot-chat {
+  .parrot-chat,
+  .parrot-chat-form {
     animation: none;
   }
 }
@@ -308,4 +348,43 @@
   .parrot-chat {
     width: min(300px, calc(100vw - 48px));
   }
+}
+
+/* The cabin's docked mount (`ParrotChatDock.tsx`), where the bird himself is
+   out of sight below decks so the balloon is pinned to the viewport instead
+   of anchored to him — same bottom-centre slot the old `ParrotChrome.css`
+   used. */
+.parrot-chat-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+/* Overrides `.parrot-chat`'s own anchored offset — there's no perch point
+   here to offset from, just the viewport's own centre — and swaps its
+   fade-in for a plain opacity one: the base `parrot-chat-in` keyframes
+   repeat the anchored `translate(24px, calc(-100% - 20px))` in both their
+   `from` and `to` frames, which would fly the dock in from the wrong spot
+   since it has no such anchor to translate from. */
+.parrot-chat-dock .parrot-chat {
+  transform: none;
+  animation-name: parrot-chat-dock-in;
+}
+
+@keyframes parrot-chat-dock-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* No tail: it would point at nothing on screen. The squawk copy itself
+   already reads as shouted from outside rather than spoken to your face. */
+.parrot-chat-dock .parrot-chat::before,
+.parrot-chat-dock .parrot-chat::after {
+  display: none;
 }

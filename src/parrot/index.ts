@@ -1,2 +1,2 @@
 export { ParrotAssistant } from './ParrotAssistant'
-export { ParrotChrome } from './ParrotChrome'
+export { ParrotChatDock } from './ParrotChatDock'
