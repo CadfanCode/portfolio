@@ -3,7 +3,7 @@
 .about-chrome {
   position: fixed;
   inset: 0;
-  z-index: 4; /* under .focus-exit's 5, except the lightbox below. */
+  z-index: 4; /* under .focus-exit's 5, except the video player below. */
   pointer-events: none;
 }
 
@@ -74,61 +74,88 @@
   stroke-linejoin: round;
 }
 
-.about-watch {
+/* A transparent stage matching the open spread's own on-screen box, purely
+   so the video hotspot below can be positioned with plain CSS percentages
+   instead of a 3D projection — see `.about-stage-spread`. */
+.about-stage {
   position: absolute;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  pointer-events: auto;
-
-  padding: 8px 18px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--text-h);
-  background: var(--social-bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: border-color 0.3s;
-}
-
-.about-watch:hover,
-.about-watch:focus-visible {
-  border-color: var(--accent-border);
-}
-
-.about-watch:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.about-lightbox {
-  position: fixed;
   inset: 0;
-  z-index: 6; /* above .focus-exit's 5 — see the component's own note. */
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 8, 5, 0.82);
+  pointer-events: none;
+}
+
+.about-stage-spread {
+  position: relative;
+  /* Mirrors `AboutBook.tsx`'s `presentationDistance`: the open spread is
+     solved to fill 97% of viewport width or 96% of viewport height,
+     whichever is the tighter constraint (`TARGET_WIDTH_FRACTION` /
+     `TARGET_HEIGHT_FRACTION` there), centred either way — the same
+     "contain fit" a wide monitor and a portrait phone both get from that
+     solve. 1.41436 is the two-page canvas ratio (2048×1448) that
+     `renderAboutPage.ts` rasterises pages at. Kept in sync by hand rather
+     than shared code — a DOM overlay importing constants across the R3F
+     boundary for two numbers isn't worth the coupling. */
+  width: min(97vw, calc(96vh * 1.41436));
+  height: min(96vh, calc(97vw / 1.41436));
+  pointer-events: none;
+}
+
+.about-video-hotspot {
+  position: absolute;
+  transform-origin: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
   pointer-events: auto;
 }
 
-.about-lightbox-frame {
-  position: relative;
-  width: min(90vw, 960px);
-  aspect-ratio: 16 / 9;
-  background: #000;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+.about-video-hotspot:hover,
+.about-video-hotspot:focus-visible {
+  filter: brightness(1.18);
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
 
-.about-lightbox-frame iframe {
+/* The enlarged player — FLIP-animated in from `.about-video-hotspot`'s own
+   screen rect, so it reads as the page's own video growing for a better
+   view rather than a modal appearing out of nowhere. See `AboutChrome.tsx`'s
+   `AboutVideoPlayer` for the rect maths. */
+.about-video-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 6; /* above .focus-exit's 5 — see the component's own note. */
+  background: rgba(10, 8, 5, 0);
+  transition: background 0.32s ease;
+  pointer-events: auto;
+}
+
+.about-video-backdrop[data-visible='true'] {
+  background: rgba(10, 8, 5, 0.82);
+}
+
+.about-video-frame {
+  position: fixed;
+  background: #000;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transition:
+    top 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.about-video-frame iframe {
   width: 100%;
   height: 100%;
   border: 0;
 }
 
-.about-lightbox-close {
+.about-video-close {
   position: absolute;
   top: -44px;
   right: 0;
@@ -160,20 +187,20 @@
   .about-arrow-right:hover:not(:disabled) {
     transform: none;
   }
-
-  .about-watch {
-    bottom: 132px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .about-arrow,
-  .about-watch {
+  .about-arrow {
     transition: none;
   }
 
   .about-arrow-left:hover:not(:disabled),
   .about-arrow-right:hover:not(:disabled) {
     transform: translateY(-50%);
+  }
+
+  .about-video-backdrop,
+  .about-video-frame {
+    transition: none;
   }
 }
