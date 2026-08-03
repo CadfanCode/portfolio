@@ -2,22 +2,29 @@ import { useEffect, useRef } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useSceneStore } from '../state/useSceneStore'
-import { ATTRACT_DELAY_MS, useParrotStore } from './useParrotStore'
+import {
+  useParrotStore,
+  ATTRACT_OSCILLATION_MS,
+  ATTRACT_OSCILLATIONS_PER_BURST,
+} from './useParrotStore'
 import { Parrot } from './Parrot'
 import { CHAT_ANCHOR } from './geometry'
 import { ParrotChat } from './ParrotChat'
 import { sampleConditions } from '../scene/conditions'
 import { PARROT_WEATHER_HINTS } from '../content/parrot'
 
-/** How long a visitor can sit in the cabin, books unopened and chat unopened,
- *  before Polly squawks the nudge himself — see the cabin effect below. Kept
- *  as its own constant rather than reusing `ATTRACT_DELAY_MS`, even though
- *  the squawk now also starts the spine blink (see that effect): the two
- *  still mean different things — one is "how long before Polly says
- *  something", the other is "how long before the shelf lights up on its
- *  own even with no line said" (the fallback path below) — they just
- *  happen to fire together on the common path now. */
-const CABIN_NUDGE_DELAY_MS = 20_000
+/** How long a visitor can sit in the cabin, books unopened, before the shelf
+ *  starts pulsing to draw the eye — see the cabin effect below. */
+const ATTRACT_FIRST_DELAY_MS = 20_000
+
+/** Gap between the end of one attract burst and the start of the next. */
+const ATTRACT_BURST_GAP_MS = 5_000
+
+/** How long a single burst stays "on" — `ATTRACT_OSCILLATIONS_PER_BURST`
+ *  pulses back to back, at `ATTRACT_OSCILLATION_MS` each. `BookSpines.tsx`
+ *  is what actually draws the oscillation within this window; this effect
+ *  only owns when the window opens and closes. */
+const ATTRACT_BURST_DURATION_MS = ATTRACT_OSCILLATIONS_PER_BURST * ATTRACT_OSCILLATION_MS
 
 /**
  * The 3D half of the guide character: the bird himself, always rendered, and
@@ -25,60 +32,67 @@ const CABIN_NUDGE_DELAY_MS = 20_000
  * him rather than docked to a screen corner, so talking to Polly reads as
  * talking to the bird you can see. Below decks the bird's body is out of
  * sight behind the coachroof, so the balloon is docked to the screen instead
- * (see `ParrotChatDock.tsx`) and this component only fires the cabin's own
- * delayed nudge into the same chat state.
+ * (see `ParrotChatDock.tsx`) and this component's cabin-specific job is just
+ * the book-blink nudge below, not a spoken line.
  */
 export function ParrotAssistant() {
   const scene = useSceneStore((s) => s.scene)
   const focus = useSceneStore((s) => s.focus)
   const isTransitioning = useSceneStore((s) => s.isTransitioning)
   const startAttract = useParrotStore((s) => s.startAttract)
+  const stopAttract = useParrotStore((s) => s.stopAttract)
   const leaveScene = useParrotStore((s) => s.leaveScene)
   const noteBooksOpened = useParrotStore((s) => s.noteBooksOpened)
   const chatOpen = useParrotStore((s) => s.chatOpen)
   const booksSeen = useParrotStore((s) => s.booksSeen)
-  const openChat = useParrotStore((s) => s.openChat)
   const announceWeather = useParrotStore((s) => s.announceWeather)
 
-  // Keyed only on `scene`, not on `isTransitioning` — `focusOn`/`clearFocus`
-  // both flip `isTransitioning` too, so keying on it would re-arm the attract
-  // timer every time a close-up opens or closes at this stop, including the
-  // books close-up itself, which would restart the very timer its own
-  // opening is meant to cancel.
+  // Cleared on every scene change, not just a cabin one — `leaveScene` also
+  // resets `chatOpen`, which matters leaving any stop, not only the cabin.
   useEffect(() => {
-    const attractTimer =
-      scene === 'cabin' ? window.setTimeout(startAttract, ATTRACT_DELAY_MS) : undefined
-
-    return () => {
-      if (attractTimer !== undefined) window.clearTimeout(attractTimer)
-      leaveScene()
-    }
-  }, [scene, startAttract, leaveScene])
+    return () => leaveScene()
+  }, [scene, leaveScene])
 
   useEffect(() => {
     if (scene === 'cabin' && focus === 'books') noteBooksOpened()
   }, [scene, focus, noteBooksOpened])
 
-  // The cabin's own delayed squawk: the bird is unreachable there (behind
-  // the coachroof, out of click range), so instead of waiting to be clicked
-  // he speaks up on his own once someone's lingered without finding the
-  // shelf. Same dependency discipline as the attract effect above and for
-  // the same reason — `focus`/`isTransitioning` would re-arm this on every
-  // close-up. Also starts the spine blink here, not just at the standalone
-  // effect's own 60s: the line says "check out the books", so the shelf
-  // should light up the moment he says it, not 40s afterward. `startAttract`
-  // is a no-op once the books are already seen, so calling it a second time
-  // when the standalone effect's own timer lands later is harmless.
+  // The book-blink nudge: no spoken line any more (the bird is unreachable
+  // in the cabin anyway, behind the coachroof), just the shelf itself
+  // pulsing gold in bursts once someone's lingered without finding it.
+  // Bursts repeat indefinitely rather than a fixed total — what stops the
+  // nudge is `booksSeen`, not a countdown, so this effect's own cleanup is
+  // what cancels the pending chain, firing the instant a click sets
+  // `booksSeen` true (it's a dependency below) rather than leaning on
+  // `startAttract`'s own guard as the only backstop. Not keyed on
+  // `isTransitioning`: `focusOn`/`clearFocus` flip it too, and the books
+  // close-up itself is one of those transitions, so keying on it would
+  // re-arm the whole chain every time that close-up opens or closes.
   useEffect(() => {
-    if (scene !== 'cabin') return
-    const nudgeTimer = window.setTimeout(() => {
-      if (!booksSeen && !chatOpen) {
-        openChat('cabin')
+    if (scene !== 'cabin' || booksSeen) return
+
+    let cancelled = false
+    let timer: number
+
+    const scheduleBurst = (delay: number) => {
+      timer = window.setTimeout(() => {
+        if (cancelled) return
         startAttract()
-      }
-    }, CABIN_NUDGE_DELAY_MS)
-    return () => window.clearTimeout(nudgeTimer)
-  }, [scene, booksSeen, chatOpen, openChat, startAttract])
+        timer = window.setTimeout(() => {
+          if (cancelled) return
+          stopAttract()
+          scheduleBurst(ATTRACT_BURST_GAP_MS)
+        }, ATTRACT_BURST_DURATION_MS)
+      }, delay)
+    }
+
+    scheduleBurst(ATTRACT_FIRST_DELAY_MS)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [scene, booksSeen, startAttract, stopAttract])
 
   // Watches the drifting weather (`conditions.ts`) for a crossing into a
   // named preset worth an unprompted line. `prevWeatherName` starts `null`

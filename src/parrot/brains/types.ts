@@ -1,3 +1,5 @@
+import type { SceneState } from '../../state/useSceneStore'
+
 /**
  * One line of the chat transcript. `role` names who said it rather than
  * "user"/"assistant" — this panel is in character as a conversation with a
@@ -18,6 +20,9 @@ export interface ParrotBrain {
   readonly id: string
   /** Human-readable, shown in the panel footer, e.g. "ship's memory". */
   readonly label: string
-  /** Streams the answer in fragments so the panel can render progressively. */
-  ask(question: string, history: readonly Turn[]): AsyncIterable<string>
+  /** Streams the answer in fragments so the panel can render progressively.
+   *  `scene` is where the visitor currently is — the cockpit gets a more
+   *  talkative, comical Polly, and a brain needs to know it is there to lean
+   *  into that. */
+  ask(question: string, history: readonly Turn[], scene: SceneState): AsyncIterable<string>
 }

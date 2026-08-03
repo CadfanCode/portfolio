@@ -65,7 +65,7 @@ export function ResumeChrome() {
       </button>
       <a
         className="resume-download"
-        href="/Cai_Birch_CV_Eng.pdf"
+        href="/Cai_Birch_CV.pdf"
         download
         rel="noreferrer"
       >

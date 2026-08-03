@@ -1,7 +1,7 @@
 /**
  * The CV, re-set as a book.
  *
- * The source document is `files/Cai_Birch_CV_Eng.pdf`. A CV is laid out for A4
+ * The source document is `files/Cai_Birch_CV.pdf`. A CV is laid out for A4
  * and reads top-to-bottom in one column; a book reads as facing pages, so the
  * same material is re-broken here into eight pages — a title page, then the
  * sections paired left and right. Blocks are semantic, not visual: the page
