@@ -55,7 +55,7 @@ export const ABOUT_PAGES: readonly AboutPage[] = [
       },
       {
         kind: 'journal',
-        text: "In practice that means not waiting for permission or for conditions to be ideal. When rural North Wales started to feel small, I moved to Sweden. When the economics of working for somebody else stopped adding up, I started my own company — in a language I couldn't yet speak — and ran it for seven years, fitting a master's degree into the evenings.",
+        text: "In practice that means not waiting for conditions to be ideal. When rural North Wales started to feel small, I moved to Sweden. When the economics of working for somebody else stopped adding up, I started my own company in a language I couldn't yet speak, and ran it for seven years while fitting a master's degree into the evenings.",
       },
       {
         kind: 'journal',
@@ -75,11 +75,11 @@ export const ABOUT_PAGES: readonly AboutPage[] = [
     blocks: [
       {
         kind: 'journal',
-        text: "The common thread is that I like taking things apart. Systems, problems, engines, arguments — I want to know what they're actually doing underneath, and then I want to make them work better. Software is the most satisfying place I've found to do that, because the distance between an idea and a working version of it is so short.",
+        text: "The common thread is that I like taking things apart. Whether it's systems, problems, engines or arguments, I want to know what they're actually doing underneath, and then I want to make them work better. Software is the most satisfying place I've found to do that, because the distance between an idea and a working version of it is so short.",
       },
       {
         kind: 'journal',
-        text: "I've also never been much good at leaving well enough alone. I'd rather be slightly out of my depth and learning than comfortable and coasting, which is more or less how I've come by every skill I actually value.",
+        text: "I'd rather be slightly out of my depth and learning than comfortable and coasting, which is more or less how I've come by every skill I actually value.",
       },
       {
         kind: 'journal',

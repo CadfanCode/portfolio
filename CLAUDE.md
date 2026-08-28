@@ -22,12 +22,21 @@ presented as physical objects in the boat. Full narrative vision lives in
 - Exhibit plugin pattern: every project demo implements a shared Exhibit interface
   (hotspot, trigger, content) and registers with a central registry. Adding a new exhibit
   should never require editing the camera rig, state machine, or other exhibits.
+- The CV is data, not a hardcoded link: `plugins/cv.ts` picks the newest PDF out of
+  `files/` at dev-server start and at build, serves it at a stable `/Cai_Birch_CV.pdf`,
+  and exposes it to the app as `virtual:cv`. Dropping a new CV into `files/` is the
+  whole update — no copy into `public/`, no `href` to edit.
 
 ## Folder conventions
 - `scene/` — 3D components (Ocean, Boat, Cabin, CameraRig, Hotspot, exhibits)
 - `state/` — zustand stores
 - `content/` — plain data (bio text, project descriptions), separate from components
 - `assets/models|textures|audio` — GLB models, textures, sound
+- `files/` — source documents, outside `src/`. The CVs are read from here directly by
+  `plugins/cv.ts`; the images are full-size originals that get resized by hand into
+  `src/assets/textures/`. Name a new CV `Cai_Birch_CV_YYYY-MM.pdf`: the plugin reads the
+  date out of the filename, because mtimes do not survive a git clone and so mean
+  nothing on Vercel. A bare month name works too, an undated name always loses.
 
 ## Commands
 - `npm run dev` — local dev server
