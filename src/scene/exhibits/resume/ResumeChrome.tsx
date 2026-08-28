@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { CV_FILENAME, CV_HREF } from 'virtual:cv'
 import { useSceneStore } from '../../../state/useSceneStore'
 import { RESUME_SPREAD_COUNT, useResumeBook } from './useResumeBook'
 import './ResumeChrome.css'
@@ -63,14 +64,20 @@ export function ResumeChrome() {
           <path d="M9 5l7 7-7 7" />
         </svg>
       </button>
-      <a
-        className="resume-download"
-        href="/Cai_Birch_CV.pdf"
-        download
-        rel="noreferrer"
-      >
-        Download PDF
-      </a>
+      {/* Whichever CV in `files/` is current — resolved at build time by
+          `plugins/cv.ts`, never hardcoded here, so replacing the document is
+          a matter of dropping the new PDF in and nothing else. `null` only
+          when `files/` holds no CV, which the build refuses to ship. */}
+      {CV_HREF && (
+        <a
+          className="resume-download"
+          href={CV_HREF}
+          download={CV_FILENAME ?? true}
+          rel="noreferrer"
+        >
+          Download PDF
+        </a>
+      )}
     </div>
   )
 }

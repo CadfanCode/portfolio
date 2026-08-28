@@ -52,6 +52,22 @@ export function usePointerSelect({
       if (!enabled || !start) return
       if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > DRAG_SLOP) return
 
+      // Claim the click so nothing behind this object also selects. R3F walks
+      // every object the ray hits, near-to-far, and only stops at a handler
+      // that says so — so without this, a click clipping two neighbouring hit
+      // boxes runs both `onSelect`s and the *farther* object, going last,
+      // wins. That is what made the book spines open each other's exhibit:
+      // barely 4 mm of air sits between two spines, and each one's hit box is
+      // deliberately pushed 25 mm out into the cabin to be clickable at all,
+      // so an off-square ray goes through both.
+      //
+      // Stopped here rather than at the top of the handler on purpose. A drag
+      // release and a disabled object have both already returned above, so
+      // neither swallows a click meant for something behind it — only an
+      // object that is actually about to select does. This flags R3F's own
+      // traversal and leaves the DOM event alone, so `FocusExit` and the rest
+      // of the overlay chrome still see it.
+      e.stopPropagation()
       onSelect()
     },
 

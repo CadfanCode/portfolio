@@ -136,6 +136,31 @@ function trackedWidth(ctx: CanvasRenderingContext2D, text: string, tracking: num
   return text.length > 0 ? width - tracking : 0
 }
 
+/** `wrapText` for tracked runs. The plain wrapper measures with `measureText`,
+ *  which knows nothing about the per-glyph spacing `fillTracked` adds, so a
+ *  tracked line wrapped with it comes out too long. */
+function wrapTracked(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  tracking: number,
+  maxWidth: number,
+): string[] {
+  const words = text.split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let line = ''
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word
+    if (trackedWidth(ctx, candidate, tracking) > maxWidth && line) {
+      lines.push(line)
+      line = word
+    } else {
+      line = candidate
+    }
+  }
+  if (line) lines.push(line)
+  return lines
+}
+
 /** Draws `text` letter-by-letter with extra spacing between glyphs — canvas
  *  has no native letter-spacing, so small-caps-style labels (section tabs,
  *  row labels, org names) are tracked out by hand. Always resolves to a
@@ -204,7 +229,15 @@ function drawTitle(
   cursor.y += 48
   ctx.font = `700 27px ${BODY_FONT}`
   ctx.fillStyle = ACCENT_COLOUR
-  fillTracked(ctx, block.subtitle.toUpperCase(), centreX, cursor.y, 4, 'center')
+  // Wrapped, not drawn in one run: `fillTracked` centres whatever it is given
+  // and has no notion of a page edge, so a role line longer than the column
+  // used to run off both sides of the sheet and get clipped by the canvas.
+  // Breaking it keeps a long title on the page instead of losing its ends.
+  const subtitleLines = wrapTracked(ctx, block.subtitle.toUpperCase(), 4, right - left)
+  subtitleLines.forEach((line, i) => {
+    if (i > 0) cursor.y += 34
+    fillTracked(ctx, line, centreX, cursor.y, 4, 'center')
+  })
 
   cursor.y += 32
   ctx.strokeStyle = ACCENT_COLOUR
