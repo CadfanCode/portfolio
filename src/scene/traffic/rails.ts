@@ -53,5 +53,14 @@ export function lanePoint(lane: LaneDef, d: number): [number, number] {
 /** Lane heading as a Y rotation in radians, for a vessel travelling in `dir`. */
 export function laneHeading(lane: LaneDef, dir: 1 | -1): number {
   const rad = (lane.bearingDeg * Math.PI) / 180
-  return dir === 1 ? rad : rad + Math.PI
+  // Negated, not simply the bearing. Vessel models are normalised to point
+  // along -Z, and this angle is applied straight to `rotation.y`. Rotating the
+  // local bow (0, 0, -1) by theta about Y gives a world direction of
+  // (-sin theta, -cos theta), while the lane's own travel direction is
+  // (sin b, -cos b) — so theta = b lands the bow on the x-mirror of the way
+  // the vessel is actually going. On the near lane, bearing 105, that had them
+  // sailing sideways-backwards. theta = -b makes the two expressions equal.
+  // `rails.test.ts` pins this by comparing the rotated bow vector against the
+  // travel direction read off `lanePoint`, on every lane, in both directions.
+  return dir === 1 ? -rad : Math.PI - rad
 }
