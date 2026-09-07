@@ -26,6 +26,7 @@ import { FocusTargets } from './FocusTargets'
 import { IntroClouds } from './IntroClouds'
 import { IntroTitle } from './IntroTitle'
 import { Ocean } from './Ocean'
+import { OceanFar } from './water/OceanFar'
 import { ParrotAssistant } from '../parrot'
 import { QualityMonitor } from './QualityMonitor'
 import { Soundscape } from './Soundscape'
@@ -292,6 +293,7 @@ export function PortfolioWorld() {
         <Weather />
 
         <Ocean />
+        <OceanFar />
       </group>
       <group ref={boatFrame}>
         <Boat />
