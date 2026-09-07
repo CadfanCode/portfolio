@@ -20,6 +20,7 @@
 - **Quality knobs:** adding one is "one line in each of the three tiers and one line in the consumer" (`src/scene/quality.ts:11-14`). Tiers are resolved once at import and never change at runtime.
 - **Procedural texture idiom** (`src/scene/CabinPictures.tsx:184-261`): draw to an offscreen canvas, wrap in `CanvasTexture`, set `colorSpace = SRGBColorSpace`, clamp anisotropy to `Math.min(tierAnisotropy, gl.capabilities.getMaxAnisotropy())`, dispose on unmount or deps change.
 - **Seeded randomness only.** Islands and prop scatter must be byte-identical across loads and machines. Only traffic timing is live-random.
+- **Named exports only.** The codebase is 56:1 named-to-default (`src/App.tsx` is the sole default). Every interface block below is written with named exports; keep it that way.
 - **Commands:** `npx tsc -b` typecheck, `npm run lint`, `npm run build`, `npx vitest run` tests, `npm run model:build` / `model:verify` Blender.
 - **Screenshots time out in this project.** Verify the running scene by importing the store and R3F `_roots` from the dev server, never by screenshotting.
 
@@ -151,7 +152,7 @@ Ships and is verified before any land exists, so the seam verdict is not confoun
 
 **Interfaces:**
 - Consumes: `sampleConditions` from `src/scene/conditions.ts`; the `skyColor()` GLSL function and fog term from `src/scene/Ocean.tsx`.
-- Produces: `export default function OceanFar(): JSX.Element` — a mesh mounted in `worldFrame`.
+- Produces: `export function OceanFar(): JSX.Element` — a mesh mounted in `worldFrame`.
 
 **Why inner radius 190, not 200 or 285.** Every point at radius 190 satisfies `|x| <= 190 <= 200` and `|z| <= 190 <= 200`, so the ring's inner edge is covered by the square ocean plane in *every* direction. The square reaches 200 m on axis but 282.8 m at the corners, so an inner radius anywhere above 200 leaves a wedge of missing water along the axes. Do not "tidy" this number upward.
 
@@ -574,7 +575,7 @@ git commit -m "feat: build island heightfield geometry from seeded noise"
 - Produces:
   - `export const ISLANDS: readonly IslandDef[]` from `layout.ts`
   - `export function useGraniteMaterial(): MeshStandardMaterial` from `granite.ts`
-  - `export default function Archipelago(): JSX.Element` from `Archipelago.tsx`
+  - `export function Archipelago(): JSX.Element` from `Archipelago.tsx`
   - New `settings.archipelago` on the quality store: `{ islandSegments: { near: number; mid: number; far: number }; pineDensity: number; farIslands: number }`
 
 - [ ] **Step 1: Add the quality knobs**
@@ -1092,7 +1093,7 @@ git commit -m "feat: add traffic lanes and Poisson spawn scheduler"
 
 **Interfaces:**
 - Consumes: `LANES`, `lanePoint`, `laneHeading` from `./rails`; `FLEET` from `./fleet`; `seedLane`, `stepLane`, `vesselDistance` from `./scheduler`; `sampleHeight` from `../water/waves`; `heelAngle`, `WIND_DIR` from `../wind`; `sampleConditions` from `../conditions`.
-- Produces: `export default function Traffic(): JSX.Element`; new `settings.traffic` on the quality store: `{ maxConcurrent: { near: number; mid: number; far: number }; wakes: boolean }`.
+- Produces: `export function Traffic(): JSX.Element`; new `settings.traffic` on the quality store: `{ maxConcurrent: { near: number; mid: number; far: number }; wakes: boolean }`.
 
 - [ ] **Step 1: Download the vessel models**
 
