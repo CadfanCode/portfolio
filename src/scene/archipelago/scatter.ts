@@ -28,9 +28,18 @@ const MIN_SPACING = 3.5
 const MAX_ATTEMPTS_PER_TREE = 40
 /** Steeper than this and a pine cannot root. */
 const MAX_SLOPE = 0.6
-/** No trees below this fraction of the island's peak height — the
- *  wave-washed rock at the shore. */
-const SHORE_FRACTION = 0.3
+/**
+ * Height above sea level below which nothing grows: the splash zone.
+ *
+ * An absolute band in metres, not a fraction of the island's height, because
+ * that is what sets it in reality — how far spray and winter ice reach up the
+ * rock depends on the sea, not on how tall the land behind it happens to be.
+ * As a fraction it was 0.3, which on the 13 m mid island kept every tree above
+ * 3.9 m and left a wide bare apron round the shore that read as a sand beach
+ * rather than as granite. Inner-archipelago pines come very nearly down to the
+ * waterline.
+ */
+const SHORE_BAND_M = 1.2
 
 /** Weighted pick among the three pine variants. Stunted pines are biased
  *  toward low, exposed ground so the treeline reads as denser, taller forest
@@ -79,7 +88,7 @@ export function scatterPines(
 
     const y = surface.sampleAt(x, z)
     if (y === null) continue
-    if (y <= def.height * SHORE_FRACTION) continue
+    if (y <= SHORE_BAND_M) continue
     if (surface.slopeAt(x, z) > MAX_SLOPE) continue
 
     let tooClose = false

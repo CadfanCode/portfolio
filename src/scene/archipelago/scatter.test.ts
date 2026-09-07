@@ -24,9 +24,13 @@ describe('scatterPines', () => {
   })
 
   it('keeps pines off the bare shore zone', () => {
-    // Trees do not grow on the wave-washed rock at the waterline.
+    // Trees do not grow in the splash zone. That band is absolute — set by how
+    // far spray and winter ice reach up the rock — not a fraction of the
+    // island's height, so this asserts metres above sea level rather than a
+    // proportion. As a proportion it kept every tree above 3.9 m on the mid
+    // island and left a bare apron that read as a beach.
     for (const p of scatterPines(SURFACE, DEF, 60, 3)) {
-      expect(p.position[1]).toBeGreaterThan(DEF.height * 0.3)
+      expect(p.position[1]).toBeGreaterThan(1.0)
     }
   })
 
