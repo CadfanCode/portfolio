@@ -192,8 +192,14 @@ function paintEntry(
   maxWidth: number,
 ): number {
   const rand = makeRand(hashSeed(post.permalink))
-  const rotation = (rand() - 0.5) * 0.04
-  const wobble = (rand() - 0.5) * 10
+  // Rotation and indent are rolled per entry and deliberately generous. A
+  // tighter jitter reads as a typeset list in a script face rather than as
+  // something a person wrote on a board with a marker, which is the whole
+  // point of the object: the eye picks up a ruler-straight left margin
+  // immediately, and nothing else about the drawing recovers from it.
+  const rotation = (rand() - 0.5) * 0.09
+  const indent = (rand() - 0.5) * 36
+  const wobble = (rand() - 0.5) * 14
   // Older entries read fainter, as if written earlier and half wiped since —
   // the same logic a real memo board follows, where the newest note is
   // always the boldest one.
@@ -203,18 +209,21 @@ function paintEntry(
   const lines = wrapText(ctx, post.title, maxWidth)
 
   ctx.save()
-  ctx.translate(MARGIN_X, top)
+  ctx.translate(MARGIN_X + indent, top)
   ctx.rotate(rotation)
   ctx.textAlign = 'left'
   ctx.fillStyle = `rgba(32, 48, 63, ${inkAlpha})`
   let lineY = 60 + wobble
   for (const line of lines) {
-    ctx.fillText(line, 0, lineY)
+    // A second, smaller roll per line. Hand-written lines under one another
+    // drift apart slightly rather than stacking on a fixed grid, and the
+    // wrapped second line of a long title is where that shows most.
+    ctx.fillText(line, (rand() - 0.5) * 10, lineY)
     lineY += 70
   }
   ctx.fillStyle = `rgba(58, 80, 104, ${inkAlpha * 0.75})`
   ctx.font = `400 40px ${HAND_FONT}`
-  ctx.fillText(DATE_FORMAT.format(post.published), 4, lineY + 6)
+  ctx.fillText(DATE_FORMAT.format(post.published), 4 + (rand() - 0.5) * 12, lineY + 6)
   ctx.restore()
 
   return top + 60 + lines.length * 70 + 66
@@ -246,10 +255,23 @@ export function renderWhiteboard(posts: readonly BlogPost[]): HTMLCanvasElement 
   if (posts.length === 0) {
     paintEmptyNotice(ctx)
   } else {
+    // Measure before drawing, so the entries can be spread down the board
+    // instead of stacking from the top and leaving a dead band above the URL
+    // scrawl. Titles vary in length, so the natural height is only knowable
+    // after wrapping — hence the measuring pass.
+    ctx.font = `600 66px ${HAND_FONT}`
+    const lineCounts = posts.map((post) => wrapText(ctx, post.title, maxWidth).length)
+    const natural = lineCounts.reduce((sum, n) => sum + 60 + n * 70 + 66, 0)
+    const slack = ENTRIES_BOTTOM - ENTRIES_TOP - natural
+    // Capped: with one short post, spreading the full slack would push the
+    // single entry into the middle of nowhere. Capped at 90 px the board reads
+    // as loosely spaced rather than as either cramped or empty.
+    const extraGap = posts.length > 1 ? Math.max(0, Math.min(90, slack / (posts.length - 1))) : 0
+
     let cursor = ENTRIES_TOP
     for (let i = 0; i < posts.length; i++) {
       if (cursor > ENTRIES_BOTTOM) break
-      cursor = paintEntry(ctx, posts[i], i, cursor, maxWidth)
+      cursor = paintEntry(ctx, posts[i], i, cursor, maxWidth) + (i < posts.length - 1 ? extraGap : 0)
     }
   }
 
