@@ -149,6 +149,22 @@ export type QualitySettings = {
     readonly farIslands: number
   }
 
+  readonly traffic: {
+    /**
+     * Overrides `LaneDef.maxConcurrent` (`traffic/rails.ts`) at runtime, per
+     * lane. `rails.ts` keeps the high-tier numbers as its authored defaults;
+     * every other tier's cap comes from here instead, the same split
+     * `archipelago.farIslands` makes against `layout.ts`'s full island list.
+     */
+    readonly maxConcurrent: { readonly near: number; readonly mid: number; readonly far: number }
+    /**
+     * Whether vessels draw a wake plane. Off at `low`: a wake is an additive
+     * quad behind every active vessel, one draw call each, and the visual
+     * loss reads as "calmer water" rather than a missing feature.
+     */
+    readonly wakes: boolean
+  }
+
   readonly sky: {
     /**
      * drei `<Environment resolution>`. Baked exactly once (drei's `frames`
@@ -244,6 +260,7 @@ const HIGH: QualitySettings = {
   },
   ocean: { segments: 240 },
   archipelago: { islandSegments: { near: 96, mid: 64, far: 32 }, pineDensity: 1.0, farIslands: 9 },
+  traffic: { maxConcurrent: { near: 3, mid: 2, far: 1 }, wakes: true },
   sky: { envResolution: 512 },
   intro: { cloudSheets: 7 },
   rainCount: 1800,
@@ -264,6 +281,7 @@ const MEDIUM: QualitySettings = {
   },
   ocean: { segments: 180 },
   archipelago: { islandSegments: { near: 72, mid: 48, far: 24 }, pineDensity: 0.7, farIslands: 6 },
+  traffic: { maxConcurrent: { near: 2, mid: 1, far: 1 }, wakes: true },
   sky: { envResolution: 256 },
   intro: { cloudSheets: 4 },
   rainCount: 900,
@@ -284,6 +302,7 @@ const LOW: QualitySettings = {
   },
   ocean: { segments: 120 },
   archipelago: { islandSegments: { near: 48, mid: 32, far: 16 }, pineDensity: 0.35, farIslands: 4 },
+  traffic: { maxConcurrent: { near: 1, mid: 1, far: 0 }, wakes: false },
   sky: { envResolution: 128 },
   intro: { cloudSheets: 3 },
   rainCount: 500,

@@ -31,6 +31,7 @@ import { OceanFar } from './water/OceanFar'
 import { ParrotAssistant } from '../parrot'
 import { QualityMonitor } from './QualityMonitor'
 import { Soundscape } from './Soundscape'
+import { Traffic } from './traffic/Traffic'
 import { Weather } from './Weather'
 import { sampleConditions } from './conditions'
 import { Exhibits } from './exhibits/Exhibits'
@@ -297,6 +298,7 @@ export function PortfolioWorld() {
         <Ocean />
         <OceanFar />
         <Archipelago />
+        <Traffic />
       </group>
       <group ref={boatFrame}>
         <Boat />
