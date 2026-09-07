@@ -124,6 +124,31 @@ export type QualitySettings = {
     readonly segments: number
   }
 
+  readonly archipelago: {
+    /**
+     * Heightfield mesh resolution per island tier — see `IslandTier` in
+     * `archipelago/island.ts`. The near skerry is the one thing the ocean
+     * camera actually swings past at close range (~14 m orbit radius vs. a
+     * ~72 m skerry), so it keeps the most detail even at the bottom tier; the
+     * far band is never seen as more than a silhouette and can drop hardest.
+     */
+    readonly islandSegments: { readonly near: number; readonly mid: number; readonly far: number }
+    /**
+     * Multiplies the pine count `archipelago/props.tsx` scatters per island.
+     * Trees are the cheapest thing here per-instance (one draw call per
+     * `PropKind`), so this is a gentler taper than the far-island count below.
+     */
+    readonly pineDensity: number
+    /**
+     * How many of the generated far-band islands (`layout.ts`'s `ISLANDS`,
+     * sliced) actually get built and mounted. The full band is authored once
+     * from a fixed seed regardless of tier — see `layout.ts` — so raising this
+     * only ever adds islands already in that fixed order, never reshuffles
+     * the coastline a visitor has already seen at a lower tier.
+     */
+    readonly farIslands: number
+  }
+
   readonly sky: {
     /**
      * drei `<Environment resolution>`. Baked exactly once (drei's `frames`
@@ -218,6 +243,7 @@ const HIGH: QualitySettings = {
     dof: true,
   },
   ocean: { segments: 240 },
+  archipelago: { islandSegments: { near: 96, mid: 64, far: 32 }, pineDensity: 1.0, farIslands: 9 },
   sky: { envResolution: 512 },
   intro: { cloudSheets: 7 },
   rainCount: 1800,
@@ -237,6 +263,7 @@ const MEDIUM: QualitySettings = {
     dof: true,
   },
   ocean: { segments: 180 },
+  archipelago: { islandSegments: { near: 72, mid: 48, far: 24 }, pineDensity: 0.7, farIslands: 6 },
   sky: { envResolution: 256 },
   intro: { cloudSheets: 4 },
   rainCount: 900,
@@ -256,6 +283,7 @@ const LOW: QualitySettings = {
     dof: false,
   },
   ocean: { segments: 120 },
+  archipelago: { islandSegments: { near: 48, mid: 32, far: 16 }, pineDensity: 0.35, farIslands: 4 },
   sky: { envResolution: 128 },
   intro: { cloudSheets: 3 },
   rainCount: 500,

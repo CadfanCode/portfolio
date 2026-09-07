@@ -10,6 +10,7 @@ import type {
   HemisphereLight,
   Vector3Tuple,
 } from 'three'
+import { Archipelago } from './archipelago/Archipelago'
 import { boatWorldInverse, worldFrameQuat } from './water/boatPose'
 import { useQualityStore } from '../state/useQualityStore'
 import { useSceneStore } from '../state/useSceneStore'
@@ -294,6 +295,7 @@ export function PortfolioWorld() {
 
         <Ocean />
         <OceanFar />
+        <Archipelago />
       </group>
       <group ref={boatFrame}>
         <Boat />
