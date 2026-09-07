@@ -34,6 +34,7 @@ import { Soundscape } from './Soundscape'
 import { Weather } from './Weather'
 import { sampleConditions } from './conditions'
 import { Exhibits } from './exhibits/Exhibits'
+import { Whiteboard } from './exhibits/whiteboard/Whiteboard'
 import { sampleHullPlane } from './water/waves'
 import type { HullPlane } from './water/waves'
 import { heelAngle } from './wind'
@@ -338,6 +339,7 @@ export function PortfolioWorld() {
             everything else fixed to the joinery. See CabinPictures.tsx for why
             they're deliberately not a matched pair. */}
         <CabinPictures />
+        <Whiteboard />
         {/* Polly, the guide character — perched on deck, so a sibling of
             `Boat` here rather than a new exhibit; see `parrot/`. */}
         <ParrotAssistant />
