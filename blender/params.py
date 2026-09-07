@@ -1825,6 +1825,102 @@ HULL_SECTION_POINTS = 28
 """Points per half-section, keel to sheer."""
 
 
+# --- Archipelago prop kit --------------------------------------------------
+#
+# A second, unrelated model built by the same pipeline: a small kit of
+# Stockholm-archipelago scenery -- pines, a red house, a boathouse, a jetty, a
+# sea mark, a flagpole -- exported separately as `archipelago-kit.glb` and
+# scattered as instances around the boat by the app. None of it is the Maxi
+# 77, so nothing here carries a class-rule reference; every figure is FITTED,
+# and its source is the design plan's own target table rather than a
+# measurement of a real object:
+# `docs/superpowers/plans/2026-09-07-archipelago-and-traffic.md`, Task 5.
+# Where that table gave a description rather than a number -- an eave height,
+# a trunk-to-crown split -- the figure here is a judgement call made from it,
+# and is marked as such.
+#
+# These are background props rendered as GPU instances at 70-180 m, so the
+# budget is the opposite of the boat's: the whole kit has to clear 200 KB
+# uncompressed, with no draco and no meshopt to save it. Every part is built
+# from a handful of cones and boxes -- see `archipelago.py` -- never a
+# textured or heavily subdivided surface.
+
+KIT_PINE_A_HEIGHT = 9.0
+KIT_PINE_A_CROWN = 3.2
+"""A full-grown Scots pine: bare lower trunk, layered crown well up the stem.
+Plan table, `pine_a`."""
+
+KIT_PINE_B_HEIGHT = 12.0
+KIT_PINE_B_CROWN = 3.8
+"""The tall variant, so a scattered treeline is not one tree repeated at three
+scales. Plan table, `pine_b`."""
+
+KIT_PINE_STUNTED_HEIGHT = 4.5
+KIT_PINE_STUNTED_CROWN = 2.6
+"""What actually grows on the outer, wind-scoured skerries: short, bent,
+gnarled. Plan table, `pine_stunted`."""
+
+KIT_PINE_TRUNK_FRACTION = 0.58
+"""How much of a pine's height is bare trunk before the crown starts. Not in
+the plan table -- Scots pine self-prunes its lower branches, and photographs
+of Baltic skerry pines put the clear stem at a bit over half the tree.
+`pine_stunted` uses a lower fraction (see `archipelago.py`): a wind-bent tree
+this short has crown much closer to the ground."""
+
+KIT_HOUSE_WIDTH = 8.0
+KIT_HOUSE_DEPTH = 6.0
+KIT_HOUSE_RIDGE = 6.5
+"""`house_red`. Plan table: 8 x 6 m, 6.5 m ridge."""
+
+KIT_BOATHOUSE_WIDTH = 6.0
+KIT_BOATHOUSE_DEPTH = 4.0
+KIT_BOATHOUSE_RIDGE = 4.0
+"""`boathouse_red`. Plan table: 6 x 4 m, 4 m ridge. Its gable end facing the
+water (+Y, the kit's shared "front") is left open -- no wall panel -- per the
+plan's art direction."""
+
+KIT_HOUSE_EAVE_FRACTION = 0.46
+"""Eave (wall-top) height as a fraction of the ridge height. Not in the plan
+table. A single-storey Falu cottage's eaves sit a bit under half its total
+height at the peak; judgement call, not a source."""
+
+KIT_HOUSE_TRIM_PROUD = 0.05
+"""How far the corner boards and window trim stand proud of the wall plane.
+FITTED: enough to throw its own small shadow line and read as applied timber
+rather than a decal painted on the wall, without reading as a batten."""
+
+KIT_JETTY_LENGTH = 12.0
+KIT_JETTY_WIDTH = 1.6
+KIT_JETTY_DECK_HEIGHT = 0.6
+"""`jetty`. Plan table: 12 x 1.6 m, deck 0.6 m above the water. Runs from the
+kit's base centre (the shore end) out along +Y."""
+
+KIT_JETTY_DECK_THICKNESS = 0.08
+KIT_JETTY_PILE_RADIUS = 0.09
+KIT_JETTY_PILE_SPACING = 3.0
+KIT_JETTY_PILE_DROP = 1.4
+"""Timber piles under the deck, one pair every 3 m, driven well below the
+waterline so no gap can show under the deck at any wave height the app draws.
+FITTED -- the plan table gives the deck, not what holds it up."""
+
+KIT_SEA_MARK_HEIGHT = 3.0
+"""A stone cairn -- the commonest Baltic unlit mark, a pile of rock raised on
+a skerry rather than a built structure. Plan table: 3 m, `sea_mark`."""
+
+KIT_FLAGPOLE_HEIGHT = 7.0
+KIT_FLAGPOLE_RADIUS = 0.045
+"""`flagpole`. Plan table: slim white pole, 7 m. The radius is FITTED --
+proportion of a real garden flagpole, thin enough to read as "slim" without
+vanishing to sub-pixel width at 70 m."""
+
+KIT_FLAG_WIDTH = 0.90
+KIT_FLAG_HEIGHT = 0.60
+"""The small Swedish flag near the pole's top. FITTED to the flag's own
+published proportions (a Swedish flag is 5:8 with the cross at 2/5 and 3/8),
+simplified to two crossing bars over a blue field since nothing here is
+textured -- see `archipelago.py`."""
+
+
 # --- Derived helpers ------------------------------------------------------
 
 def station_to_y(station: float) -> float:
