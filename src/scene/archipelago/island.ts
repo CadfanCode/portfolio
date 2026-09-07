@@ -39,12 +39,29 @@ const SKIRT_R = 1.15
 /** How far below sea level the skirt drops by the time it reaches `SKIRT_R`. */
 const SKIRT_DEPTH = -1.5
 
-/** Rock tone before the granite texture and its tint bands are applied. */
-const ROCK_COLOR = new Color(0.55, 0.52, 0.47)
-/** Wet-rock tone blended in near the waterline. */
-const WET_COLOR = new Color(0.26, 0.28, 0.29)
-/** Lichen tint blended in high on the rock, above the wet band. */
-const LICHEN_COLOR = new Color(0.44, 0.53, 0.34)
+/**
+ * Rock tone before the granite texture and its tint bands are applied.
+ *
+ * Near white, deliberately. These are vertex colours and three multiplies them
+ * against the granite `map`, which is already a mid grey around #8d8781 — so a
+ * mid-grey base here darkens the rock twice over and the islands come out as
+ * mud. The map carries the colour; this carries only a faint warm cast, because
+ * Baltic granite is pink-grey rather than neutral.
+ */
+const ROCK_COLOR = new Color(1.0, 0.97, 0.95)
+/** Wet-rock tone blended in near the waterline. Darker and cooler, never black. */
+const WET_COLOR = new Color(0.52, 0.55, 0.58)
+/**
+ * Lichen tint blended in high on the rock.
+ *
+ * Pale and desaturated, and capped below at LICHEN_MAX. Lichen on these islands
+ * is a patchy crust, not ground cover — blending to a saturated green at full
+ * strength turned the whole top of the near skerry olive, which read as moss on
+ * a mound rather than as weathered stone.
+ */
+const LICHEN_COLOR = new Color(0.74, 0.76, 0.63)
+/** Ceiling on the lichen blend. A tint, never a cap of green. */
+const LICHEN_MAX = 0.45
 
 /**
  * Height at a local `(u, v)` — the unit-disc coordinates in which the island's
@@ -122,7 +139,7 @@ export function buildIsland(def: IslandDef, segments: number): IslandSurface {
       }
       if (y > def.height * 0.6) {
         const t = Math.min(1, (y - def.height * 0.6) / (def.height * 0.4))
-        tmpColor.lerp(LICHEN_COLOR, t)
+        tmpColor.lerp(LICHEN_COLOR, t * LICHEN_MAX)
       }
       colors[p] = tmpColor.r
       colors[p + 1] = tmpColor.g
