@@ -29,6 +29,17 @@ presented as physical objects in the boat. Full narrative vision lives in
 
 ## Folder conventions
 - `scene/` — 3D components (Ocean, Boat, Cabin, CameraRig, Hotspot, exhibits)
+- `scene/exhibits/` — the registered exhibits (currently `dummy`, `resume`, `about`)
+- `scene/archipelago/` — the Stockholm archipelago. Islands are seeded-noise
+  heightfields (`island.ts`) placed from authored data (`layout.ts`), with props
+  instanced from a Blender-built `archipelago-kit.glb`. Placement is authored, not
+  random, so a visitor sees the same coastline every visit — only seeded randomness
+  is allowed here, nothing may call `Math.random`.
+- `scene/traffic/` — background vessels on straight lanes. `rails.ts`, `fleet.ts` and
+  `scheduler.ts` are deliberately pure (no React, no three.js) because the spawn
+  behaviour is verified statistically by unit tests.
+- `scene/water/OceanFar.tsx` — a flat ring carrying the sea from `Ocean`'s 400x400
+  plane out to 1600 m.
 - `state/` — zustand stores
 - `content/` — plain data (bio text, project descriptions), separate from components
 - `assets/models|textures|audio` — GLB models, textures, sound
@@ -41,9 +52,12 @@ presented as physical objects in the boat. Full narrative vision lives in
 ## Commands
 - `npm run dev` — local dev server
 - `npm run lint` — Oxlint
+- `npm test` — vitest
 - `npm run build` — production build (`tsc -b` then `vite build`)
 - `npx tsc -b` — typecheck on its own
-- `npm run model:build|model:verify|model:preview` — the Blender model pipeline
+- `npm run model:build|model:verify|model:preview` — the Blender model pipeline. Boat
+  is the default target; `npm run model:build -- --target archipelago` builds the
+  prop kit instead.
 
 ## How work gets done
 This session is the **arbiter** (Opus 5, xhigh — set in `.claude/settings.json`). It
@@ -63,13 +77,21 @@ Phase 6: real exhibits. The core loop is built — `useSceneStore`, `CameraRig` 
 drei's `CameraControls` with per-stop look limits, the `focus` close-up axis, and the
 Exhibit registry proven by `exhibits/dummy.tsx`. Art direction is largely in: the
 boat is a parametric Blender model loaded through `useGLTF`, with interior, weather
-and soundscape.
+and soundscape. The About Me book is built (`about` exhibit, `content/about.ts` has
+its six pages), and so is the world around the boat: the archipelago, background
+traffic, and a cabin whiteboard showing the latest posts from the owner's Blogger
+blog.
 
-What is missing is content. `content/projects.ts` and `content/about.ts` are empty
-scaffolds, and `dummy` is still the only registered exhibit. Next up is About Me
-(the book), then the two technical exhibits — each one a module plus a registry
-line, no core changes.
+What is missing is content for the two technical exhibits, and `content/projects.ts`
+is still an empty scaffold. Next up is those two exhibits — each one a module plus a
+registry line, no core changes.
 
 ## Conventions
 - Fake cheap effects over real simulation — no real physics, bake lighting where possible.
 - New exhibits go through the Exhibit registry, never wired directly into App.tsx.
+- Islands and traffic mount inside `worldFrame`, never `boatFrame`. `worldFrame`
+  rotates to fake the boat's motion, so land and other vessels must rock with the
+  horizon rather than with the deck.
+- Custom `ShaderMaterial` gets no automatic three.js fog. Any new shader over water
+  must copy Ocean's fog term verbatim, or its geometry will not fade into the
+  horizon with everything else.
