@@ -1,5 +1,6 @@
 import type { IslandDef } from './island'
 import { makeRng } from './noise'
+import type { Placement } from './scatter'
 
 /**
  * Authored placement of the three named islands the boat actually passes
@@ -81,3 +82,74 @@ function buildFarBand(): IslandDef[] {
  * always all present.
  */
 export const ISLANDS: readonly IslandDef[] = [...NAMED_ISLANDS, ...buildFarBand()]
+
+/* -------------------------------------------------------------------------- */
+/*  Authored props                                                             */
+/* -------------------------------------------------------------------------- */
+
+const ISLAND_MID = NAMED_ISLANDS.find((d) => d.id === 'island-mid')!
+const SKERRY_NEAR = NAMED_ISLANDS.find((d) => d.id === 'skerry-near')!
+
+/** Convert a local unit-disc fraction (see `island.ts`) to an island's world
+ *  XZ. Authoring landmarks in the same footprint coordinates the terrain
+ *  itself is built in beats guessing raw metres by eye, and keeps a
+ *  placement valid even if an island's `a`/`b`/`rotation` is ever retuned. */
+function localToWorld(def: IslandDef, u: number, v: number): [number, number] {
+  const cos = Math.cos(def.rotation)
+  const sin = Math.sin(def.rotation)
+  const lx = u * def.a
+  const lz = v * def.b
+  return [def.centre[0] + lx * cos - lz * sin, def.centre[1] + lx * sin + lz * cos]
+}
+
+/** Heading (radians about Y) that points a kit part's local -Z axis — its
+ *  "front", per the kit's export convention — away from the island centre at
+ *  world `(x, z)`. Used for the jetty and boathouse, which must face the
+ *  open water rather than the rock. */
+function headingOutward(def: IslandDef, x: number, z: number): number {
+  const dx = x - def.centre[0]
+  const dz = z - def.centre[1]
+  return Math.atan2(-dx, -dz)
+}
+
+/**
+ * The hand-placed landmarks: a house and flagpole set back on a shoulder of
+ * `island-mid`, a jetty running out from its shore with a boathouse beside
+ * it, and a sea mark on the bare `skerry-near`. Composition, not procedural
+ * fill — see `scatterPines` in `scatter.ts` for the pines these sit among.
+ *
+ * `y` is left at 0 here and snapped to the owning island's surface by
+ * `props.tsx` when it builds the instance matrices, rather than hardcoded:
+ * a hardcoded height would drift the moment the noise powering the terrain
+ * changes.
+ */
+export const AUTHORED_PROPS: readonly Placement[] = (() => {
+  const house = localToWorld(ISLAND_MID, 0.2, 0.35)
+  const flagpole = localToWorld(ISLAND_MID, 0.15, 0.47)
+  const jetty = localToWorld(ISLAND_MID, -0.8, -0.55)
+  const boathouse = localToWorld(ISLAND_MID, -0.72, -0.62)
+  const seaMark = localToWorld(SKERRY_NEAR, 0.1, -0.2)
+
+  return [
+    {
+      kind: 'house_red',
+      position: [house[0], 0, house[1]],
+      rotation: headingOutward(ISLAND_MID, house[0], house[1]),
+      scale: 1,
+    },
+    { kind: 'flagpole', position: [flagpole[0], 0, flagpole[1]], rotation: 0, scale: 1 },
+    {
+      kind: 'jetty',
+      position: [jetty[0], 0, jetty[1]],
+      rotation: headingOutward(ISLAND_MID, jetty[0], jetty[1]),
+      scale: 1,
+    },
+    {
+      kind: 'boathouse_red',
+      position: [boathouse[0], 0, boathouse[1]],
+      rotation: headingOutward(ISLAND_MID, boathouse[0], boathouse[1]),
+      scale: 1,
+    },
+    { kind: 'sea_mark', position: [seaMark[0], 0, seaMark[1]], rotation: 0, scale: 1 },
+  ]
+})()
