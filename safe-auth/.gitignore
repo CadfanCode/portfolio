@@ -1,0 +1,14 @@
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Nothing here should ever hold key material, but be explicit about it: safe-auth
+# generates its CA in memory and writes no keystore. If one of these ever appears,
+# something has gone wrong.
+*.p12
+*.jks
+*.pem
+*.key

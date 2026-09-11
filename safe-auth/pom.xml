@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.6</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>se.example</groupId>
+  <artifactId>safe-auth</artifactId>
+  <version>0.1.0</version>
+  <name>safe-auth</name>
+  <description>A PKI + OpenID Connect learning backend: a virtual keycard opens a virtual safe.</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <!-- Pinned explicitly so a build a year from now produces the same bytes. -->
+    <bouncycastle.version>1.86</bouncycastle.version>
+    <nimbus.version>10.9.1</nimbus.version>
+  </properties>
+
+  <dependencies>
+    <!-- The REST layer. Note: spring-boot-starter-web ONLY. We deliberately do not
+         pull in spring-boot-starter-security, because the whole point of this project
+         is to read the token validation logic rather than let a framework hide it. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- BouncyCastle: certificate generation and signing.
+         bcprov = the crypto primitives (EC key generation, ECDSA signatures).
+         bcpkix = the X.509 / PKCS layer (certificate builders, extensions, PEM I/O). -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+
+    <!-- Nimbus JOSE+JWT: building, signing, parsing and verifying the two JWTs,
+         and rendering the public key as a JWK for /.well-known/jwks.json. -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <version>${nimbus.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

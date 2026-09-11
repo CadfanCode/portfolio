@@ -48,6 +48,14 @@ presented as physical objects in the boat. Full narrative vision lives in
   `src/assets/textures/`. Name a new CV `Cai_Birch_CV_YYYY-MM.pdf`: the plugin reads the
   date out of the filename, because mtimes do not survive a git clone and so mean
   nothing on Vercel. A bare month name works too, an undated name always loses.
+- `safe-auth/` — a standalone Java 21 / Spring Boot backend, in this repo for
+  convenience only and coupled to the site by nothing but its REST API. It is a
+  PKI + OpenID Connect demo: a client certificate is the keycard, a PBKDF2 passcode
+  unlocks it, and an access token's scopes decide what the safe contains. It is
+  excluded from Vercel deploys by `.vercelignore`, because Vercel builds static
+  assets and never runs a JVM — deploying it means a container, somewhere else.
+  Build it with its own wrapper (`cd safe-auth && ./mvnw test`), never with `npm`.
+  Its own `safe-auth/README.md` is the reference; do not restate it here.
 
 ## Commands
 - `npm run dev` — local dev server
