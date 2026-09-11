@@ -263,6 +263,40 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
       { position: [0.78, 0.787, -0.261], target: [0.78, 0.787, -0.671] },
     ],
   },
+
+  /**
+   * The memo whiteboard, on the aft bulkhead's port panel above the chart
+   * table — the wall the cabin camera has its back to at rest. See
+   * `docs/superpowers/specs/2026-09-07-blog-whiteboard-design.md` for why
+   * this wall and not one of the tighter forward gaps.
+   *
+   * The board's own face sits at z 1.335 (the bulkhead at 1.353 less
+   * `Whiteboard.tsx`'s frame depth) with its normal pointing back down -z
+   * toward the saloon, so — unlike every other focus above, all of which
+   * are read from the +z side looking aft — this one is read from the -z
+   * side looking forward, square on to a wall behind the visitor's resting
+   * gaze. Reaching it costs a real turn (azimuth is unlimited at this stop,
+   * so nothing stops it, but the direction from the stop's eye to the board
+   * is roughly 68° off the resting look direction — the price of putting a
+   * memo board where a memo board actually belongs on a boat, over the nav
+   * station, rather than squeezed into one of the forward bulkhead's two
+   * 0.372 m gaps).
+   *
+   * One leg to turn and close half the distance while still upright near
+   * the stop, a second square-on lean-in at a read distance close enough
+   * (0.37 m) to fill most of the frame with a 0.44 m-wide board, the same
+   * `0.93·d` rule this file's header works every other leg to.
+   */
+  whiteboard: {
+    id: 'whiteboard',
+    label: 'The whiteboard',
+    scene: 'cabin',
+    bounds: { centre: [-0.78, 0.7, 1.32], size: [0.46, 0.42, 0.1] },
+    path: [
+      { position: [-0.3, 1.0, 0.95], target: [-0.7, 0.76, 1.25] },
+      { position: [-0.78, 0.74, 0.965], target: [-0.78, 0.74, 1.335] },
+    ],
+  },
 }
 
 export const FOCUS_LIST: readonly CameraFocus[] = Object.values(CAMERA_FOCUS)

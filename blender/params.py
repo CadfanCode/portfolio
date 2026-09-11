@@ -1825,6 +1825,195 @@ HULL_SECTION_POINTS = 28
 """Points per half-section, keel to sheer."""
 
 
+# --- Archipelago prop kit --------------------------------------------------
+#
+# A second, unrelated model built by the same pipeline: a small kit of
+# Stockholm-archipelago scenery -- pines, a red house, a boathouse, a jetty, a
+# sea mark, a flagpole -- exported separately as `archipelago-kit.glb` and
+# scattered as instances around the boat by the app. None of it is the Maxi
+# 77, so nothing here carries a class-rule reference; every figure is FITTED,
+# and its source is the design plan's own target table rather than a
+# measurement of a real object:
+# `docs/superpowers/plans/2026-09-07-archipelago-and-traffic.md`, Task 5.
+# Where that table gave a description rather than a number -- an eave height,
+# a trunk-to-crown split -- the figure here is a judgement call made from it,
+# and is marked as such.
+#
+# These are background props rendered as GPU instances at 70-180 m, so the
+# budget is the opposite of the boat's: the whole kit has to clear 200 KB
+# uncompressed, with no draco and no meshopt to save it. Every part is built
+# from a handful of cones and boxes -- see `archipelago.py` -- never a
+# textured or heavily subdivided surface.
+
+KIT_PINE_A_HEIGHT = 9.0
+KIT_PINE_A_CROWN = 3.2
+"""A full-grown Scots pine: bare lower trunk, layered crown well up the stem.
+Plan table, `pine_a`."""
+
+KIT_PINE_B_HEIGHT = 12.0
+KIT_PINE_B_CROWN = 3.8
+"""The tall variant, so a scattered treeline is not one tree repeated at three
+scales. Plan table, `pine_b`."""
+
+KIT_PINE_STUNTED_HEIGHT = 4.5
+KIT_PINE_STUNTED_CROWN = 2.6
+"""What actually grows on the outer, wind-scoured skerries: short, bent,
+gnarled. Plan table, `pine_stunted`."""
+
+KIT_PINE_TRUNK_FRACTION = 0.58
+"""How much of a pine's height is bare trunk before the crown starts. Not in
+the plan table -- Scots pine self-prunes its lower branches, and photographs
+of Baltic skerry pines put the clear stem at a bit over half the tree.
+`pine_stunted` uses a lower fraction (see `archipelago.py`): a wind-bent tree
+this short has crown much closer to the ground."""
+
+KIT_HOUSE_WIDTH = 8.0
+KIT_HOUSE_DEPTH = 6.0
+KIT_HOUSE_RIDGE = 6.5
+"""`house_red`. Plan table: 8 x 6 m, 6.5 m ridge."""
+
+KIT_BOATHOUSE_WIDTH = 6.0
+KIT_BOATHOUSE_DEPTH = 4.0
+KIT_BOATHOUSE_RIDGE = 4.0
+"""`boathouse_red`. Plan table: 6 x 4 m, 4 m ridge. Its gable end facing the
+water (+Y, the kit's shared "front") is left open -- no wall panel -- per the
+plan's art direction."""
+
+KIT_HOUSE_EAVE_FRACTION = 0.46
+"""Eave (wall-top) height as a fraction of the ridge height. Not in the plan
+table. A single-storey Falu cottage's eaves sit a bit under half its total
+height at the peak; judgement call, not a source."""
+
+KIT_HOUSE_TRIM_PROUD = 0.05
+"""How far the corner boards and window trim stand proud of the wall plane.
+FITTED: enough to throw its own small shadow line and read as applied timber
+rather than a decal painted on the wall, without reading as a batten."""
+
+KIT_JETTY_LENGTH = 12.0
+KIT_JETTY_WIDTH = 1.6
+KIT_JETTY_DECK_HEIGHT = 0.6
+"""`jetty`. Plan table: 12 x 1.6 m, deck 0.6 m above the water. Runs from the
+kit's base centre (the shore end) out along +Y."""
+
+KIT_JETTY_DECK_THICKNESS = 0.08
+KIT_JETTY_PILE_RADIUS = 0.09
+KIT_JETTY_PILE_SPACING = 3.0
+KIT_JETTY_PILE_DROP = 1.4
+"""Timber piles under the deck, one pair every 3 m, driven well below the
+waterline so no gap can show under the deck at any wave height the app draws.
+FITTED -- the plan table gives the deck, not what holds it up."""
+
+KIT_SEA_MARK_HEIGHT = 3.0
+"""A stone cairn -- the commonest Baltic unlit mark, a pile of rock raised on
+a skerry rather than a built structure. Plan table: 3 m, `sea_mark`."""
+
+KIT_FLAGPOLE_HEIGHT = 7.0
+KIT_FLAGPOLE_RADIUS = 0.045
+"""`flagpole`. Plan table: slim white pole, 7 m. The radius is FITTED --
+proportion of a real garden flagpole, thin enough to read as "slim" without
+vanishing to sub-pixel width at 70 m."""
+
+KIT_FLAG_WIDTH = 0.90
+KIT_FLAG_HEIGHT = 0.60
+"""The small Swedish flag near the pole's top. FITTED to the flag's own
+published proportions (a Swedish flag is 5:8 with the cross at 2/5 and 3/8),
+simplified to two crossing bars over a blue field since nothing here is
+textured -- see `archipelago.py`."""
+
+# The kit's second batch: shore rock, birch and juniper among the pines, a
+# second cottage, a sauna, a dinghy. Not from the plan table above -- there is
+# no published target list for these, so every figure here is FITTED against
+# the part's real-world dimensions and against the other parts already in the
+# kit, and is marked as such individually.
+
+KIT_BOULDER_A_DIAMETER = 2.1
+KIT_BOULDER_A_HEIGHT_FRACTION = 0.85
+"""`boulder_a`, a glacial erratic. FITTED: a granite skerry boulder deposited
+by the retreating ice sheet is roughly as tall as it is wide; the 2.1 m
+diameter sits mid-range in the 1.8-2.5 m an erratic on a skerry this size
+would be."""
+
+KIT_BOULDER_B_DIAMETER = 3.5
+KIT_BOULDER_B_HEIGHT_FRACTION = 0.32
+"""`boulder_b`, a flatter shelf rock -- the low, broad slab a skerry is
+usually mostly made of, rather than a single dramatic erratic sitting on it.
+FITTED: 3.5 m across per the brief, with a low height fraction so it reads as
+a shelf rather than a second `boulder_a`."""
+
+KIT_ROCK_FACET_JITTER = 0.20
+"""How far each icosahedron vertex is pushed off a true sphere, as a fraction
+of its own radius -- what turns a smooth ball into an angular, faceted rock
+in `archipelago._add_faceted_rock`. FITTED by eye against photographs of
+Baltic granite skerries: enough to break the silhouette, not so much that a
+rock at 100 m reads as noise."""
+
+KIT_JUNIPER_HEIGHT = 1.1
+KIT_JUNIPER_SPREAD = 1.3
+"""`juniper`, common juniper scrub on thin skerry soil. FITTED within the
+0.8-1.4 m height range juniper actually grows to on bare rock; spread a
+little wider than tall, since scrub juniper grows low and spreading rather
+than upright."""
+
+KIT_BIRCH_HEIGHT = 7.0
+KIT_BIRCH_CROWN = 4.2
+KIT_BIRCH_TRUNK_FRACTION = 0.55
+"""`birch`, downy birch among the pines -- shorter and airier-crowned than
+even `pine_stunted`. FITTED: 7 m is a modest, wind-exposed skerry birch
+rather than a mature inland tree. Trunk fraction close to the pines' own
+self-pruning height (`KIT_PINE_TRUNK_FRACTION`), since birch also sheds its
+lower branches, just less completely than a pine."""
+
+KIT_BIRCH_TRUNK_RADIUS_FRACTION = 0.013
+"""A birch trunk is markedly slimmer for its height than a pine's. FITTED
+against the pines' own implicit trunk-radius fraction of 0.020
+(`archipelago._build_pine`'s `base_radius = height * 0.020`)."""
+
+KIT_HOUSE_B_WIDTH = 5.0
+KIT_HOUSE_B_DEPTH = 4.0
+KIT_HOUSE_B_RIDGE = 4.5
+"""`house_red_b`, a second, smaller cottage -- gable end to the front rather
+than `house_red`'s long eave wall, so a pair of instances does not read as
+one house doubled. FITTED, deliberately under `house_red`'s 8 x 6 x 6.5 m."""
+
+KIT_HOUSE_B_PORCH_WIDTH = 2.6
+KIT_HOUSE_B_PORCH_DEPTH = 1.4
+KIT_HOUSE_B_PORCH_HEIGHT_FRACTION = 0.85
+"""The veranda on `house_red_b`'s gable front -- two white posts and a flat
+canopy roof under the eave line. FITTED: proportioned to a doorway rather
+than sourced to anything, since the brief asks only for "a white-trimmed
+porch or veranda" and leaves the size to be judged."""
+
+KIT_SAUNA_WIDTH = 3.0
+KIT_SAUNA_DEPTH = 3.0
+KIT_SAUNA_RIDGE = 2.6
+"""`sauna_red`, a small shoreline sauna. FITTED to the brief's ~3 x 3 m, with
+a ridge well under `house_red`'s 6.5 m -- a sauna is a single low room, not a
+house."""
+
+KIT_SAUNA_CHIMNEY_HEIGHT = 0.9
+KIT_SAUNA_CHIMNEY_RADIUS = 0.12
+"""The short stove flue above `sauna_red`'s roof. FITTED, sized to clear the
+ridge line and no more -- the brief calls it "short" by name."""
+
+KIT_DINGHY_LENGTH = 3.0
+KIT_DINGHY_BEAM = 1.1
+KIT_DINGHY_DEPTH = 0.42
+"""`dinghy`, a clinker-built eka -- the double-ended rowing skiff of the
+Stockholm archipelago, rather than a transom-sterned dory, which is what
+"a small clinker rowing boat pulled up on the rock" actually means there.
+FITTED to the brief's 3 m length; beam and depth are a small skiff's usual
+proportion of it."""
+
+KIT_DINGHY_STRAKE_FRACTION = 0.72
+"""Where the painted top strake starts, as a fraction of the hull's local
+depth at each station. FITTED: a real clinker boat's paint stops around the
+waterline, which sits well below the gunwale, not at it."""
+
+KIT_ROCK_STACK_FOOTPRINT = 2.5
+"""`rock_stack`, a cluster of three or four smaller stones on a shared
+footprint. FITTED to the brief's ~2.5 m footprint."""
+
+
 # --- Derived helpers ------------------------------------------------------
 
 def station_to_y(station: float) -> float:

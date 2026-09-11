@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "test": "vitest run",
     "model:build": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/build.py\" -- --project \"$PWD\"",
     "model:verify": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/verify.py\" -- --project \"$PWD\"",
     "model:preview": "flatpak run org.blender.Blender -b --factory-startup --python \"$PWD/blender/preview.py\" -- --project \"$PWD\"",
@@ -32,6 +33,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^3.2.7"
   }
 }

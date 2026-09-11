@@ -10,6 +10,7 @@ import type {
   HemisphereLight,
   Vector3Tuple,
 } from 'three'
+import { Archipelago } from './archipelago/Archipelago'
 import { boatWorldInverse, worldFrameQuat } from './water/boatPose'
 import { useQualityStore } from '../state/useQualityStore'
 import { useSceneStore } from '../state/useSceneStore'
@@ -26,12 +27,15 @@ import { FocusTargets } from './FocusTargets'
 import { IntroClouds } from './IntroClouds'
 import { IntroTitle } from './IntroTitle'
 import { Ocean } from './Ocean'
+import { OceanFar } from './water/OceanFar'
 import { ParrotAssistant } from '../parrot'
 import { QualityMonitor } from './QualityMonitor'
 import { Soundscape } from './Soundscape'
+import { Traffic } from './traffic/Traffic'
 import { Weather } from './Weather'
 import { sampleConditions } from './conditions'
 import { Exhibits } from './exhibits/Exhibits'
+import { Whiteboard } from './exhibits/whiteboard/Whiteboard'
 import { sampleHullPlane } from './water/waves'
 import type { HullPlane } from './water/waves'
 import { heelAngle } from './wind'
@@ -292,6 +296,9 @@ export function PortfolioWorld() {
         <Weather />
 
         <Ocean />
+        <OceanFar />
+        <Archipelago />
+        <Traffic />
       </group>
       <group ref={boatFrame}>
         <Boat />
@@ -334,6 +341,7 @@ export function PortfolioWorld() {
             everything else fixed to the joinery. See CabinPictures.tsx for why
             they're deliberately not a matched pair. */}
         <CabinPictures />
+        <Whiteboard />
         {/* Polly, the guide character — perched on deck, so a sibling of
             `Boat` here rather than a new exhibit; see `parrot/`. */}
         <ParrotAssistant />
