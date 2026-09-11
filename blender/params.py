@@ -1419,26 +1419,33 @@ fitted -- `interior.deckhead_function` at this station), so a 310 mm lamp
 clears by 220. It is the tallest thing that stands on this table and the only
 one worth checking that against."""
 
-DESK_CHART = (0.370, 0.255)
+DESK_CHART = (0.370, 0.220)
 DESK_CHART_STATION = 4.885
 """The chart on the table, fore-and-aft by athwartships, and the station of its
 centre: a folded sheet lying along the inboard half of the worktop, under the
-lamp, with the safe in the corner outboard and abaft it.
+lamp, with the safe standing off the corner outboard and abaft it.
 
 Folded, which is why it is not the 1.06 x 0.71 m a real Admiralty sheet is.
 Nobody has ever opened a full chart on a 7.6 m boat. It is folded to a quarter
 and then some, and what is showing is the corner you are working on.
 
-255 mm across is narrower than the 360 it began at, and that is the safe's
-doing: the safe now stands in the after outboard corner (see DESK_SAFE below),
-and a chart that reached its old width ran under it. Between the two, this is
-the one that gives -- a chart with a corner hidden under a safe is a chart that
-was there first, which is not what either object is supposed to say."""
+220 mm across is narrower than the 255 it was, and narrower still than the 360
+it began at, and both cuts are the safe's doing. The first was the safe taking
+the after outboard corner at all (see DESK_SAFE below); the second is
+DESK_SAFE_STANDOFF pulling the safe 30 mm further inboard, onto the same patch
+of worktop the chart's outboard edge used to have to itself. Between the two,
+the chart is still the one that gives -- a chart with a corner hidden under a
+safe is a chart that was there first, which is not what either object is
+supposed to say -- and 220 mm is no longer a round number chosen for looks: it
+is measured to clear the safe's new inboard face by about 11 mm while still
+reaching out far enough that both keycards (`DESK_CARD_STATION`) go on lie
+fully on the sheet rather than off its outboard edge."""
 
 DESK_SAFE = (0.220, 0.200, 0.230)
 DESK_SAFE_INSET = 0.014
 """The safe: length fore-and-aft, depth athwartships, height -- and how far it
-stands off each of the two surfaces it is tucked between.
+stands off each of the two surfaces it is tucked between, before
+`DESK_SAFE_STANDOFF` pulls it further off both.
 
 Where it goes is a corner and not a station. Owner's brief: into the angle where
 the after bulkhead meets the topsides, which is the one place on a 640 x 480 mm
@@ -1460,8 +1467,86 @@ into the locker under it for the plain reason that a safe you cannot see is not
 a placeholder for anything.
 
 The door faces inboard, at the person sitting at the table, and hinges on its
-*forward* edge so it opens away from the bulkhead behind it -- see
-`fitout._desk_safe`."""
+*after* edge so it opens toward the bulkhead side of the cabin rather than
+across the worktop -- see `fitout._desk_safe` for why, and DESK_SAFE_STANDOFF
+for the room that swing needs.
+
+The door, its dial and handle, and the contents standing inside are each their
+own exported object (`desk_safe_door`, `desk_safe_brass`, `desk_safe_contents`)
+rather than joined into the static body, because the front-end exhibit swings
+the door open on the app's own side -- everything on it has to move with it,
+and everything that does not has to stay behind. See DESK_SAFE_WALL for what
+that means for the body, which can no longer be one solid box."""
+
+DESK_SAFE_STANDOFF = (0.070, 0.030)
+"""How far the safe stands off its bare corner and onto the worktop, on top of
+DESK_SAFE_INSET's own shadow-line gap: fore-and-aft (off the bulkhead, forward)
+then athwartships (off the hull, inboard).
+
+Both numbers exist because the door's hinge moved. `_desk_safe` used to hinge
+the door on the *forward* edge specifically so it would not have to open into
+the bulkhead immediately abaft it -- but that put the leaf square across the
+sightline the `desk` close-up in `src/scene/cameraFocus.ts` frames the safe
+from, which looks forward and inboard of it, so a forward-hung door swings
+straight through that view and the reveal reads as the back of a door. Hung on
+the after edge instead, the door swings clear of that sightline -- but now it
+is the after edge, the one against the bulkhead, that has to move: a door
+hinged only DESK_SAFE_INSET's own 14 mm off a wall has nowhere to rotate the
+leaf into before it fouls that wall. 70 mm added to that gap -- 84 mm off the
+bulkhead in total -- gives the hinge edge room to clear the door's own 220 mm
+length swinging past it before the leaf is rotated clear of the body. It is a
+judgement call rather than a solved angle: there is no single correct swing
+distance for a door nothing in the model actually animates, only a distance
+plainly larger than a door's worth of touching the wall it hinges from.
+
+The 30 mm inboard is the second half of the same move and a plainer one: owner
+reports the safe cornered hard against both the bulkhead and the hull read as
+jammed rather than placed, elbow and hull curve pressing in on two sides at
+once. Pulling it off the hull face gives it the same kind of clearance on that
+side that the fore-and-aft move gives it on the other. It costs the chart 35 mm
+of its own width -- see DESK_CHART -- which is the one thing on this worktop
+close enough to have to give way."""
+
+DESK_SAFE_WALL = 0.016
+"""Wall thickness for the hollowed body, all four built sides alike: FITTED.
+
+The safe used to be one solid box, which was fine with the door shut and would
+have shown a flat face behind it the moment the door swings open for the
+authentication exhibit -- see `fitout._desk_safe`. A document safe is a steel
+box, and the walls are what make it one rather than a shell with a lid; too
+thin here and an open door reveals a shape with no substance to it. 16 mm is
+thick enough to read as a proper steel gauge at this scale -- it throws its
+own shadow line at the open edge -- without eating so much of a 220 x 200 x
+230 mm exterior that nothing is left to stand a model and a key in: the
+cavity it leaves is roughly 188 x 168 x 198 mm, walls (and, athwartships, the
+closed door) counted on both sides."""
+
+DESK_SAFE_SLOT = (0.070, 0.006, 0.003)
+"""The card slot on the safe's door: length along the door's face, the gap
+between its two brass jaws, and how far each jaw stands proud of the door.
+
+FITTED against ID-1 (ISO/IEC 7810, see `DESK_CARD`): a card is 85.6 mm wide,
+and 70 mm makes the slot a touch narrower than the card, which is how a real
+slot looks -- one cut to the card's own width would read as a letterbox, not
+somewhere to feed a card through. The gap is a real gap and not a recess: the
+same reasoning that puts the door itself proud of the body rather than
+recessed into it (`fitout._desk_safe`'s own note on why a cut into a lofted
+solid renders as nothing) puts these jaws proud of the door, with a dark
+insert set back inside the gap between them so it reads as depth rather than
+as a painted line."""
+
+DESK_CARD = (0.0856, 0.054, 0.00076)
+"""ID-1 (ISO/IEC 7810): the size a credit, ATM or access card is cut to
+everywhere, so the two lying on the chart and whatever the safe's own slot is
+sized against agree with each other rather than being guessed independently."""
+
+DESK_CARD_STATION = 4.755
+"""Where the two keycards lie on the chart, fore-and-aft. FITTED, to the one
+patch of chart nothing else on the desk claims: forward of both the pipe
+(DESK_PIPE_STATION) and the pencils (DESK_PENCIL_STATION), and well clear of
+the safe in the after outboard corner. See `fitout._desk_cards`, which offsets
+the two cards a few centimetres fore and aft of this station and rotates each
+a different amount so the pair reads as put down rather than placed."""
 
 DESK_PIPE_STATION = 5.005
 DESK_PENCIL_STATION = 4.940

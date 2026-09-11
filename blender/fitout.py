@@ -18,7 +18,7 @@ what the clearance check in `verify.py` exists to catch and what it caught the
 first time the galley was built.
 """
 
-from math import cos, hypot, pi, sin
+from math import cos, hypot, pi, radians, sin
 
 import interior
 import params
@@ -1224,7 +1224,9 @@ def _build_desk_fittings(collection, inner):
     objects allows and what a person sitting at the inboard edge of it wants.
 
     The safe takes the after outboard corner -- the angle between the bulkhead
-    and the topsides, the one part of the table nobody reaches across. The lamp
+    and the topsides, the one part of the table nobody reaches across -- standing
+    off both walls by `params.DESK_SAFE_STANDOFF` rather than jammed into the
+    angle itself, room its after-hung door needs to swing in. The lamp
     stands in the forward outboard corner diagonally opposite it, the other spot
     no hand goes, and arches its neck inboard over the middle. The chart lies
     along the inboard half under that reach, with the pipe and the pencils on it.
@@ -1245,23 +1247,36 @@ def _build_desk_fittings(collection, inner):
 
     brass, enamel, glow = _desk_lamp(collection)
     chart, chart_top = _desk_chart(collection, edge, top)
-    safe_body, safe_brass = _desk_safe(collection, inner, top)
+    safe_body, safe_door, safe_brass, safe_contents = _desk_safe(collection, inner, top)
     briar, vulcanite = _desk_pipe(collection, edge, chart_top)
     pencils, points = _desk_pencils(collection, edge, chart_top)
+    card_blue, card_red = _desk_cards(collection, edge, chart_top)
 
     return {
         "desk_lamp": join(brass, "desk_lamp"),
         "desk_lamp_shade": enamel,
         "desk_lamp_glow": glow,
         "desk_chart": chart,
+        # The safe is four objects, not one, because the front-end exhibit
+        # swings the door open on its own hinge: the door leaf and everything
+        # mounted on its face have to move as one rigid piece, the body has to
+        # stay put, and what is standing in the cavity has to stay put too.
+        # See `params.DESK_SAFE` and `_desk_safe`.
         "desk_safe": join(safe_body, "desk_safe"),
+        "desk_safe_door": join(safe_door, "desk_safe_door"),
         "desk_safe_brass": join(safe_brass, "desk_safe_brass"),
+        "desk_safe_contents": join(safe_contents[0], "desk_safe_contents"),
+        "desk_safe_contents_brass": join(safe_contents[1], "desk_safe_contents_brass"),
         "desk_pipe": briar,
         # The pencil points join the pipe's stem and bit: both are the dark
         # matte the palette already carries, and neither is worth an object of
         # its own for eight millimetres of graphite.
         "desk_pipe_stem": join(vulcanite + points, "desk_pipe_stem"),
         "desk_pencils": join(pencils, "desk_pencils"),
+        # Not joined -- the app picks each of these up individually, the same
+        # reason `book_resume` and `book_about` are apart from the shelf pool.
+        "card_blue": card_blue,
+        "card_red": card_red,
     }
 
 
@@ -1306,13 +1321,19 @@ def _desk_lamp(collection):
     # stands 230 mm off the worktop and the shade's rim is 144 mm across, so an
     # arm carried too far aft puts the rim on top of it -- an earlier version
     # cleared the safe's back corner by 4 mm, which from across the cabin reads
-    # as the lamp resting on it. With the safe now in the after outboard corner
+    # as the lamp resting on it. With the safe in the after outboard corner
     # the arm goes the other way: hard inboard and only a little aft, so the
-    # shade hangs over the middle of the chart and stays 74 mm forward of the
-    # safe. It reaches further across the table than it used to and clears it
-    # by more, which is the corner layout paying for itself.
+    # shade hangs over the chart's forward half and stays 74 mm clear of the
+    # safe's own forward face.
+    #
+    # That face moved 70 mm forward of the bare corner when the safe's door
+    # was rehung on its after edge (`params.DESK_SAFE_STANDOFF`), and the arm
+    # has to give up the same 70 mm of reach to hold the same 74 mm -- an arm
+    # tuned to the old corner and left alone would now clear the safe by 4 mm,
+    # which is exactly the collision the arm was bent to avoid in the first
+    # place, just against the safe's other face.
     shade_x = x + 0.170
-    shade_station = station + 0.180
+    shade_station = station + 0.180 - params.DESK_SAFE_STANDOFF[0]
     arm = _pipe(
         "desk_lamp_arm",
         collection,
@@ -1355,6 +1376,48 @@ def _desk_lamp(collection):
     return [base, arm], shade, glow
 
 
+_DESK_CHART_RISE = 0.0045
+_DESK_CHART_THICKNESS = 0.0015
+"""How far the chart's corners lift off the table and how thick the paper
+itself is drawn as. Module-level and shared with `_desk_chart_surface` rather
+than local to `_desk_chart`, so that a card standing on the chart samples the
+exact same surface the chart's own mesh is lofted from instead of a second,
+drifting copy of the same two numbers."""
+
+
+def _desk_chart_extent(edge):
+    """The chart's own footprint: fore-and-aft start and end, and its inboard
+    and outboard edges athwartships. Measured from `params.DESK_CHART` and
+    `DESK_CHART_STATION`, the same two numbers `_desk_chart` itself builds
+    from, so anything laid on the chart -- the cards, here -- is placed against
+    the chart's actual extent rather than a guess at it, and stays right if
+    either parameter ever moves.
+    """
+    length, width = params.DESK_CHART
+    station0 = params.DESK_CHART_STATION - length / 2
+    x_in = edge - 0.020
+    return station0, station0 + length, x_in, x_in - width
+
+
+def _desk_chart_surface(edge, top, station, x):
+    """Height of the chart's own top surface at an arbitrary point on it.
+
+    The same fourth-power lift `_desk_chart` lofts its rings from, evaluated
+    directly rather than sampled off the built mesh, so anything standing on
+    the chart -- the cards -- can ask this for the height under its own
+    footprint instead of assuming the chart is flat. It is not: the whole
+    point of the corners-up lift is that a folded sheet never lies down again,
+    and a card laid near an edge stands on paper that is several millimetres
+    higher there than at the middle.
+    """
+    station0, station1, x_in, x_out = _desk_chart_extent(edge)
+    length, width = station1 - station0, x_in - x_out
+    u = (station - station0) / length
+    v = (x_in - x) / width
+    lift = _DESK_CHART_RISE * ((2 * u - 1) ** 4 + 0.6 * (2 * v - 1) ** 4)
+    return top + lift + _DESK_CHART_THICKNESS
+
+
 def _desk_chart(collection, edge, top):
     """The chart: a sheet lying on the table, lifted at its edges.
 
@@ -1371,11 +1434,11 @@ def _desk_chart(collection, edge, top):
     middle two-thirds and then goes quickly at the edges, which is the shape a
     crease actually relaxes to.
     """
+    station0, _station1, x_in, _x_out = _desk_chart_extent(edge)
     length, width = params.DESK_CHART
-    station0 = params.DESK_CHART_STATION - length / 2
-    x0 = edge - 0.020
-    rise = 0.0045
-    thickness = 0.0015
+    x0 = x_in
+    rise = _DESK_CHART_RISE
+    thickness = _DESK_CHART_THICKNESS
 
     across, along = 5, 6
     rings = []
@@ -1406,54 +1469,112 @@ def _desk_chart(collection, edge, top):
 
 
 def _desk_safe(collection, inner, top):
-    """A small document safe in the after outboard corner of the table: body, a
-    door proud of its face, a combination dial and a lever handle.
+    """A small document safe standing off the after outboard corner of the
+    table: a hollow body, a door proud of its face, a combination dial, a
+    lever handle, a card slot, and what is standing inside when the door is
+    open.
 
-    Cornered, not placed. Owner's brief, and the geometry follows it literally:
-    the after face is measured off `GALLEY_END` -- the bulkhead the worktop stops
-    at -- and the outboard face off the hull's own offset at the stations the
-    safe spans, both less `DESK_SAFE_INSET`. Neither is a fitted number, so the
-    safe stays in its corner if the block is ever re-proportioned, and it can
-    never end up standing through the topsides at its base, which is what a
-    fixed offset would risk here: the hull moves 20 mm outboard over the
-    worktop's own length.
+    Cornered, not placed, and then pulled off the corner it is cornered in.
+    Owner's brief, and the geometry follows it literally: the after face is
+    measured off `GALLEY_END` -- the bulkhead the worktop stops at -- and the
+    outboard face off the hull's own offset at the stations the safe spans,
+    both less `DESK_SAFE_INSET` and then `DESK_SAFE_STANDOFF`. None of the
+    three is a fitted number, so the safe stays parked off its corner by the
+    same margin if the block is ever re-proportioned, and it can never end up
+    standing through the topsides at its base, which is what a fixed offset
+    would risk here: the hull moves 20 mm outboard over the worktop's own
+    length.
 
     Taken at the *worktop*, not at the safe's head. The topsides flare as they
     rise, so the narrowest the hull gets over the safe's 230 mm is at its foot,
     and that is the height the outboard face has to clear.
 
-    The exhibit that will be authentication, so it is built to be recognised at
-    a glance and from one angle -- the door faces inboard, at the person sitting
-    at the table and at the camera stop across the cabin, and everything that
-    says "safe" rather than "box" is on that one face. Nothing is modelled on the
-    three faces that are against the hull, against the bulkhead, or turned away.
+    The exhibit that is authentication, so it is built to be recognised at a
+    glance and from one angle, and to be opened: the door faces inboard, at the
+    person sitting at the table and at the camera stop across the cabin, and
+    everything that says "safe" rather than "box" is on that one face. Nothing
+    is modelled on the three faces that are against the hull, against the
+    bulkhead, or turned away.
 
-    The door hinges on its forward edge, which is the corner's doing too: with
-    the bulkhead immediately abaft it, a door hung on the after edge is a door
-    that opens into a wall. The handle goes at the free edge, where it always is.
+    The door hinges on its *after* edge, against the bulkhead, and the handle
+    goes at the free forward edge -- both the other way round from how this
+    safe first shipped. That first version hinged forward specifically to
+    avoid opening into the bulkhead abaft it, and that was the wrong thing to
+    avoid: the `desk` close-up in `src/scene/cameraFocus.ts` looks at this
+    corner from forward of the safe and inboard of it, so a forward-hung leaf
+    swings straight across that sightline and the reveal is a view of the back
+    of a door. Hinged after, the leaf swings away from the camera instead, and
+    `DESK_SAFE_STANDOFF` is what buys it the room to do that without opening
+    into the wall it is hinged to. The door stands 8 mm proud of the body
+    rather than being let into it, which is backwards for a real safe and
+    right for this one: a recess cut into a lofted solid renders as nothing at
+    all (the same argument the anchor box's lid and the bilge hatch settled),
+    while 8 mm of overlap throws a shadow line round all four sides of the
+    door and reads as a door from anywhere.
 
-    The door stands 8 mm proud of the body rather than being let into it, which
-    is backwards for a real safe and right for this one: a recess cut into a
-    lofted solid renders as nothing at all (the same argument the anchor box's
-    lid and the bilge hatch settled), while 8 mm of overlap throws a shadow line
-    round all four sides of the door and reads as a door from anywhere.
+    Four exported objects come out of this, not two: the app swings the door on
+    its own hinge, so everything mounted on the door's face -- the dial, its
+    index, the handle, the slot's brass jaws -- has to move as one rigid piece
+    with the leaf, everything that is the body has to stay behind, and what is
+    standing in the cavity has to stay behind too. See `params.DESK_SAFE_WALL`
+    for the body, `params.DESK_SAFE_SLOT` for the slot, and the docstrings on
+    `_desk_safe_contents` below for what is inside.
     """
     length, depth, height = params.DESK_SAFE
+    wall = params.DESK_SAFE_WALL
     inset = params.DESK_SAFE_INSET
+    standoff_fwd, standoff_in = params.DESK_SAFE_STANDOFF
 
-    b = params.GALLEY_END - inset
+    # After face off the bulkhead by the shadow-line inset plus the standoff
+    # the after-hung door needs to swing clear of it -- see
+    # `params.DESK_SAFE_STANDOFF`. Forward face follows at a fixed length, so
+    # the whole body moves as one block rather than stretching.
+    b = params.GALLEY_END - inset - standoff_fwd
     a = b - length
     centre = (a + b) / 2
-    # Outboard face against the topsides, at the narrowest station it spans.
+    # Outboard face against the topsides, at the narrowest station it spans,
+    # then pulled the same standoff further inboard.
     reach = min(inner(station, top) for station in (a, b))
-    back = -(reach - inset)      # outboard face of the body, signed (port)
-    face = back + depth          # the door, facing inboard
+    back = -(reach - inset) + standoff_in  # outboard face, signed (port)
+    face = back + depth                    # the door, facing inboard
     z1 = top + height
 
-    body = _box(
-        "desk_safe_body", collection, a, b, face, back, top, z1,
-        sharp=30.0, bevel_width=0.003, bevel_segments=2,
-    )
+    # The body: five boxes rather than one, leaving the inboard face open for
+    # the door to close over. An outboard back wall, a top and a bottom, and a
+    # forward and an aft wall -- everything but the face the door stands in
+    # front of. Each is built to the body's own full extent on the two axes it
+    # does not wall off, so the six meet at the corners rather than leaving a
+    # gap there; the overlap that leaves at each edge is a few cubic
+    # millimetres of coincident, invisible solid, which costs nothing and is
+    # cheaper than mitring six panels for a seam nobody can get a camera to.
+    body_parts = [
+        _box(  # outboard, against the topsides
+            "desk_safe_wall_outboard", collection, a, b, back, back + wall, top, z1,
+            sharp=30.0, bevel_width=0.003, bevel_segments=2,
+        ),
+        _box(  # top
+            "desk_safe_wall_top", collection, a, b, face, back, z1 - wall, z1,
+            sharp=30.0, bevel_width=0.003, bevel_segments=2,
+        ),
+        _box(  # bottom
+            "desk_safe_wall_bottom", collection, a, b, face, back, top, top + wall,
+            sharp=30.0, bevel_width=0.003, bevel_segments=2,
+        ),
+        _box(  # forward, against the safe's own hinge edge
+            "desk_safe_wall_forward", collection, a, a + wall, face, back, top, z1,
+            sharp=30.0, bevel_width=0.003, bevel_segments=2,
+        ),
+        _box(  # aft, against the bulkhead
+            "desk_safe_wall_aft", collection, b - wall, b, face, back, top, z1,
+            sharp=30.0, bevel_width=0.003, bevel_segments=2,
+        ),
+    ]
+
+    # The cavity the five walls leave -- the door itself standing in for the
+    # sixth, inboard wall in this measurement, which is why it costs two wall
+    # thicknesses rather than one on every axis. Roughly 188 x 168 x 198 mm,
+    # per `params.DESK_SAFE_WALL`.
+    cavity = (a + wall, b - wall, back + wall, face - wall, top + wall, z1 - wall)
 
     door = _box(
         "desk_safe_door", collection,
@@ -1462,25 +1583,36 @@ def _desk_safe(collection, inner, top):
         top + 0.014, z1 - 0.014,
         sharp=30.0, bevel_width=0.002, bevel_segments=2,
     )
+    door_parts = [door]
 
-    # Hinges, on the *forward* edge of the door, so it opens away from the
-    # bulkhead the safe is backed into rather than into it.
+    # Hinges, on the *after* edge of the door, against the bulkhead, so it
+    # opens away from the `desk` close-up's own sightline rather than across
+    # it -- see `_desk_safe`'s own docstring and `params.DESK_SAFE_STANDOFF`
+    # for the room that swing needs. Fixed to the body, not the leaf -- a real
+    # hinge's barrel does not swing with the door, only the pin and the leaf
+    # either side of it do, and the door alone already carries everything a
+    # viewer reads as "this moves".
     hinges = [
         _box(
             f"desk_safe_hinge_{i}", collection,
-            a + 0.006, a + 0.020,
+            b - 0.020, b - 0.006,
             face + 0.013, face + 0.002,
             top + z, top + z + 0.022,
             sharp=30.0, bevel_width=None,
         )
         for i, z in enumerate((0.042, height - 0.064))
     ]
+    body_parts += hinges
 
-    # The dial, proud of the door on a short brass boss. The door faces
+    # The dial, the slot and the handle all mirror across the door's own
+    # centre from where they stood when the hinge was forward: the door's
+    # whole face flips fore-and-aft with the hinge, not just the handle, or
+    # the handle would land on top of the dial rather than clear of it. The
+    # dial, proud of the door on a short brass boss. The door faces
     # athwartships, so the dial's axis does too and its section is a ring in
     # the fore-and-aft plane -- `_ring_along`, and the distinction matters:
     # built on the other axis it came out as a brass teardrop lying on the door.
-    dial_station = centre - 0.030
+    dial_station = centre + 0.030
     dial_z = top + height * 0.58
     dial_rings = [
         _ring_along(dial_station, face + 0.008, dial_z, 0.038, count=20),
@@ -1509,11 +1641,13 @@ def _desk_safe(collection, inner, top):
         sharp=30.0, bevel_width=None,
     )
 
-    # A lever handle forward of the dial: a round bar standing off the door on
-    # two bosses, not a plate lying on it. The bosses are the whole point --
-    # without them the bar is welded to the face and the shadow that says
-    # "this is something you take hold of" never appears under it.
-    handle_station = centre + 0.070
+    # A lever handle forward of the dial, at the door's own free edge -- the
+    # hinge is aft, so the handle goes forward, where it always does. A round
+    # bar standing off the door on two bosses, not a plate lying on it. The
+    # bosses are the whole point -- without them the bar is welded to the face
+    # and the shadow that says "this is something you take hold of" never
+    # appears under it.
+    handle_station = centre - 0.070
     bar = _pipe(
         "desk_safe_handle",
         collection,
@@ -1538,7 +1672,199 @@ def _desk_safe(collection, inner, top):
         for i, dz in enumerate((-0.044, 0.044))
     ]
 
-    return [body, door] + hinges, [dial, index, bar] + bosses
+    slot_brass, slot_dark = _desk_safe_slot(collection, centre, face, top, height)
+    body_parts.append(slot_dark)
+    brass_parts = [dial, index, bar] + bosses + slot_brass
+
+    contents = _desk_safe_contents(collection, cavity)
+
+    return body_parts, door_parts, brass_parts, contents
+
+
+def _desk_safe_slot(collection, centre, face, top, height):
+    """The card slot: two brass jaws proud of the door, a dark insert set back
+    in the gap between them.
+
+    Positioned below the dial and clear of the handle -- FITTED, 20 mm forward
+    of the safe's own centre and a quarter of the way up the door, mirrored
+    from where it sat when the hinge and the handle were the other way round.
+    What actually keeps it apart from the dial is height, not station: the
+    dial sits at 58% of the door's own height and this at 24%, so the two do
+    not occupy the same door even though a 70 mm slot cannot fit in the gap
+    left between the dial's own 76 mm station footprint and the handle's --
+    there is no station where it would. Station is still what keeps it off
+    the handle, which is a slim fitting rather than a wide one: 5 mm clear of
+    the handle's own footprint at 70 mm forward of centre, on the low side of
+    the door where the handle's reach does not come down to.
+
+    Two jaws and not one slit, per `params.DESK_SAFE_SLOT` and the argument in
+    its docstring: a boolean recess renders as nothing on a lofted solid, so
+    the slot is built from what a real one looks like from outside instead --
+    two standing ridges either side of an opening, the opening dark because
+    what is behind it is the inside of the door and not the door's own colour.
+    """
+    slot_length, slot_gap, slot_proud = params.DESK_SAFE_SLOT
+    slot_station = centre - 0.020
+    slot_z = top + height * 0.24
+    jaw_height = 0.008  # thick enough to catch its own highlight as metal,
+    # thin enough that the 6 mm gap between the pair still reads as a slot and
+    # not as a letterbox cut in the door.
+
+    door_out = face + 0.008  # the door's own proud outer face -- see `_desk_safe`
+    s0, s1 = slot_station - slot_length / 2, slot_station + slot_length / 2
+
+    jaws = [
+        _box(
+            "desk_safe_slot_jaw_0", collection, s0, s1,
+            door_out, door_out + slot_proud,
+            slot_z + slot_gap / 2, slot_z + slot_gap / 2 + jaw_height,
+            sharp=30.0, bevel_width=0.0012,
+        ),
+        _box(
+            "desk_safe_slot_jaw_1", collection, s0, s1,
+            door_out, door_out + slot_proud,
+            slot_z - slot_gap / 2 - jaw_height, slot_z - slot_gap / 2,
+            sharp=30.0, bevel_width=0.0012,
+        ),
+    ]
+
+    # The dark insert: thinner than the gap is deep and standing only a
+    # whisker off the door's own face, so it sits visibly behind the two brass
+    # jaws' proud tips rather than level with them -- that difference in depth
+    # is what reads as a slot with something dark inside it rather than a
+    # painted stripe between two brass bars.
+    insert = _box(
+        "desk_safe_slot_dark", collection, s0 + 0.003, s1 - 0.003,
+        door_out - 0.001, door_out + 0.0012,
+        slot_z - slot_gap / 2, slot_z + slot_gap / 2,
+        sharp=30.0, bevel_width=None,
+    )
+
+    return jaws, insert
+
+
+def _desk_safe_contents(collection, cavity):
+    """What stands inside the safe, on its floor: a half-hull model and a key.
+
+    Both kept crude on purpose -- they are read from 0.79 m away through an
+    open door, on the one camera stop that ever sees inside this box, and
+    nothing here is worth more geometry than that view can resolve. The hull
+    is a tapered box on a little stand rather than a lofted section, and the
+    key is a shaft, a bow ring and two wards rather than a milled blank; both
+    are built from the same `_box`/`_pipe`/`grid_to_mesh` helpers as
+    everything else in this file, and neither uses a boolean, matching the
+    argument `_desk_safe_slot` makes about what those render as.
+
+    Two materials, so two objects: the model's own hull is finished the way
+    every other piece of joinery in this cabin is (`teak`, see
+    `materials.apply`), and the key is brass like the ironmongery on the door
+    it sits behind -- neither can join the door's own brass, because neither
+    is meant to move when the door does.
+    """
+    cav_a, cav_b, cav_out, cav_in, cav_z0, cav_z1 = cavity
+
+    # The half-hull, standing toward the safe's outboard (back) wall, the way
+    # a small model is more often stood against the wall of a cabinet than out
+    # in the middle of it.
+    boat_station = (cav_a + cav_b) / 2 + 0.005
+    boat_x = cav_out + 0.030
+    boat_parts = _desk_safe_boat(collection, boat_station, boat_x, cav_z0)
+
+    # The key, lying flat, forward of the model and nearer the door -- the
+    # first thing a hand meets reaching in.
+    key_station = cav_a + 0.030
+    key_x0 = cav_in - 0.012
+    key_parts = _desk_safe_key(collection, key_station, key_x0, cav_z0)
+
+    return boat_parts, key_parts
+
+
+def _desk_safe_boat(collection, station, x, floor_z):
+    """A half-hull model, standing on a little stand: three cross-sections,
+    pinched at bow and stern and full amidships, which is as much of a hull's
+    shape as is worth building for an object 110 mm long seen through a door.
+    """
+    length = 0.110
+    stand_height = 0.008
+    stand_top = floor_z + stand_height
+
+    stand = _box(
+        "desk_safe_boat_stand", collection,
+        station - length * 0.42, station + length * 0.42,
+        x - 0.011, x + 0.011,
+        floor_z, stand_top,
+        sharp=30.0, bevel_width=0.0012,
+    )
+
+    # Three rings along the boat's own length -- bow, midships, stern -- each a
+    # small rectangle in the athwartships/vertical plane. Half-beam and
+    # freeboard both taper to the ends, which is the whole of what makes this
+    # read as a hull rather than a brick: a real half-hull plaque is exactly
+    # this shape, simplified.
+    profile = ((-0.5, 0.003, 0.010), (0.0, 0.015, 0.028), (0.5, 0.004, 0.017))
+    rings = []
+    for u, half_beam, deck_z in profile:
+        s = station + length * u
+        y = _y(s)
+        rings.append(
+            [
+                (x - half_beam, y, stand_top),
+                (x + half_beam, y, stand_top),
+                (x + half_beam, y, stand_top + deck_z),
+                (x - half_beam, y, stand_top + deck_z),
+            ]
+        )
+    hull = grid_to_mesh("desk_safe_boat_hull", rings, collection, close_rings=True)
+    cap_loop(hull, rings[0])
+    cap_loop(hull, list(reversed(rings[-1])))
+    _finish(hull, sharp=35.0, bevel_width=None)
+
+    return [stand, hull]
+
+
+def _desk_safe_key(collection, station, x_near, floor_z):
+    """A key lying flat on the cavity floor: a round shaft, a bow ring at the
+    near end (the first thing a hand meets reaching in), two wards at the bit.
+
+    Built flat in the station/x plane rather than upright, the way a key
+    actually lies when it is put down rather than hung -- `_oval_ring` gives a
+    horizontal loop at fixed height for exactly this, which is otherwise only
+    ever used standing up in this file (the lamp's base, the dial's boss), so
+    the ring here is walked round as a closed `_pipe` path instead of lofted.
+    """
+    radius = 0.0025
+    z = floor_z + radius
+    shaft_length = 0.032
+    ring_radius = 0.011
+
+    ring_x = x_near - ring_radius
+    bit_x = ring_x - ring_radius - shaft_length
+
+    shaft = _pipe(
+        "desk_safe_key_shaft", collection,
+        [(ring_x, _y(station), z), (bit_x, _y(station), z)],
+        radius, count=8,
+    )
+
+    loop = _oval_ring(station, ring_x, ring_radius, ring_radius, z, count=16)
+    ring = _pipe("desk_safe_key_ring", collection, loop + [loop[0]], radius * 0.7, count=6)
+
+    # The wards: two short teeth at the bit end, sticking out sideways from
+    # the shaft (fore-and-aft, since the shaft itself runs athwartships) to
+    # different depths the way a real key's are cut -- identical teeth read as
+    # a barrel key's flutes, not as a cut bit.
+    wards = [
+        _box(
+            f"desk_safe_key_ward_{i}", collection,
+            station + sign * 0.002, station + sign * (0.002 + depth),
+            bit_x - 0.003, bit_x + 0.003,
+            z - 0.0035, z + 0.0035,
+            sharp=30.0, bevel_width=None,
+        )
+        for i, (sign, depth) in enumerate(((1, 0.006), (-1, 0.010)))
+    ]
+
+    return [shaft, ring] + wards
 
 
 def _desk_pipe(collection, edge, chart_top):
@@ -1655,6 +1981,102 @@ def _desk_pencils(collection, edge, chart_top):
         points.append(_finish(tip, sharp=40.0, bevel_width=None))
 
     return bodies, points
+
+
+def _desk_cards(collection, edge, chart_top):
+    """Two keycards lying on the chart, forward and inboard of the safe.
+
+    Each is its own exported object, `card_blue` and `card_red`, and the two
+    are never joined even though they share a size and a builder -- the app
+    picks one up at a time by name for the authentication exhibit, and a pair
+    joined into one mesh cannot be picked up alone. That is also why each gets
+    its own rotation rather than one shared transform: two cards at the same
+    angle read as one card duplicated, the same argument `_desk_pencils` makes
+    about the pipe's neighbours.
+
+    Both sit within `_desk_chart_extent`'s own footprint -- measured, not
+    guessed -- in the one patch of it nothing else on the desk claims: forward
+    of `params.DESK_PIPE_STATION` and `DESK_PENCIL_STATION`, which sit further
+    aft on the same sheet, and well inboard of the safe's own door, which
+    stands in the chart's outboard corner abaft all of this.
+
+    The chart is not flat -- `_desk_chart_surface` above is why -- so each
+    card's own height is derived rather than taken as `chart_top`: the highest
+    point of the chart's own surface under that card's four (rotated) corners,
+    plus a 0.5 mm shadow-line clearance, the same instinct `DESK_SAFE_INSET`
+    stands things off a wall by. `chart_top` alone is the flat height amidships
+    and nothing else; a card standing near this chart's own forward edge, as
+    both of these do, sits on paper that has already lifted several
+    millimetres above it.
+    """
+    top = chart_top - _DESK_CHART_THICKNESS
+    station0, station1, x_in, x_out = _desk_chart_extent(edge)
+    length, width, thickness = params.DESK_CARD
+    clearance = 0.001
+    # The chart's own mesh is a coarse loft (6 x 5 rings) of a convex lift
+    # function, so the built surface bulges a little above the smooth formula
+    # `_desk_chart_surface` evaluates between those rings. Sampling a
+    # footprint 15 mm larger than the card on every side, rather than the
+    # card's own four corners, covers that gap along with the lift's own
+    # gradient across the card -- cheaper than replicating the mesh's
+    # interpolation to get an exact figure for four millimetres of margin.
+    sample_pad = 0.015
+
+    # FITTED positions, given as an offset in from the chart's own inboard
+    # edge (`x_in`) rather than an absolute x, so both cards move with the
+    # worktop the same way the chart itself does. Both land well forward of
+    # `DESK_PIPE_STATION` (5.005) and `DESK_PENCIL_STATION` (4.940) -- the
+    # nearest either card gets is 130 mm -- and the corner assertion below
+    # checks each one's actual rotated footprint against the chart's measured
+    # extent rather than trusting the centre point alone.
+    specs = (
+        ("card_blue", params.DESK_CARD_STATION, x_in - 0.086, 11.0),
+        ("card_red", params.DESK_CARD_STATION + 0.005, x_in - 0.176, -16.0),
+    )
+
+    cards = []
+    for name, cu, cv, degrees in specs:
+        corners = _card_corners(cu, cv, degrees, length, width)
+        stations = [c[0] for c in corners]
+        xs = [c[1] for c in corners]
+        assert station0 <= min(stations) and max(stations) <= station1, name
+        assert x_out <= min(xs) and max(xs) <= x_in, name
+        sample_corners = _card_corners(
+            cu, cv, degrees, length + 2 * sample_pad, width + 2 * sample_pad
+        )
+        z0 = max(
+            _desk_chart_surface(edge, top, s, x) for s, x in sample_corners
+        ) + clearance
+        cards.append(_desk_card(name, collection, corners, z0, z0 + thickness))
+
+    return cards
+
+
+def _card_corners(cu, cv, degrees, length, width):
+    """The four corners of a card centred at `(cu, cv)` (station, x) and
+    turned `degrees` off the boat's own axes."""
+    theta = radians(degrees)
+    half_l, half_w = length / 2, width / 2
+    corners = []
+    for dx, dy in ((half_l, half_w), (half_l, -half_w), (-half_l, -half_w), (-half_l, half_w)):
+        station = cu + dx * cos(theta) - dy * sin(theta)
+        x = cv + dx * sin(theta) + dy * cos(theta)
+        corners.append((station, x))
+    return corners
+
+
+def _desk_card(name, collection, corners, z0, z1):
+    """One rotated card: a thin plate over its own four corners, lying flat --
+    see `_desk_cards`, which turns each one a different amount so the pair
+    reads as put down rather than placed square to the table.
+    """
+    rings = [
+        [(x, _y(station), z) for station, x in corners] for z in (z0, z1)
+    ]
+    obj = grid_to_mesh(name, rings, collection, close_rings=True)
+    cap_loop(obj, rings[0])
+    cap_loop(obj, list(reversed(rings[1])))
+    return _finish(obj, sharp=35.0, bevel_width=None)
 
 
 # --------------------------------------------------------------------------

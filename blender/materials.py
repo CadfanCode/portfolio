@@ -886,7 +886,10 @@ def create():
     # The safe: a hard, dark, satin enamel over steel. Nearly black with a
     # green in it, which is what small strongboxes of every era actually are
     # and is also the only way to keep it from reading as a hole in the
-    # worktop -- pure black below deck is a silhouette, not an object.
+    # worktop -- pure black below deck is a silhouette, not an object. The
+    # door leaf shares this rather than getting its own: it is the same steel
+    # box as the body, hinged, and a door painted a different colour from the
+    # safe it belongs to would read as a second object.
     palette["safe_paint"] = _textured(
         "safe_paint",
         colour_value=(0.052, 0.062, 0.058),
@@ -895,6 +898,21 @@ def create():
         tile=0.20,
         coat=0.25,
         coat_roughness=0.12,
+    )
+
+    # The two keycards. Flat colour, no texture -- a laminated plastic card is
+    # smooth and printed, not grained or woven, so nothing here would earn an
+    # image the way the cloth and the metal do. Both sit with the cabin's own
+    # palette rather than shouting: the blue close to the topside band and the
+    # cushions rather than a screen-saver cyan, the red closer to `paint_red`'s
+    # signal tone than to a playing card's, both a little duller and a little
+    # glossier than the matte plastics around them, which is what a laminated
+    # card actually is next to moulded ABS.
+    palette["card_blue"] = _pbr(
+        "card_blue", (0.075, 0.165, 0.315), roughness=0.28, coat=0.35, coat_roughness=0.08
+    )
+    palette["card_red"] = _pbr(
+        "card_red", (0.38, 0.075, 0.065), roughness=0.28, coat=0.35, coat_roughness=0.08
     )
 
     # --- The VHF.
@@ -1275,10 +1293,18 @@ def apply(built, band_surface):
     assign(built.get("desk_lamp_glow"), palette["lamp_glow"])
     assign(built.get("desk_chart"), palette["chart"])
     assign(built.get("desk_safe"), palette["safe_paint"])
+    assign(built.get("desk_safe_door"), palette["safe_paint"])
     assign(built.get("desk_safe_brass"), palette["brass"])
+    # The safe's contents: the half-hull is finished like the rest of the
+    # cabin's joinery, the key like the door's own ironmongery -- but as a
+    # separate object, because it stays in the cavity when the door swings.
+    assign(built.get("desk_safe_contents"), palette["teak"])
+    assign(built.get("desk_safe_contents_brass"), palette["brass"])
     assign(built.get("desk_pipe"), palette["briar"])
     assign(built.get("desk_pipe_stem"), palette["plastic_black"])
     assign(built.get("desk_pencils"), palette["paint_yellow"])
+    assign(built.get("card_blue"), palette["card_blue"])
+    assign(built.get("card_red"), palette["card_red"])
 
     # --- The VHF: the set, and its display lit behind the fascia.
     assign(built.get("vhf"), palette["plastic_black"])
