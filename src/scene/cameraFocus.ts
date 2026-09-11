@@ -110,7 +110,6 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
     id: 'desk',
     label: 'The chart table',
     scene: 'cabin',
-    placeholder: true,
     bounds: { centre: [-0.925, 0.52, 1.03], size: [0.52, 0.62, 0.66] },
     path: [
       { position: [-0.12, 1.05, 0.93], target: [-0.75, 0.6, 1.0] },

@@ -1,0 +1,4 @@
+# safe-auth is a standalone Java backend that lives in this repo for convenience only.
+# Vercel builds a static Vite bundle and never runs a JVM, so uploading the Java tree on
+# every deploy would be pure dead weight. It is deployed separately as a container.
+safe-auth/

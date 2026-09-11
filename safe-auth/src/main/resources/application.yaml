@@ -1,0 +1,34 @@
+# safe-auth configuration.
+#
+# Nothing secret lives here. The root CA key pair is generated in memory at startup and
+# never written to disk, and the two demo passcodes are compiled in as PBKDF2 hashes
+# (see config/CardConfig.java). There is deliberately no keystore to misplace.
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: safe-auth
+
+safe-auth:
+  # The `iss` claim, and what a client checks a token against. If you deploy this
+  # somewhere real, set it to that public URL — a token whose issuer does not match the
+  # service that minted it is exactly what audience and issuer checks exist to catch.
+  issuer: http://localhost:8080
+
+  # The `aud` claim: who is entitled to accept these tokens.
+  audience: safe-auth-demo
+
+  id-token-lifetime-minutes: 10
+  access-token-lifetime-minutes: 5
+
+  cors:
+    # Comma-separated. The wildcard port needs allowedOriginPatterns, not allowedOrigins.
+    # Add your deployed front end here when you have one, e.g.
+    #   http://localhost:*,https://your-site.vercel.app,https://*.vercel.app
+    allowed-origin-patterns: http://localhost:*
+
+logging:
+  level:
+    se.example.safeauth: INFO
