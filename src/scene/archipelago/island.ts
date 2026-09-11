@@ -35,7 +35,7 @@ export type IslandSurface = {
 /** Local footprint radius past which the mesh is underwater skirt rather than
  *  rock. The skirt exists so no gap can ever show between island and water,
  *  however the waves move. */
-const SKIRT_R = 1.15
+export const SKIRT_R = 1.15
 /** How far below sea level the skirt drops by the time it reaches `SKIRT_R`. */
 const SKIRT_DEPTH = -1.5
 

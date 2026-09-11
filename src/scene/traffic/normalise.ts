@@ -1,15 +1,32 @@
 // None of the five poly.pizza vessel GLBs carries a verified real-world scale
 // or a guaranteed up-axis and forward direction, so nothing here trusts them.
-// Every model is measured off its own geometry instead and normalised against
-// the length the fleet table asks for and the project's own bow convention.
+// Scale and yaw are measured off each model's own geometry, normalised
+// against the length the fleet table asks for and the project's own bow
+// convention.
+//
+// The waterline is the one property here that is authored, not measured, and
+// deliberately so: an earlier version of this file tried to find it from a
+// cross-section beam statistic (the widest point below mid-height), and it
+// could not be made to work. Three of the five models — steamer, tug, ferry —
+// are exported waterline-up with no underbody geometry at all, so their
+// lowest point already *is* the waterline; the two sailboats have a keel
+// hanging below theirs. No statistic distinguished the two cases: on the
+// ferry, a sponson/upper-deck overhang (31 m across, sitting below the
+// model's own bbox midline) out-measured the actual hull and became the
+// reference beam, so "the first height that reaches most of that beam"
+// landed on the deck edge and put the entire hull underwater. `fleet.ts`'s
+// `waterlineFrac` exists for exactly this: read once off each model by hand,
+// trusted from then on.
 
 import { Box3, MathUtils, Mesh, Object3D, Vector3 } from 'three'
 
 /** What a raw model needs to sit correctly in the traffic lanes: a uniform
- *  scale that makes its longest horizontal dimension match `lengthM`, and a
+ *  scale that makes its longest horizontal dimension match `lengthM`, a
  *  yaw that turns that axis to point along -Z, the bow direction every other
- *  moving thing in the scene (the boat, the camera path) already uses. */
-export type Normalisation = { scale: number; yaw: number }
+ *  moving thing in the scene (the boat, the camera path) already uses, and
+ *  a draft — metres to sink the model's origin below the water so its
+ *  authored waterline, not its lowest point, sits at y=0. */
+export type Normalisation = { scale: number; yaw: number; draftM: number }
 
 // Scratch, reused across calls so measuring a class's model never allocates
 // beyond the one Box3 three.js itself needs to walk the geometry.
@@ -26,8 +43,17 @@ const size = new Vector3()
  * length axis, regardless of which way the model happened to be authored
  * facing. Height (Y) is deliberately excluded from that comparison — a tall
  * mast on a short hull must not be mistaken for the vessel's length.
+ *
+ * `waterlineFrac` is the authored fraction (see the file header) of the
+ * model's own bounding-box height at which its designed waterline sits; it
+ * defaults to 0, i.e. floating with the model's origin at the surface, so a
+ * vessel class added without one degrades visibly rather than sinking.
  */
-export function measureAndNormalise(object: Object3D, lengthM: number): Normalisation {
+export function measureAndNormalise(
+  object: Object3D,
+  lengthM: number,
+  waterlineFrac = 0,
+): Normalisation {
   box.setFromObject(object)
   box.getSize(size)
 
@@ -57,7 +83,12 @@ export function measureAndNormalise(object: Object3D, lengthM: number): Normalis
       ? 0
       : Math.PI
 
-  return { scale, yaw }
+  // The waterline is authored (see the file header for why), given as a
+  // fraction of the model's own bounding-box height so it stays correct if a
+  // model is ever re-exported at a different size.
+  const draftM = waterlineFrac * size.y * scale
+
+  return { scale, yaw, draftM }
 }
 
 /** Fraction of the hull length at each end used to compare widths. */
@@ -126,10 +157,15 @@ function bowIsAtNegativeEnd(object: Object3D, alongX: boolean): boolean {
  */
 const cache = new Map<string, Normalisation>()
 
-export function normaliseModel(url: string, object: Object3D, lengthM: number): Normalisation {
+export function normaliseModel(
+  url: string,
+  object: Object3D,
+  lengthM: number,
+  waterlineFrac = 0,
+): Normalisation {
   const cached = cache.get(url)
   if (cached) return cached
-  const result = measureAndNormalise(object, lengthM)
+  const result = measureAndNormalise(object, lengthM, waterlineFrac)
   cache.set(url, result)
   return result
 }

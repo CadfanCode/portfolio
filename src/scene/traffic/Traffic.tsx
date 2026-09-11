@@ -120,7 +120,7 @@ function Vessel({ vessel, wakes }: VesselProps) {
   // enough to be worth memoising (see `normaliseModel`), but a clone is
   // cheap and every vessel needs its own regardless.
   const clone = useMemo<Object3D>(() => scene.clone(true), [scene])
-  const normalised = normaliseModel(url, scene, cls.lengthM)
+  const normalised = normaliseModel(url, scene, cls.lengthM, cls.waterlineFrac)
 
   const group = useRef<Group>(null)
 
@@ -168,7 +168,11 @@ function Vessel({ vessel, wakes }: VesselProps) {
 
   return (
     <group ref={group} raycast={() => null}>
-      <group scale={normalised.scale}>
+      {/* draftM sinks the model inside this inner group rather than the outer
+          one, so the outer group's origin — what rotation.set above pivots
+          about — sits at the waterline rather than at the tip of the keel. A
+          heeling yacht should roll about its waterline, not its keel tip. */}
+      <group scale={normalised.scale} position={[0, -normalised.draftM, 0]}>
         <primitive object={clone} />
       </group>
       {wakes && <Wake lengthM={cls.lengthM} />}

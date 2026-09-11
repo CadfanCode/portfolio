@@ -1,22 +1,32 @@
 """
-The Stockholm-archipelago prop kit: pines, a red house, a boathouse, a jetty,
-a sea mark, a flagpole.
+The Stockholm-archipelago prop kit: pines, birch and juniper, shore rock,
+two red houses, a sauna, a boathouse, a jetty, a dinghy, a sea mark, a
+flagpole.
 
 Unrelated to the Maxi 77 -- this is a second, independent model built by the
 same pipeline and exported as its own GLB, `archipelago-kit.glb`. The app
 scatters instances of each part around the boat as background scenery, so the
 whole kit has to clear a budget the boat never had to: under 200 KB
 uncompressed, no draco, no meshopt (`params.py`, "Archipelago prop kit"). That
-rules out anything lofted or textured. Every part here is a handful of cones
-and boxes built directly with `bmesh`, flat-coloured, and it stays that way on
-purpose -- a pine at 150 m is a silhouette, not a place to spend triangles.
+rules out anything lofted or textured. Every part here is a handful of cones,
+boxes and faceted icospheres built directly with `bmesh`, flat-coloured, and
+it stays that way on purpose -- a pine at 150 m is a silhouette, not a place
+to spend triangles.
 
-Eight named root objects, each with its origin at its base centre and its
+Sixteen named root objects, each with its origin at its base centre and its
 front facing Blender +Y -- which the glTF exporter's `-y -> z` axis mapping
 turns into `-Z` in the export, matching the boat's own bow convention
 (`params.py`, "Units and axes"). That is what lets the scatter code in
 `src/scene/archipelago/props.tsx` place an instance with nothing but a
-position and a rotation about Y.
+position and a rotation about Y. Where "front" is not a meaningful idea for a
+part -- a boulder, a rock stack, a juniper bush -- the convention is honoured
+anyway (base at the origin) but not relied on.
+
+The second batch of eight -- the two shore rocks, the juniper, the birch, the
+second cottage, the sauna, the dinghy, the rock cluster -- exists because bare
+skerries dressed with nothing but pines and houses read as sand dunes with
+trees on them: an inner-archipelago skerry is granite first, and the rocks
+that say so were the single biggest gap in the original eight.
 """
 
 import math
@@ -31,7 +41,7 @@ import bpy  # noqa: E402
 from mathutils import Matrix  # noqa: E402
 
 import params  # noqa: E402
-from lib.mesh import shade_smooth  # noqa: E402
+from lib.mesh import mirror_x, shade_smooth  # noqa: E402
 
 
 # --- Materials --------------------------------------------------------------
@@ -70,6 +80,18 @@ def _materials():
         "pole_white": _flat("kit_pole_white", (0.88, 0.88, 0.86), roughness=0.40),
         "flag_blue": _flat("kit_flag_blue", (0.020, 0.235, 0.475), roughness=0.60),
         "flag_yellow": _flat("kit_flag_yellow", (0.965, 0.760, 0.115), roughness=0.55),
+        # Juniper scrub: darker and pulled toward blue-green next to the
+        # pines' own green, which is what keeps a mixed skerry treeline from
+        # reading as one shade of conifer repeated at ground level.
+        "juniper": _flat("kit_juniper", (0.075, 0.120, 0.115), roughness=0.82),
+        # Birch: near-white bark and a yellow-green leaf, both deliberately
+        # far from the pine palette -- birch among conifers is the detail
+        # that makes a Baltic treeline read as Swedish rather than generic.
+        "birch_bark": _flat("kit_birch_bark", (0.82, 0.80, 0.76), roughness=0.55),
+        "birch_leaf": _flat("kit_birch_leaf", (0.415, 0.520, 0.190), roughness=0.80),
+        # The one painted strake on the dinghy -- a faded teal, the commonest
+        # colour on a Baltic rowing boat after bare timber itself.
+        "boat_paint": _flat("kit_boat_paint", (0.086, 0.300, 0.290), roughness=0.55),
     }
 
 
@@ -104,6 +126,38 @@ def _add_box(bm, size_x, size_y, size_z, matrix):
     verts = ret["verts"]
     scale = Matrix.Diagonal((size_x, size_y, size_z, 1.0))
     bmesh.ops.transform(bm, verts=verts, matrix=matrix @ scale)
+
+
+def _add_faceted_rock(bm, *, cx, cy, radius_xy, radius_z, jitter, seed, rot_z=0.0):
+    """A faceted rock: an icosahedron, vertex-jittered and squashed flat.
+
+    An icosahedron (`subdivisions=1`, 12 verts, 20 faces) is angular by
+    construction -- exactly the "faceted" look asked for, and cheaper than
+    smoothing a sphere and then trying to break it back up. Left flat-shaded
+    on purpose; granite has hard faces, not a fair curved one (contrast
+    `shade_smooth` on the pines and houses).
+
+    The lowest vertex is pulled down to local z=0 so the rock sits flush on
+    whatever it is placed on, matching the kit's base-at-origin convention.
+    `seed` makes the jitter reproducible -- the same call always builds the
+    same rock.
+    """
+    rng = random.Random(seed)
+    ret = bmesh.ops.create_icosphere(
+        bm, subdivisions=1, radius=1.0, matrix=Matrix.Identity(4)
+    )
+    verts = ret["verts"]
+    for vert in verts:
+        scale = 1.0 + rng.uniform(-jitter, jitter)
+        vert.co.x *= scale * radius_xy
+        vert.co.y *= scale * radius_xy
+        vert.co.z *= scale * radius_z
+    min_z = min(vert.co.z for vert in verts)
+    matrix = Matrix.Translation((cx, cy, -min_z)) @ Matrix.Rotation(
+        math.radians(rot_z), 4, "Z"
+    )
+    bmesh.ops.transform(bm, verts=verts, matrix=matrix)
+    return verts
 
 
 # --- Pines --------------------------------------------------------------
@@ -233,6 +287,178 @@ def _build_pines(collection, materials):
         seed=3,
     )
     return pine_a, pine_b, pine_stunted
+
+
+# --- Rocks ------------------------------------------------------------------
+#
+# Bare skerries without shore rock read as sand dunes, not granite -- the
+# single most important gap the pines and houses alone left in the kit.
+
+
+def _build_boulder(collection, name, materials, *, diameter, height_fraction, seed):
+    """A single glacial erratic or shelf rock -- one faceted icosahedron,
+    sized and squashed by `diameter` and `height_fraction`."""
+    bm = bmesh.new()
+    _add_faceted_rock(
+        bm,
+        cx=0.0,
+        cy=0.0,
+        radius_xy=diameter / 2,
+        radius_z=diameter * height_fraction / 2,
+        jitter=params.KIT_ROCK_FACET_JITTER,
+        seed=seed,
+    )
+    obj = _new_object(name, collection, bm)
+    obj.data.materials.append(materials["granite"])
+    return obj
+
+
+def _build_rock_stack(collection, materials):
+    """Three or four smaller stones on a common footprint -- a cheap way to
+    break up a shoreline with a single instance rather than four."""
+    rng = random.Random(21)
+    bm = bmesh.new()
+    footprint = params.KIT_ROCK_STACK_FOOTPRINT
+    for i in range(4):
+        radius = rng.uniform(0.35, 0.60)
+        angle = rng.uniform(0.0, 360.0)
+        dist = rng.uniform(0.0, footprint / 2 - radius * 0.6)
+        cx = dist * math.cos(math.radians(angle))
+        cy = dist * math.sin(math.radians(angle))
+        _add_faceted_rock(
+            bm,
+            cx=cx,
+            cy=cy,
+            radius_xy=radius,
+            radius_z=radius * rng.uniform(0.75, 1.0),
+            jitter=params.KIT_ROCK_FACET_JITTER,
+            seed=100 + i,
+            rot_z=rng.uniform(0.0, 360.0),
+        )
+    obj = _new_object("rock_stack", collection, bm)
+    obj.data.materials.append(materials["granite"])
+    return obj
+
+
+# --- Scrub and birch ---------------------------------------------------------
+
+
+def _build_juniper(collection, materials):
+    """Low, dark, rounded scrub -- a handful of squashed, jittered lobes with
+    no visible trunk, unlike everything else woody in the kit."""
+    rng = random.Random(31)
+    bm = bmesh.new()
+    height = params.KIT_JUNIPER_HEIGHT
+    spread = params.KIT_JUNIPER_SPREAD
+    for _ in range(6):
+        radius = spread / 2 * rng.uniform(0.5, 0.8)
+        cx = rng.uniform(-spread * 0.22, spread * 0.22)
+        cy = rng.uniform(-spread * 0.22, spread * 0.22)
+        cz = height * rng.uniform(0.35, 0.85)
+        radius_z = radius * rng.uniform(0.65, 0.9)
+        ret = bmesh.ops.create_icosphere(
+            bm, subdivisions=1, radius=1.0, matrix=Matrix.Identity(4)
+        )
+        verts = ret["verts"]
+        for vert in verts:
+            vert.co.x *= radius
+            vert.co.y *= radius
+            vert.co.z *= radius_z
+        bmesh.ops.transform(bm, verts=verts, matrix=Matrix.Translation((cx, cy, cz)))
+    # However the lobes landed, the lowest point of the lowest one becomes
+    # the base -- the kit's usual origin-at-base convention.
+    min_z = min(vert.co.z for vert in bm.verts)
+    bmesh.ops.translate(bm, verts=list(bm.verts), vec=(0.0, 0.0, -min_z))
+    obj = _new_object("juniper", collection, bm)
+    obj.data.materials.append(materials["juniper"])
+    shade_smooth(obj, sharp_above_degrees=45.0)
+    return obj
+
+
+def _add_birch_flecks(collection, obj, materials, *, trunk_height, base_radius):
+    """The dark lenticel flecks on a birch trunk -- a handful of small dark
+    tabs stuck to the bark, radially placed, standing in for what would
+    otherwise need a bark texture (none of this kit is textured)."""
+    rng = random.Random(43)
+    bm = bmesh.new()
+    for _ in range(6):
+        z = rng.uniform(trunk_height * 0.15, trunk_height * 0.9)
+        angle = rng.uniform(0.0, 360.0)
+        r = base_radius * (1.0 - z / trunk_height * 0.4) + 0.01
+        cx = r * math.cos(math.radians(angle))
+        cy = r * math.sin(math.radians(angle))
+        matrix = Matrix.Translation((cx, cy, z)) @ Matrix.Rotation(
+            math.radians(angle + 90.0), 4, "Z"
+        )
+        _add_box(bm, 0.11, 0.02, 0.16, matrix)
+    flecks = _new_object(f"{obj.name}_flecks", collection, bm)
+    _join_part(obj, flecks, materials["bark"])
+
+
+def _build_birch(collection, materials):
+    """A downy birch: a slim, kinked white trunk with dark flecks, and a
+    looser, rounder crown of overlapping lobes rather than the pines' tight,
+    layered cones. Mixed in with the pines, this is what makes a treeline
+    read as Swedish rather than as generic conifer forest."""
+    rng = random.Random(41)
+    bm = bmesh.new()
+
+    height = params.KIT_BIRCH_HEIGHT
+    trunk_height = height * params.KIT_BIRCH_TRUNK_FRACTION
+    crown_height = height - trunk_height
+    base_radius = height * params.KIT_BIRCH_TRUNK_RADIUS_FRACTION
+
+    trunk_segments = 3
+    x = y = z = 0.0
+    seg_height = trunk_height / trunk_segments
+    for i in range(trunk_segments):
+        r0 = base_radius * (1.0 - i / trunk_segments * 0.45)
+        r1 = base_radius * (1.0 - (i + 1) / trunk_segments * 0.45)
+        kink = rng.uniform(-6.0, 6.0)
+        matrix = Matrix.Translation((x, y, z + seg_height / 2)) @ Matrix.Rotation(
+            math.radians(kink), 4, "Y"
+        )
+        _add_cone(bm, r0, r1, seg_height, 6, matrix)
+        x += math.tan(math.radians(kink)) * seg_height * 0.3
+        z += seg_height
+    trunk_faces = trunk_segments * (6 + 2)  # sides + two n-gon caps, per cone
+
+    crown_base_x, crown_base_y, crown_base_z = x, y, z
+    crown_diameter = params.KIT_BIRCH_CROWN
+    n_lobes = 5
+    for i in range(n_lobes):
+        frac = i / max(1, n_lobes - 1)
+        # Lobes shrink toward the top, and their own radius is folded into
+        # `lobe_z` below, so the crown's apex lands close to `height` rather
+        # than height-plus-a-lobe-radius above it.
+        radius = crown_diameter / 2 * rng.uniform(0.45, 0.70) * (1.0 - 0.30 * frac)
+        radius_z = radius * rng.uniform(0.65, 0.85)
+        lobe_z = crown_base_z + crown_height * (0.20 + frac * 0.75)
+        jitter_x = crown_base_x + rng.uniform(-radius, radius) * 0.35
+        jitter_y = crown_base_y + rng.uniform(-radius, radius) * 0.35
+        ret = bmesh.ops.create_icosphere(
+            bm, subdivisions=1, radius=1.0, matrix=Matrix.Identity(4)
+        )
+        verts = ret["verts"]
+        for vert in verts:
+            vert.co.x *= radius
+            vert.co.y *= radius
+            vert.co.z *= radius_z
+        bmesh.ops.transform(
+            bm, verts=verts, matrix=Matrix.Translation((jitter_x, jitter_y, lobe_z))
+        )
+
+    obj = _new_object("birch", collection, bm)
+    obj.data.materials.append(materials["birch_bark"])
+    obj.data.materials.append(materials["birch_leaf"])
+    for i, polygon in enumerate(obj.data.polygons):
+        polygon.material_index = 0 if i < trunk_faces else 1
+    shade_smooth(obj, sharp_above_degrees=35.0)
+
+    _add_birch_flecks(
+        collection, obj, materials, trunk_height=trunk_height, base_radius=base_radius
+    )
+    return obj
 
 
 # --- Houses ---------------------------------------------------------------
@@ -505,7 +731,84 @@ def _build_houses(collection, materials):
         open_front=True,
         windows=False,
     )
-    return house_red, boathouse_red
+    house_red_b = _build_house_red_b(collection, materials)
+    sauna_red = _build_sauna(collection, materials)
+    return house_red, boathouse_red, house_red_b, sauna_red
+
+
+def _build_porch(collection, *, width, depth, house_hd, roof_height, post_size=0.14):
+    """Two white posts and a flat canopy roof, standing proud of a gable
+    front -- the veranda that keeps `house_red_b`'s silhouette from being
+    `house_red` at a different scale."""
+    bm = bmesh.new()
+    hw = width / 2
+    for px in (-hw + post_size, hw - post_size):
+        matrix = Matrix.Translation((px, house_hd + depth - post_size, roof_height / 2))
+        _add_box(bm, post_size, post_size, roof_height, matrix)
+    roof_thickness = 0.08
+    roof_matrix = Matrix.Translation(
+        (0.0, house_hd + depth / 2, roof_height + roof_thickness / 2)
+    )
+    _add_box(bm, width, depth, roof_thickness, roof_matrix)
+    return _new_object("house_red_b_porch", collection, bm)
+
+
+def _build_house_red_b(collection, materials):
+    """A second falu-red cottage, deliberately a different shape from
+    `house_red`: smaller, gable end to the front rather than a long eave
+    wall, with a white-trimmed porch standing off that gable."""
+    house = _gable_house(
+        collection,
+        "house_red_b",
+        materials["falu_red"],
+        materials["roof_grey"],
+        materials["trim_white"],
+        materials["window_dark"],
+        width=params.KIT_HOUSE_B_WIDTH,
+        depth=params.KIT_HOUSE_B_DEPTH,
+        ridge_height=params.KIT_HOUSE_B_RIDGE,
+        ridge_axis="y",
+        open_front=False,
+        windows=False,
+    )
+    eave_height = params.KIT_HOUSE_B_RIDGE * params.KIT_HOUSE_EAVE_FRACTION
+    porch = _build_porch(
+        collection,
+        width=params.KIT_HOUSE_B_PORCH_WIDTH,
+        depth=params.KIT_HOUSE_B_PORCH_DEPTH,
+        house_hd=params.KIT_HOUSE_B_DEPTH / 2,
+        roof_height=eave_height * params.KIT_HOUSE_B_PORCH_HEIGHT_FRACTION,
+    )
+    _join_part(house, porch, materials["trim_white"])
+    return house
+
+
+def _build_sauna(collection, materials):
+    """A small shoreline sauna: a low gable box with a short stove flue
+    poking through the roof, set back from the ridge centre so it reads as
+    a chimney rather than a decoration."""
+    sauna = _gable_house(
+        collection,
+        "sauna_red",
+        materials["falu_red"],
+        materials["roof_grey"],
+        materials["trim_white"],
+        materials["window_dark"],
+        width=params.KIT_SAUNA_WIDTH,
+        depth=params.KIT_SAUNA_DEPTH,
+        ridge_height=params.KIT_SAUNA_RIDGE,
+        ridge_axis="x",
+        windows=False,
+    )
+    bm = bmesh.new()
+    chimney_h = params.KIT_SAUNA_CHIMNEY_HEIGHT
+    chimney_r = params.KIT_SAUNA_CHIMNEY_RADIUS
+    cx = params.KIT_SAUNA_WIDTH * 0.22
+    matrix = Matrix.Translation((cx, 0.0, params.KIT_SAUNA_RIDGE + chimney_h / 2))
+    _add_cone(bm, chimney_r, chimney_r * 0.85, chimney_h, 8, matrix)
+    chimney = _new_object("sauna_red_chimney", collection, bm)
+    _join_part(sauna, chimney, materials["roof_grey"])
+    return sauna
 
 
 # --- Jetty, sea mark, flagpole ---------------------------------------------
@@ -634,15 +937,104 @@ def _build_flagpole(collection, materials):
     return pole_obj
 
 
+# --- Dinghy -------------------------------------------------------------
+
+
+def _build_dinghy(collection, materials):
+    """A clinker-built eka -- the double-ended rowing skiff of the Stockholm
+    archipelago, rather than a transom dory -- pulled up bow-first onto the
+    rock.
+
+    Built directly from five cross-section stations (bow and stern pinch to
+    a single point each) as one starboard half, then closed with
+    `lib.mesh.mirror_x` the same way the boat hull itself is -- reusing the
+    shared lofting idiom rather than hand-picking winding for a mirrored
+    quad strip. The top strake is a second material, the one detail that
+    tells a viewer this is a painted boat and not a raw hull.
+    """
+    length = params.KIT_DINGHY_LENGTH
+    beam = params.KIT_DINGHY_BEAM
+    depth = params.KIT_DINGHY_DEPTH
+    strake_frac = params.KIT_DINGHY_STRAKE_FRACTION
+
+    half_len = length / 2
+    stations_y = [-half_len, -half_len * 0.45, 0.0, half_len * 0.45, half_len]
+    half_beams = [0.0, beam * 0.42, beam * 0.5, beam * 0.42, 0.0]
+    tops = [depth * 0.85, depth, depth * 1.02, depth, depth * 0.85]
+    bottoms = [depth * 0.55, depth * 0.12, 0.0, depth * 0.12, depth * 0.55]
+
+    bm = bmesh.new()
+    keel, strake, top = [], [], []
+    for y, hb, top_z, bottom_z in zip(stations_y, half_beams, tops, bottoms):
+        strake_z = bottom_z + (top_z - bottom_z) * strake_frac
+        keel.append(bm.verts.new((0.0, y, bottom_z)))
+        strake.append(bm.verts.new((hb, y, strake_z)))
+        top.append(bm.verts.new((hb, y, top_z)))
+
+    def quad(p0, p1, p2, p3):
+        try:
+            bm.faces.new((p0, p1, p2, p3))
+        except ValueError:
+            pass
+
+    n = len(stations_y)
+    for i in range(n - 1):
+        quad(keel[i], keel[i + 1], strake[i + 1], strake[i])
+        quad(strake[i], strake[i + 1], top[i + 1], top[i])
+
+    n_lower = n - 1
+
+    obj = _new_object("dinghy", collection, bm)
+    obj.data.materials.append(materials["timber"])
+    obj.data.materials.append(materials["boat_paint"])
+    for i, polygon in enumerate(obj.data.polygons):
+        polygon.material_index = 0 if i < n_lower else 1
+    mirror_x(obj)
+    shade_smooth(obj, sharp_above_degrees=30.0)
+
+    thwart_bm = bmesh.new()
+    thwart_z = depth * 0.75
+    _add_box(
+        thwart_bm, beam * 0.8, 0.05, 0.04, Matrix.Translation((0.0, 0.0, thwart_z))
+    )
+    thwart = _new_object("dinghy_thwart", collection, thwart_bm)
+    _join_part(obj, thwart, materials["timber"])
+
+    return obj
+
+
 def build(collection):
-    """Build all eight kit parts. Returns a dict of named objects."""
+    """Build all sixteen kit parts. Returns a dict of named objects."""
     materials = _materials()
 
     pine_a, pine_b, pine_stunted = _build_pines(collection, materials)
-    house_red, boathouse_red = _build_houses(collection, materials)
+    house_red, boathouse_red, house_red_b, sauna_red = _build_houses(
+        collection, materials
+    )
     jetty = _build_jetty(collection, materials)
     sea_mark = _build_sea_mark(collection, materials)
     flagpole = _build_flagpole(collection, materials)
+
+    boulder_a = _build_boulder(
+        collection,
+        "boulder_a",
+        materials,
+        diameter=params.KIT_BOULDER_A_DIAMETER,
+        height_fraction=params.KIT_BOULDER_A_HEIGHT_FRACTION,
+        seed=11,
+    )
+    boulder_b = _build_boulder(
+        collection,
+        "boulder_b",
+        materials,
+        diameter=params.KIT_BOULDER_B_DIAMETER,
+        height_fraction=params.KIT_BOULDER_B_HEIGHT_FRACTION,
+        seed=12,
+    )
+    rock_stack = _build_rock_stack(collection, materials)
+    juniper = _build_juniper(collection, materials)
+    birch = _build_birch(collection, materials)
+    dinghy = _build_dinghy(collection, materials)
 
     return {
         "pine_a": pine_a,
@@ -653,4 +1045,12 @@ def build(collection):
         "jetty": jetty,
         "sea_mark": sea_mark,
         "flagpole": flagpole,
+        "boulder_a": boulder_a,
+        "boulder_b": boulder_b,
+        "juniper": juniper,
+        "birch": birch,
+        "house_red_b": house_red_b,
+        "sauna_red": sauna_red,
+        "dinghy": dinghy,
+        "rock_stack": rock_stack,
     }

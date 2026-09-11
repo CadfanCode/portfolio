@@ -12,6 +12,10 @@ export type VesselClass = {
   lengthM: number
   /** Whether the hull leans with apparent wind (sailboats) or stays upright (powered craft). */
   heels: boolean
+  /** Height of the vessel's designed waterline as a fraction of its model's
+   *  own bounding-box height. Authored, not measured — see normalise.ts for
+   *  why no geometric heuristic can find this reliably across the fleet. */
+  waterlineFrac: number
 }
 
 /**
@@ -20,11 +24,11 @@ export type VesselClass = {
  * the small, frequent classes so the near lane reads as lively yacht traffic.
  */
 export const FLEET: readonly VesselClass[] = [
-  { id: 'sail_a', modelFile: 'sailboat-a.glb', lane: 'near', weight: 35, speedRange: [2.5, 4.0], lengthM: 8, heels: true },
-  { id: 'sail_b', modelFile: 'sailboat-b.glb', lane: 'near', weight: 25, speedRange: [2.5, 4.0], lengthM: 8, heels: true },
-  { id: 'steamer', modelFile: 'steamer.glb', lane: 'mid', weight: 20, speedRange: [5.0, 5.0], lengthM: 30, heels: false },
-  { id: 'tug', modelFile: 'tug.glb', lane: 'mid', weight: 15, speedRange: [4.0, 4.0], lengthM: 20, heels: false },
-  { id: 'ferry', modelFile: 'ferry.glb', lane: 'far', weight: 5, speedRange: [7.0, 7.0], lengthM: 160, heels: false },
+  { id: 'sail_a', modelFile: 'sailboat-a.glb', lane: 'near', weight: 35, speedRange: [2.5, 4.0], lengthM: 8, heels: true, waterlineFrac: 0.165 },
+  { id: 'sail_b', modelFile: 'sailboat-b.glb', lane: 'near', weight: 25, speedRange: [2.5, 4.0], lengthM: 8, heels: true, waterlineFrac: 0.093 },
+  { id: 'steamer', modelFile: 'steamer.glb', lane: 'mid', weight: 20, speedRange: [5.0, 5.0], lengthM: 30, heels: false, waterlineFrac: 0.12 },
+  { id: 'tug', modelFile: 'tug.glb', lane: 'mid', weight: 15, speedRange: [4.0, 4.0], lengthM: 20, heels: false, waterlineFrac: 0.08 },
+  { id: 'ferry', modelFile: 'ferry.glb', lane: 'far', weight: 5, speedRange: [7.0, 7.0], lengthM: 160, heels: false, waterlineFrac: 0.047 },
 ]
 
 /** Pick a vessel class for a lane, weighted by `weight` among that lane's classes. */

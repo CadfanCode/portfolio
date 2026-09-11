@@ -27,11 +27,23 @@ export type LaneDef = {
 /**
  * Three lanes at increasing distance and length, so nearby traffic reads as
  * individual vessels and distant traffic reads as an occasional silhouette.
+ *
+ * `bearingDeg` and `offsetM` here are not free parameters: they were solved
+ * against `../archipelago/layout.ts`'s `ISLANDS` so that every lane clears
+ * every island's underwater skirt (see `island.ts`'s `SKIRT_R`) along its
+ * whole length, with the closest approach still outside the skirt. Retuning
+ * either file can reintroduce a crossing; `lanes-clear.test.ts` pins the
+ * invariant that keeps them apart. The near and mid lanes needed a new
+ * heading as well as a new offset to clear the islands in their way; the far
+ * lane never needed to turn, only to move outboard, from 850 m to 1270 m —
+ * its bearing is unchanged from the original 75. `halfLength`,
+ * `maxConcurrent` and `meanGapS` are untouched by that constraint — they are
+ * tuned against the spawn statistics in `scheduler.test.ts` instead.
  */
 export const LANES: readonly LaneDef[] = [
-  { id: 'near', bearingDeg: 105, offsetM: 160, halfLength: 300, maxConcurrent: 3, meanGapS: 200 },
-  { id: 'mid', bearingDeg: 20, offsetM: 320, halfLength: 600, maxConcurrent: 2, meanGapS: 260 },
-  { id: 'far', bearingDeg: 75, offsetM: 850, halfLength: 1200, maxConcurrent: 1, meanGapS: 420 },
+  { id: 'near', bearingDeg: 60, offsetM: 190, halfLength: 300, maxConcurrent: 3, meanGapS: 200 },
+  { id: 'mid', bearingDeg: -13, offsetM: 320, halfLength: 600, maxConcurrent: 2, meanGapS: 260 },
+  { id: 'far', bearingDeg: 75, offsetM: 1270, halfLength: 1200, maxConcurrent: 1, meanGapS: 420 },
 ]
 
 /** Unit vector along a bearing (degrees, 0 = -Z, clockwise looking down +Y). */
