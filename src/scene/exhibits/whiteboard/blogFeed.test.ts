@@ -1,80 +1,72 @@
 import { describe, expect, it } from 'vitest'
-import blogFeedEmpty from './__fixtures__/blogger-empty.json'
-import blogFeedSummary from './__fixtures__/blogger-summary.json'
-import { parseBloggerFeed } from './blogFeed'
+import wordpressEmpty from './__fixtures__/wordpress-empty.json'
+import wordpressPosts from './__fixtures__/wordpress-posts.json'
+import { parsePosts } from './blogFeed'
 
-describe('parseBloggerFeed', () => {
-  // First and most important: the owner's own blog has zero posts, and
-  // Blogger represents that by omitting `feed.entry` entirely rather than
-  // sending `entry: []`. A naive `feed.entry.map(...)` throws on this, and
-  // this fixture is captured from exactly that blog.
-  it('handles a feed with no entry key at all, without throwing', () => {
-    expect(() => parseBloggerFeed(blogFeedEmpty)).not.toThrow()
-    expect(parseBloggerFeed(blogFeedEmpty)).toEqual([])
+describe('parsePosts', () => {
+  it('handles a feed with zero posts, without throwing', () => {
+    expect(() => parsePosts(wordpressEmpty)).not.toThrow()
+    expect(parsePosts(wordpressEmpty)).toEqual([])
   })
 
   it('parses titles, dates and permalinks from a real payload', () => {
-    const posts = parseBloggerFeed(blogFeedSummary)
+    const posts = parsePosts(wordpressPosts)
     expect(posts).toHaveLength(3)
-    expect(posts[0].title).toBe('A better Blogger experience on the web')
+    expect(posts[0].title).toBe('Claude code – Testing the limits as an independent developer')
     expect(posts[0].published).toBeInstanceOf(Date)
-    expect(posts[0].published.toISOString()).toBe('2020-05-20T23:53:00.001Z')
+    expect(posts[0].published.toISOString()).toBe('2026-09-08T14:18:40.000Z')
     expect(posts[0].permalink).toBe(
-      'https://blogger.googleblog.com/2020/05/a-better-blogger-experience-on-web.html',
+      'https://cadfancode.wordpress.com/2026/09/08/claude-code-testing-the-limits-as-an-independent-developer/',
     )
   })
 
-  it('takes the permalink from the alternate link, not the self link', () => {
-    const posts = parseBloggerFeed(blogFeedSummary)
+  it('takes the permalink from the post URL, not an API endpoint', () => {
+    const posts = parsePosts(wordpressPosts)
     for (const post of posts) {
-      expect(post.permalink).not.toContain('www.blogger.com/feeds')
+      expect(post.permalink).not.toContain('public-api.wordpress.com')
     }
   })
 
   it('orders newest first', () => {
-    const posts = parseBloggerFeed(blogFeedSummary)
+    const posts = parsePosts(wordpressPosts)
     const times = posts.map((p) => p.published.getTime())
     expect(times).toEqual([...times].sort((a, b) => b - a))
   })
 
+  it('decodes HTML entities in titles rather than displaying them literally', () => {
+    const posts = parsePosts(wordpressPosts)
+    const decoded = posts.find((p) => p.permalink.includes('first-post'))
+    expect(decoded?.title).toBe('First post & a few ’lessons learned’')
+  })
+
+  it('leaves an out-of-range numeric entity alone instead of throwing', () => {
+    // `String.fromCodePoint` throws a RangeError past the last code point
+    // rather than returning NaN, so the decoder range-checks first. A title
+    // is untrusted input, and this parser's contract is that it never throws.
+    const posts = parsePosts({
+      posts: [{ title: 'Edge &#1114112; case', date: '2026-01-02T00:00:00+00:00', URL: 'https://example.com/p/' }],
+    })
+    expect(posts[0]?.title).toBe('Edge &#1114112; case')
+  })
+
   it('returns an empty array for a genuinely malformed payload', () => {
-    expect(parseBloggerFeed(null)).toEqual([])
-    expect(parseBloggerFeed(undefined)).toEqual([])
-    expect(parseBloggerFeed({})).toEqual([])
-    expect(parseBloggerFeed({ feed: {} })).toEqual([])
-    expect(parseBloggerFeed('not even an object')).toEqual([])
-    expect(parseBloggerFeed(42)).toEqual([])
+    expect(parsePosts(null)).toEqual([])
+    expect(parsePosts(undefined)).toEqual([])
+    expect(parsePosts({})).toEqual([])
+    expect(parsePosts({ posts: null })).toEqual([])
+    expect(parsePosts('not even an object')).toEqual([])
+    expect(parsePosts(42)).toEqual([])
   })
 
-  it('tolerates an entry with category absent, still parsing it', () => {
+  it('drops a post missing a required field rather than crashing the whole parse', () => {
     const raw = {
-      feed: {
-        entry: [
-          {
-            title: { $t: 'No category here' },
-            published: { $t: '2024-01-01T00:00:00.000Z' },
-            link: [{ rel: 'alternate', href: 'https://example.com/post' }],
-            // `category` deliberately omitted.
-          },
-        ],
-      },
+      posts: [
+        { title: 'Fine', date: '2024-01-01T00:00:00+00:00', URL: 'https://example.com/a' },
+        { title: 'No date', URL: 'https://example.com/b' },
+        { title: 'No permalink', date: '2024-01-02T00:00:00+00:00' },
+      ],
     }
-    const posts = parseBloggerFeed(raw)
-    expect(posts).toHaveLength(1)
-    expect(posts[0].title).toBe('No category here')
-  })
-
-  it('drops an entry missing a required field rather than crashing the whole parse', () => {
-    const raw = {
-      feed: {
-        entry: [
-          { title: { $t: 'Fine' }, published: { $t: '2024-01-01T00:00:00.000Z' }, link: [{ rel: 'alternate', href: 'https://example.com/a' }] },
-          { title: { $t: 'No date' }, link: [{ rel: 'alternate', href: 'https://example.com/b' }] },
-          { title: { $t: 'No permalink' }, published: { $t: '2024-01-02T00:00:00.000Z' } },
-        ],
-      },
-    }
-    const posts = parseBloggerFeed(raw)
+    const posts = parsePosts(raw)
     expect(posts).toHaveLength(1)
     expect(posts[0].title).toBe('Fine')
   })

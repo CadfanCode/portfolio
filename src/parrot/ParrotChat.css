@@ -176,12 +176,20 @@
     opacity: 0;
   }
   to {
-    max-height: 60px;
+    /* 44px controls (see .parrot-chat-send/.parrot-chat-input's tap-target
+       floor) plus the form's own 10px top/bottom padding — was 60px before
+       those floors were added, which is now just short enough to clip them. */
+    max-height: 64px;
     opacity: 1;
   }
 }
 
 .parrot-chat-ask {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px; /* tap-target floor: its own text/padding fall short at 13px */
+  box-sizing: border-box;
   width: 100%;
   padding: 8px 10px;
   font: inherit;
@@ -222,6 +230,8 @@
 .parrot-chat-input {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 44px; /* matches .parrot-chat-send so the row reads as one control */
+  box-sizing: border-box;
   padding: 8px 10px;
   font: inherit;
   font-size: 14px;
@@ -238,6 +248,11 @@
 
 .parrot-chat-send {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px; /* tap-target floor, same reasoning as .parrot-chat-ask */
+  box-sizing: border-box;
   padding: 8px 14px;
   font: inherit;
   font-size: 14px;
@@ -348,6 +363,14 @@
   .parrot-chat {
     width: min(300px, calc(100vw - 48px));
   }
+
+  /* 30x30 reads fine as an icon at desktop pointer precision, but falls
+     short of a 44x44 finger target — the balloon has room to spare for the
+     larger hit area since its header is otherwise mostly empty space. */
+  .parrot-chat-close {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* The cabin's docked mount (`ParrotChatDock.tsx`), where the bird himself is
@@ -357,7 +380,7 @@
 .parrot-chat-dock {
   position: fixed;
   left: 50%;
-  bottom: 32px;
+  bottom: max(32px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
   z-index: 5;
 }

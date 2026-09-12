@@ -12,6 +12,17 @@
   pointer-events: none;
 }
 
+/* Below the sheet breakpoint the panel docks to the bottom instead of the
+   side (see the sheet rules at the bottom of this file) — recentre the flex
+   box so a short sheet sits flush against the bottom edge rather than
+   floating mid-screen. */
+@media (max-width: 640px) {
+  .safe-chrome {
+    justify-content: center;
+    align-items: flex-end;
+  }
+}
+
 .safe-panel {
   pointer-events: auto;
   box-sizing: border-box;
@@ -102,6 +113,14 @@
 }
 
 .safe-button {
+  display: inline-flex;
+  align-items: center;
+  /* A floor rather than a fixed height: at the default 18px root font this
+     button is already taller than 44px from its own padding, but the 16px
+     root size below 1024px (see `index.css`) plus this button's own 8px
+     vertical padding can land just under the 44px tap-target minimum — the
+     min-height is what guarantees it never does. */
+  min-height: 44px;
   padding: 8px 16px;
   font-size: 1em;
   color: var(--text-h);
@@ -306,10 +325,26 @@
   font-size: 0.92em;
 }
 
-@media (max-width: 480px) {
+/* Below 640px there is no room to dock a 440px side rail without hiding the
+   3D safe entirely (the panel measured the full viewport at 390px wide — see
+   the arbiter's brief). A bottom sheet keeps the top of the screen showing
+   the safe and its cards, capped well short of the full height so the area
+   above it stays tappable for free-look. `max-height` rather than `height`
+   so a short phase (e.g. `holding`, two buttons) shrinks to its content
+   instead of leaving a dead, still-`pointer-events: auto` gap below it —
+   that gap eating taps meant for the canvas was the other half of the bug. */
+@media (max-width: 640px) {
   .safe-panel {
-    width: 100vw;
-    padding: 18px 14px 28px;
+    width: 100%;
+    height: auto;
+    max-height: min(58svh, 560px);
+    border-left: none;
+    border-radius: 16px 16px 0 0;
+    /* A shadow that reads upward, since the panel now sits on the bottom
+       edge rather than the side one — it should look lifted off the scene
+       above it, not dropped onto it. */
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
+    padding: 18px 14px max(20px, env(safe-area-inset-bottom));
   }
 
   .safe-pin-slot {

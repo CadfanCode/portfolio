@@ -51,7 +51,11 @@
 }
 
 #root {
-  width: 100vw;
+  /* 100% rather than 100vw: vw is the layout viewport, which can be wider than
+     the visual one when a scrollbar is present, leaving a sliver of the page
+     unreachable/scrollable. 100% of the (unscrollable, see below) body has no
+     such gutter. */
+  width: 100%;
   height: 100svh;
   overflow: hidden;
 }

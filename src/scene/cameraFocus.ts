@@ -81,6 +81,18 @@ export type CameraFocus = {
    *  `FocusTargets.tsx` still flies the camera in, but also surfaces the
    *  "coming soon" toast rather than letting the click read as dead. */
   placeholder?: boolean
+  /**
+   * How far this leg may retreat, as a multiple of its authored distance,
+   * before the camera meets cabin geometry — measured by ray-casting the
+   * built model backward along the final leg from its authored position, not
+   * a taste value. `CameraRig`'s `framingPullback` pushes a close-up back on
+   * a viewport narrower than the design aspect to keep the authored
+   * composition; without a per-target ceiling the general 2x cap (`MAX_PULLBACK`
+   * in `CameraRig.tsx`) can walk a camera straight through a bulkhead or
+   * deckhead on a target with less room behind it. Defaults to `MAX_PULLBACK`
+   * when absent.
+   */
+  maxPullback?: number
 }
 
 export const CAMERA_FOCUS: Record<string, CameraFocus> = {
@@ -115,6 +127,12 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
       { position: [-0.12, 1.05, 0.93], target: [-0.75, 0.6, 1.0] },
       { position: [-0.42, 1.03, 0.69], target: [-0.93, 0.52, 1.0] },
     ],
+    // Ray-cast backward from the final leg's authored position: the camera
+    // has only 0.434 m of clear room before it meets the coachroof, which
+    // tops out at y 1.418 over this table. The general 2x cap would put the
+    // camera at y 1.540 on a narrow-enough viewport — through the deckhead —
+    // so this leg gets its own tighter ceiling instead.
+    maxPullback: 1.4,
   },
 
   /**
@@ -264,36 +282,39 @@ export const CAMERA_FOCUS: Record<string, CameraFocus> = {
   },
 
   /**
-   * The memo whiteboard, on the aft bulkhead's port panel above the chart
-   * table — the wall the cabin camera has its back to at rest. See
+   * The memo whiteboard, on the companionway's starboard face above the
+   * VHF — the wall the cabin camera has its back to at rest. See
    * `docs/superpowers/specs/2026-09-07-blog-whiteboard-design.md` for why
    * this wall and not one of the tighter forward gaps.
    *
-   * The board's own face sits at z 1.335 (the bulkhead at 1.353 less
-   * `Whiteboard.tsx`'s frame depth) with its normal pointing back down -z
-   * toward the saloon, so — unlike every other focus above, all of which
-   * are read from the +z side looking aft — this one is read from the -z
-   * side looking forward, square on to a wall behind the visitor's resting
-   * gaze. Reaching it costs a real turn (azimuth is unlimited at this stop,
-   * so nothing stops it, but the direction from the stop's eye to the board
-   * is roughly 68° off the resting look direction — the price of putting a
-   * memo board where a memo board actually belongs on a boat, over the nav
-   * station, rather than squeezed into one of the forward bulkhead's two
-   * 0.372 m gaps).
+   * That face is not vertical: it leans away from the saloon as it rises,
+   * 11.28° off plumb (`z(y) = 1.335 − 0.19945·(y − 0.657)`, measured off the
+   * built model), so the board's own group carries that tilt rather than
+   * standing flush the way every other focus's wall object does. Its centre
+   * sits at z 1.299, with its normal pointing back down and slightly toward
+   * the saloon, so — unlike every other focus above, all of which are read
+   * from the +z side looking aft — this one is read from the -z side looking
+   * forward, square on to a wall behind the visitor's resting gaze. Reaching
+   * it costs a real turn (azimuth is unlimited at this stop, so nothing
+   * stops it, but the direction from the stop's eye to the board is well off
+   * the resting look direction — the price of putting a memo board where a
+   * memo board actually belongs on a boat, over the nav station, rather than
+   * squeezed into one of the forward bulkhead's two 0.372 m gaps).
    *
    * One leg to turn and close half the distance while still upright near
-   * the stop, a second square-on lean-in at a read distance close enough
-   * (0.37 m) to fill most of the frame with a 0.44 m-wide board, the same
-   * `0.93·d` rule this file's header works every other leg to.
+   * the stop, a second square-on lean-in along the face's own normal at a
+   * read distance close enough (0.37 m) to fill most of the frame with a
+   * 0.40 m-wide board, the same `0.93·d` rule this file's header works every
+   * other leg to.
    */
   whiteboard: {
     id: 'whiteboard',
     label: 'The whiteboard',
     scene: 'cabin',
-    bounds: { centre: [-0.78, 0.7, 1.32], size: [0.46, 0.42, 0.1] },
+    bounds: { centre: [0.762, 0.8375, 1.299], size: [0.42, 0.34, 0.12] },
     path: [
-      { position: [-0.3, 1.0, 0.95], target: [-0.7, 0.76, 1.25] },
-      { position: [-0.78, 0.74, 0.965], target: [-0.78, 0.74, 1.335] },
+      { position: [0.3, 1.0, 0.95], target: [0.7, 0.8, 1.27] },
+      { position: [0.762, 0.7651, 0.9361], target: [0.762, 0.8375, 1.299] },
     ],
   },
 }

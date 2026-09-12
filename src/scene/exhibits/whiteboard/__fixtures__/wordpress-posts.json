@@ -1,0 +1,28 @@
+{
+  "found": 3,
+  "posts": [
+    {
+      "ID": 57,
+      "date": "2026-09-08T16:18:40+02:00",
+      "title": "Claude code &#8211; Testing the limits as an independent developer",
+      "URL": "https://cadfancode.wordpress.com/2026/09/08/claude-code-testing-the-limits-as-an-independent-developer/"
+    },
+    {
+      "ID": 42,
+      "date": "2026-06-02T09:05:12+02:00",
+      "title": "Building a Maxi 77 in the browser",
+      "URL": "https://cadfancode.wordpress.com/2026/06/02/building-a-maxi-77-in-the-browser/"
+    },
+    {
+      "ID": 13,
+      "date": "2026-01-14T21:40:00+01:00",
+      "title": "First post &amp; a few &#8217;lessons learned&#8217;",
+      "URL": "https://cadfancode.wordpress.com/2026/01/14/first-post-a-few-lessons-learned/"
+    }
+  ],
+  "meta": {
+    "links": {
+      "counts": "https://public-api.wordpress.com/rest/v1.1/sites/cadfancode.wordpress.com/post-counts/post"
+    }
+  }
+}
