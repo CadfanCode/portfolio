@@ -37,6 +37,36 @@ const BORDER = 0.02
 const MOULDING_DEPTH = 0.018
 const PICTURE_PROUD = 0.0008
 
+/** The panel's lean, 11.28° off vertical: `-atan(0.19945)` from the measured
+ *  slope of the companionway face. */
+const BOARD_TILT = -0.19685
+
+/**
+ * How far the board's back face stands off the panel.
+ *
+ * Not cosmetic — without it the board is invisible from the saloon and
+ * *visible from the cockpit*, which is the opposite of what it should be.
+ * The companionway panel is a single-sided sheet with no thickness at all
+ * (one ray hit, no back face) whose material is `doubleSided`, so it is the
+ * same geometry that draws the cabin's wall and the cockpit's. Fitting the
+ * board flat onto it put its back face coplanar with that sheet to within
+ * 0.08 mm across the board's whole extent — a depth-buffer tie, which
+ * resolves per-pixel by draw order rather than by depth, so the board bled
+ * through the wall into the cockpit.
+ *
+ * 5 mm is far more than the tie needs (depth precision here is sub-micron)
+ * and is chosen instead to clear the 0.08 mm residual in the plane fit with
+ * room to spare. It reads as a board on battens, which is how one would
+ * actually be mounted on a boat.
+ */
+const WALL_STANDOFF = 0.005
+
+/** The panel's outward normal — the group's own local +z once tilted — so the
+ *  standoff tracks `BOARD_TILT` instead of being a pre-multiplied constant
+ *  that would quietly stop being perpendicular if the tilt were ever retuned. */
+const STANDOFF_Y = Math.sin(BOARD_TILT) * WALL_STANDOFF
+const STANDOFF_Z = -Math.cos(BOARD_TILT) * WALL_STANDOFF
+
 const BLOG_URL = 'https://cadfancode.wordpress.com/'
 
 /** True once the Caveat webfont is confirmed ready — same idiom as
@@ -110,7 +140,10 @@ export function Whiteboard() {
     // right way here. The added X term (-11.28°, `atan(0.19945)`) tilts the
     // whole group to lie flat on the companionway's own sloped face rather
     // than standing vertical and burying its bottom edge in the wall.
-    <group position={[BOARD_X, BOARD_Y, COMPANIONWAY_Z]} rotation={[-0.19685, Math.PI, 0]}>
+    <group
+      position={[BOARD_X, BOARD_Y + STANDOFF_Y, COMPANIONWAY_Z + STANDOFF_Z]}
+      rotation={[BOARD_TILT, Math.PI, 0]}
+    >
       <mesh name="whiteboard_frame" position={[0, 0, MOULDING_DEPTH / 2]}>
         <boxGeometry args={[BOARD_WIDTH + BORDER * 2, BOARD_HEIGHT + BORDER * 2, MOULDING_DEPTH]} />
         <meshStandardMaterial color="#3c3226" roughness={0.55} metalness={0.04} />
