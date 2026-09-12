@@ -1,8 +1,9 @@
-import { Canvas } from '@react-three/fiber'
-import { Suspense } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
+import { Suspense, useLayoutEffect } from 'react'
 import { AdaptiveEvents, Preload } from '@react-three/drei'
 import { PortfolioWorld } from './scene/PortfolioWorld'
 import { selectDprCeiling, useQualityStore } from './state/useQualityStore'
+import { fovForAspect } from './scene/viewport'
 
 /**
  * The Canvas, split out of `App` so that quality changes re-render as little as
@@ -65,6 +66,29 @@ const WORLD = (
   </Suspense>
 )
 
+/**
+ * Keeps the live camera's fov matched to the viewport's aspect. Mounted
+ * inside the `Canvas`, not read by `SceneCanvas` itself: it subscribes to
+ * R3F's own `camera`/`size` state, which changes on every resize, and
+ * `SceneCanvas`'s doc comment above is explicit that nothing may add a
+ * subscription there — every extra one is a reason for the Canvas element to
+ * re-render and re-apply all of its props, including the `camera` prop this
+ * component is specifically working around.
+ */
+function ViewportFov() {
+  const camera = useThree((s) => s.camera)
+  const width = useThree((s) => s.size.width)
+  const height = useThree((s) => s.size.height)
+
+  useLayoutEffect(() => {
+    if (!('fov' in camera)) return
+    camera.fov = fovForAspect(width / height)
+    camera.updateProjectionMatrix()
+  }, [camera, width, height])
+
+  return null
+}
+
 export function SceneCanvas() {
   // These two, and only these two. See the note above.
   //
@@ -95,6 +119,7 @@ export function SceneCanvas() {
       gl={GL}
     >
       {WORLD}
+      <ViewportFov />
       {/* Drops pointer raycasting while performance is degraded. */}
       <AdaptiveEvents />
     </Canvas>

@@ -2,8 +2,8 @@
    backdrop above this one. */
 .sound-toggle {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
   z-index: 5;
 
   display: grid;
@@ -26,6 +26,19 @@
     border-color 0.3s,
     opacity 0.3s;
   opacity: 0.75;
+}
+
+/* On a phone the bottom edge is contested: the safe docks a sheet there, the
+   two book chromes park their page arrows at `bottom: 76px`, and the parrot
+   dock sits bottom-centre. Move to the top-right corner instead, opposite
+   `.focus-exit`'s top-left — the one corner nothing else claims. Anchoring
+   to a corner rather than offsetting by a panel's height keeps this
+   independent of how tall any given panel happens to be. */
+@media (max-width: 640px) {
+  .sound-toggle {
+    top: max(20px, env(safe-area-inset-top));
+    bottom: auto;
+  }
 }
 
 .sound-toggle:hover,

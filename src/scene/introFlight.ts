@@ -200,11 +200,17 @@ export const TITLE_POSITION: Vector3Tuple = [0, 118.3, 21.1]
 export const TITLE_LINES = { name: 'Cai Birch', subtitle: 'Software Developer' } as const
 
 /**
- * The card's width in world units. At fov 50 (set on the `Canvas` in
- * `App.tsx`) the frame at the card's 55 m distance is ~51.3 m tall and
+ * The card's width in world units. At the design fov of 50° (`viewport.ts`'s
+ * `DESIGN_FOV`) the frame at the card's 55 m distance is ~51.3 m tall and
  * ~91.2 m wide (`2 * 55 * tan(25°)` and that times the 16:9-ish aspect), so a
  * 56 m card fills a bit over half the frame's width — read comfortably during
  * a static hold rather than needing to be arrived at.
+ *
+ * Below the design aspect the live vertical fov widens (`fovForAspect`) but
+ * not enough to recover all of the lost horizontal field, so at 55 m a 56 m
+ * card would still overflow a narrow phone. `IntroTitle` scales the mesh
+ * down to fit in that case — never up, so this width and the frame it was
+ * measured against above stay the reference for every wider screen.
  */
 export const TITLE_WIDTH = 56
 export const TITLE_HEIGHT = 28

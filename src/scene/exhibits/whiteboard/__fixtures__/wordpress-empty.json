@@ -1,0 +1,9 @@
+{
+  "found": 0,
+  "posts": [],
+  "meta": {
+    "links": {
+      "counts": "https://public-api.wordpress.com/rest/v1.1/sites/cadfancode.wordpress.com/post-counts/post"
+    }
+  }
+}

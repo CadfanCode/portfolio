@@ -9,9 +9,9 @@ import { useBlogPosts } from './useBlogPosts'
 
 /**
  * The cabin memo board: the latest posts from the owner's blog, scrawled in
- * marker on the aft bulkhead above the chart table. See the design spec
- * (`docs/superpowers/specs/2026-09-07-blog-whiteboard-design.md`) for the
- * placement reasoning and the four decisions this component encodes.
+ * marker on the starboard companionway face above the VHF. See the design
+ * spec (`docs/superpowers/specs/2026-09-07-blog-whiteboard-design.md`) for
+ * the placement reasoning and the four decisions this component encodes.
  *
  * Not registered as an `Exhibit`: it needs none of the three things the
  * registry exists to carry (a staged 3D scene, a DOM content panel, or its
@@ -21,19 +21,23 @@ import { useBlogPosts } from './useBlogPosts'
  * are, and neither of those is registered either.
  */
 
-/** The bulkhead's own saloon-facing plane — see `cameraFocus.ts`'s measured
- *  numbers. Aft, not forward: this is the wall the cabin camera has its back
- *  to at rest, reached by turning round (the stop's azimuth is unlimited). */
-const WALL_Z = 1.353
-const BOARD_X = -0.78
-const BOARD_Y = 0.74
-const BOARD_WIDTH = 0.4
-const BOARD_HEIGHT = 0.3
+/** The companionway's own saloon-facing plane, at the board's centre height —
+ *  see `cameraFocus.ts`'s measured numbers. That face is flat in x but leans
+ *  away from the saloon as it rises (11.28° off vertical), so `COMPANIONWAY_Z`
+ *  is the plane's z at `BOARD_Y` specifically, not a constant offset the way
+ *  a vertical wall's would be. Starboard, not port: this is the face above
+ *  the VHF, reached by turning round from the cabin stop (azimuth is
+ *  unlimited there). */
+const COMPANIONWAY_Z = 1.299
+const BOARD_X = 0.762
+const BOARD_Y = 0.8375
+const BOARD_WIDTH = 0.36
+const BOARD_HEIGHT = 0.27
 const BORDER = 0.02
 const MOULDING_DEPTH = 0.018
 const PICTURE_PROUD = 0.0008
 
-const BLOG_URL = 'https://caibirch.blogspot.com/'
+const BLOG_URL = 'https://cadfancode.wordpress.com/'
 
 /** True once the Caveat webfont is confirmed ready — same idiom as
  *  `AboutBook.tsx`'s `useHandFontReady`, duplicated rather than imported
@@ -90,20 +94,23 @@ export function Whiteboard() {
     // Rotated 180° about Y rather than left unrotated the way `CabinPictures`'
     // frames are: those hang on the forward bulkhead, which the cabin camera
     // already faces at rest, so a plain `planeGeometry` (default normal +Z)
-    // already points at the lens. This board is on the *aft* bulkhead, behind
-    // the camera at rest, so its normal needs turning round to face back
-    // toward the saloon — hence the group rotation. A single static 180°
-    // turn about the vertical axis swaps which world direction is "screen
-    // right" for a viewer standing on the far side by exactly as much as it
-    // swaps which local x maps to which world x, so the two effects cancel
-    // and the canvas still reads left-to-right rather than mirrored. (This
-    // is not the `ResumeBook.tsx` turned-page case: that mirrors because a
-    // *second* rotation — the hinge — is layered on top of the first one,
-    // and it is the pair that needs the compensating flip, not a lone 180°
-    // turn like this one.) Local +z inside this group still means "out of
-    // the wall, toward the lens", exactly as it does in `CabinPictures`; the
-    // 180° turn is what makes that convention point the right way here.
-    <group position={[BOARD_X, BOARD_Y, WALL_Z]} rotation={[0, Math.PI, 0]}>
+    // already points at the lens. This board is on the *aft* companionway
+    // face, behind the camera at rest, so its normal needs turning round to
+    // face back toward the saloon — hence the group rotation. A single
+    // static 180° turn about the vertical axis swaps which world direction
+    // is "screen right" for a viewer standing on the far side by exactly as
+    // much as it swaps which local x maps to which world x, so the two
+    // effects cancel and the canvas still reads left-to-right rather than
+    // mirrored. (This is not the `ResumeBook.tsx` turned-page case: that
+    // mirrors because a *second* rotation — the hinge — is layered on top of
+    // the first one, and it is the pair that needs the compensating flip,
+    // not a lone 180° turn like this one.) Local +z inside this group still
+    // means "out of the wall, toward the lens", exactly as it does in
+    // `CabinPictures`; the 180° turn is what makes that convention point the
+    // right way here. The added X term (-11.28°, `atan(0.19945)`) tilts the
+    // whole group to lie flat on the companionway's own sloped face rather
+    // than standing vertical and burying its bottom edge in the wall.
+    <group position={[BOARD_X, BOARD_Y, COMPANIONWAY_Z]} rotation={[-0.19685, Math.PI, 0]}>
       <mesh name="whiteboard_frame" position={[0, 0, MOULDING_DEPTH / 2]}>
         <boxGeometry args={[BOARD_WIDTH + BORDER * 2, BOARD_HEIGHT + BORDER * 2, MOULDING_DEPTH]} />
         <meshStandardMaterial color="#3c3226" roughness={0.55} metalness={0.04} />

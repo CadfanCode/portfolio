@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { CanvasTexture, Object3D, Vector3 } from 'three'
-import type { ShaderMaterial } from 'three'
+import type { Mesh, ShaderMaterial } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
 import { useQualityStore } from '../state/useQualityStore'
 import {
@@ -149,9 +149,11 @@ const fragmentShader = /* glsl */ `
 export function IntroTitle() {
   const intro = useSceneStore((s) => s.intro)
   const gl = useThree((s) => s.gl)
+  const camera = useThree((s) => s.camera)
   const anisotropy = useQualityStore((s) => s.settings.textures.anisotropy)
 
   const material = useRef<ShaderMaterial>(null)
+  const mesh = useRef<Mesh>(null)
   /** Seconds into the hold beat, accumulated locally rather than read off the rig — the rig's own `holdElapsed` is private to `CameraRig`. */
   const elapsed = useRef(0)
 
@@ -256,6 +258,20 @@ export function IntroTitle() {
 
     mat.uniforms.uTime.value = state.clock.elapsedTime
 
+    // Shrink the card to fit a narrower-than-design frame instead of
+    // overflowing it — a portrait phone's widened vertical fov (see
+    // `viewport.ts`) still can't recover all of the 16:9 horizontal coverage
+    // the 56 m card was authored for. Never scales *up*: on a wide monitor
+    // the authored width is already right and 1 is the ceiling, not a target.
+    if (mesh.current && 'fov' in camera && 'aspect' in camera) {
+      const perspective = camera as typeof camera & { fov: number; aspect: number }
+      const d = camera.position.distanceTo(titlePosition)
+      const vFov = (perspective.fov * Math.PI) / 180
+      const frameWidth = 2 * d * Math.tan(vFov / 2) * perspective.aspect
+      const scale = Math.min(1, (frameWidth * 0.86) / TITLE_WIDTH)
+      mesh.current.scale.setScalar(scale)
+    }
+
     if (intro === 'holding') {
       elapsed.current += delta
       const fadeIn = smoothstep(TITLE_FADE_IN_START, TITLE_FADE_IN_END, elapsed.current)
@@ -275,6 +291,7 @@ export function IntroTitle() {
 
   return (
     <mesh
+      ref={mesh}
       position={titlePosition}
       quaternion={quaternion}
       renderOrder={1000}

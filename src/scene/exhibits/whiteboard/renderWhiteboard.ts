@@ -27,7 +27,7 @@ const ENTRIES_TOP = 320
 const ENTRIES_BOTTOM = 1310
 const URL_Y = 1430
 
-const BLOG_URL = 'caibirch.blogspot.com'
+const BLOG_URL = 'cadfancode.wordpress.com'
 
 /** A cheap seeded LCG, same idiom as `renderAboutPage.ts`'s — deterministic
  *  per seed, so the ghost smears redraw pixel-identical rather than

@@ -2,8 +2,8 @@
    are one each and neither ever covers the other. */
 .focus-exit {
   position: fixed;
-  left: 20px;
-  top: 20px;
+  left: max(20px, env(safe-area-inset-left));
+  top: max(20px, env(safe-area-inset-top));
   z-index: 5;
 
   display: flex;

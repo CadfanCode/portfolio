@@ -1,10 +1,10 @@
 import { CameraControls, CameraControlsImpl } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { CatmullRomCurve3, MathUtils, Vector3 } from 'three'
-import type { Vector3Tuple } from 'three'
+import type { PerspectiveCamera, Vector3Tuple } from 'three'
 import { useSceneStore } from '../state/useSceneStore'
-import { CAMERA_FOCUS, type FocusLeg } from './cameraFocus'
+import { CAMERA_FOCUS, type CameraFocus, type FocusLeg } from './cameraFocus'
 import { CAMERA_STOPS, type CameraStop } from './cameraStops'
 import {
   INTRO_DURATION,
@@ -18,6 +18,7 @@ import {
   introEase,
 } from './introFlight'
 import { clamp01, smoothstep01 } from './mathUtils'
+import { framingPullback } from './viewport'
 
 /**
  * Orbit radius used at first-person stops. Small enough that turning reads as a
@@ -31,6 +32,46 @@ const pivot = new Vector3()
 const aim = new Vector3()
 const scratchA = new Vector3()
 const scratchB = new Vector3()
+
+// Scratch for `pulledBackFinalLeg`, hoisted out of it since it runs from an
+// effect rather than `useFrame` but is still called on every focus change.
+const pullPosition = new Vector3()
+const pullTarget = new Vector3()
+
+/**
+ * Ceiling on how far a close-up may be pushed back from its authored
+ * distance, for a target with no tighter `maxPullback` of its own. The
+ * cabin's saloon is under 1.9 m beam to beam, so an uncapped pull-back on a
+ * narrow enough portrait aspect would walk the camera backwards through a
+ * bulkhead or deckhead; 2x keeps a close-up merely looser on a phone instead
+ * of physically impossible. Some targets have less clear room behind them
+ * than this and carry their own tighter `maxPullback` — see `desk` in
+ * `cameraFocus.ts`.
+ */
+const MAX_PULLBACK = 2.0
+
+/**
+ * The final leg of a focus path, pushed back along its own view axis by
+ * `framingPullback`'s ratio — restoring the same horizontal world coverage
+ * the leg was authored to at `DESIGN_ASPECT`, rather than fitting the
+ * target's click-forgiveness `bounds` box (see `viewport.ts`'s doc on why
+ * that approach doesn't work). At the design aspect this is exactly a no-op:
+ * every close-up was authored to fit there already.
+ *
+ * Only the final leg is touched. The legs before it are authored travel —
+ * the walk down the saloon, the turn at the companionway — not framing, and
+ * pulling them back as well would detach the route from the geometry it was
+ * built to pass through.
+ */
+function pulledBackFinalLeg(view: CameraFocus, aspect: number): FocusLeg {
+  const leg = view.path[view.path.length - 1]
+  const factor = Math.min(framingPullback(aspect), view.maxPullback ?? MAX_PULLBACK)
+  if (factor <= 1) return leg
+
+  pullTarget.set(...leg.target)
+  pullPosition.set(...leg.position).sub(pullTarget).multiplyScalar(factor).add(pullTarget)
+  return { position: [pullPosition.x, pullPosition.y, pullPosition.z], target: leg.target }
+}
 
 // The hold beat's own endpoints, hoisted once rather than rebuilt every frame.
 // `holdEyeEnd`/`holdAimEnd` are `INTRO_PATH[0]`'s own pose — the hold drifts
@@ -328,6 +369,10 @@ export function CameraRig() {
   const beginIntro = useSceneStore((s) => s.beginIntro)
   const beginFlight = useSceneStore((s) => s.beginFlight)
   const endIntro = useSceneStore((s) => s.endIntro)
+  // Read once per focus change inside the effect below, not subscribed to
+  // every frame — `fov`/`aspect` only need to be current at the moment a
+  // close-up is planned, not tracked live while it's held.
+  const camera = useThree((s) => s.camera) as PerspectiveCamera
 
   const controls = useRef<CameraControlsImpl>(null)
   const hasMounted = useRef(false)
@@ -472,7 +517,16 @@ export function CameraRig() {
     // that left the camera.
     flight.current = null
 
-    /** Settle at the stop: authored pose, then the look limits it carries. */
+    /**
+     * Settle at the stop: authored pose, then the look limits it carries.
+     *
+     * A `framingPullback` retreat was tried here too and reverted — it
+     * restores desktop's horizontal *world coverage*, which at a wide
+     * establishing shot like `ocean` is mostly empty water around a small
+     * boat, so matching that coverage in portrait shrinks the boat instead
+     * of framing it. `ViewportFov`'s widened fov already recovers the shot;
+     * see `pulledBackFinalLeg` for why a close-up is the opposite case.
+     */
     const landAtStop = () => {
       orbitTarget(stop, pivot)
       c.setLookAt(...stop.position, pivot.x, pivot.y, pivot.z, false)
@@ -508,7 +562,10 @@ export function CameraRig() {
     }
 
     if (view) {
-      take([here(), ...view.path], landAtView(view.path[view.path.length - 1]))
+      const finalLeg = pulledBackFinalLeg(view, camera.aspect)
+      const route = view.path.slice(0, -1)
+      route.push(finalLeg)
+      take([here(), ...route], landAtView(finalLeg))
       return
     }
 
@@ -584,7 +641,7 @@ export function CameraRig() {
     return () => {
       cancelled = true
     }
-  }, [scene, focus, leaving, arrive, intro])
+  }, [scene, focus, leaving, arrive, intro, camera])
 
   useFrame((_, delta) => {
     const c = controls.current

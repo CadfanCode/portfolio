@@ -82,10 +82,14 @@
 .resume-download {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  bottom: max(24px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
   pointer-events: auto;
 
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px; /* tap-target floor: 8px padding alone falls short at 14px text */
+  box-sizing: border-box;
   padding: 8px 16px;
   font: inherit;
   font-size: 14px;
