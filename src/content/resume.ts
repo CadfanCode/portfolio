@@ -70,7 +70,7 @@ export const RESUME_PAGES: readonly ResumePage[] = [
       { kind: 'heading', text: 'Professional Summary' },
       {
         kind: 'paragraph',
-        text: 'Newly graduated systems developer specialising in backend development with Java, Kotlin and Spring Boot. Built and deployed cloud-based microservices in agile teams using PostgreSQL, Hibernate/JPA, REST APIs, Docker and Kubernetes.',
+        text: 'Systems developer specialising in backend development with Java, Kotlin and Spring Boot. Built and deployed cloud-based microservices in agile teams using PostgreSQL, Hibernate/JPA, REST APIs, Docker and Kubernetes.',
       },
       {
         kind: 'paragraph',
